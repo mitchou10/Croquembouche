@@ -4,8 +4,7 @@ name: Unit Tests
 # into a CRAP score per function (complexity^2 * (1 - coverage)^3 + complexity).
 # It only reports until the repository variable CRAP_BLOCKING is set to `true`;
 # CRAP_THRESHOLD (default 30) is the score above which a function fails the job.
-# Add the services the backend tests need (database, queue...) under
-# `unit-tests-backend` as they appear.
+# The backend tests need a database (a service of `unit-tests-backend`); add the other services they need there.
 
 on:
   workflow_call:
@@ -79,6 +78,21 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    # The same database as docker-compose.test.yaml: the tests build its schema from the migrations.
+    services:
+      postgres-test:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: croquembouche
+          POSTGRES_PASSWORD: croquembouche
+          POSTGRES_DB: croquembouche
+        ports:
+          - 55432:5432
+        options: >-
+          --health-cmd "pg_isready -U croquembouche"
+          --health-interval 3s
+          --health-timeout 3s
+          --health-retries 10
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
