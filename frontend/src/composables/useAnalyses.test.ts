@@ -222,6 +222,62 @@ describe('trying an analysis on a document', () => {
     expect((await startRun('a1', png(), { saveScreenshot: false }))!.screenshot).toBeNull()
   })
 
+  it('is running while the worker computes, and followed until it has answered', async () => {
+    vi.useFakeTimers()
+    try {
+      const { startRun, findRun } = useAnalyses()
+      const started = (await startRun('a1', png('slow.png'), { saveScreenshot: false }))!
+      expect(started).toMatchObject({ status: 'running', matches: 0, detections: [] })
+      const before = analysisOf('a1').matches
+
+      await vi.advanceTimersByTimeAsync(2000) // asked for once: not answered yet
+      expect(findRun('a1', started.id)!.status).toBe('running')
+      await vi.advanceTimersByTimeAsync(2000) // asked for again: the worker has answered
+      const done = findRun('a1', started.id)!
+      expect(done.status).toBe('done')
+      expect(done.pages).toHaveLength(1)
+      expect(done.matches).toBe(done.detections!.length)
+      expect(analysisOf('a1').matches).toBe(before + done.matches) // the analysis counts what it found
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('ends as failed when the worker fails', async () => {
+    vi.useFakeTimers()
+    try {
+      const { startRun, findRun } = useAnalyses()
+      const started = (await startRun('a1', png('broken.png'), { saveScreenshot: false }))!
+
+      await vi.advanceTimersByTimeAsync(4000)
+
+      expect(findRun('a1', started.id)!.status).toBe('failed')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('stops following a use that is gone, and one that is followed once', async () => {
+    vi.useFakeTimers()
+    try {
+      const { startRun, follow, remove } = useAnalyses()
+      const started = (await startRun('a1', png('slow.png'), { saveScreenshot: false }))!
+      follow('a1', started.id) // already followed: not twice
+      await remove('a1')
+      const calls = vi.fn(fakeFetch)
+      vi.stubGlobal('fetch', calls)
+
+      await vi.advanceTimersByTimeAsync(2000)
+      const asked = calls.mock.calls.length
+      await vi.advanceTimersByTimeAsync(10000)
+
+      expect(asked).toBe(1)
+      expect(calls.mock.calls.length).toBe(1) // not asked for again
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('is for whoever can open the analysis, and refused to anyone else with the reason', async () => {
     await asUser('dana')
     const { startRun, actionError } = useAnalyses()
