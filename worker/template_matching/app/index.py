@@ -13,6 +13,10 @@ from typing import Any
 from PIL import Image
 from qdrant_client import QdrantClient, models
 
+# A document comes in any way up (a scan turned on its side, a page upside down): each page of a model, and each of its
+# entities, is indexed turned by these angles (clockwise), and a point says which one it is.
+ROTATIONS = (0, 90, 180, 270)
+
 # Around a zone, so that its edge is seen with a little of what is around it; and no smaller than a model can read.
 CROP_MARGIN = 0.02
 MIN_CROP_SIDE = 32
@@ -21,9 +25,14 @@ BATCH = 32
 _NAMESPACE = uuid.UUID("6b1f0c5e-3d1e-4c70-9a43-0f5c9f2a7e10")
 
 
-def point_id(kind: str, template_id: str, ref: str | int) -> str:
-    """The same page or entity of the same model always has the same identifier."""
-    return str(uuid.uuid5(_NAMESPACE, f"{kind}:{template_id}:{ref}"))
+def point_id(kind: str, template_id: str, ref: str | int, rotation: int = 0) -> str:
+    """The same page or entity of the same model, turned the same way, always has the same identifier."""
+    return str(uuid.uuid5(_NAMESPACE, f"{kind}:{template_id}:{ref}:{rotation}"))
+
+
+def turned(image: Image.Image, rotation: int) -> Image.Image:
+    """The image turned clockwise by a quarter-turn multiple (the page grows to hold it: 90 and 270 swap its sides)."""
+    return image if rotation == 0 else image.rotate(-rotation, expand=True)
 
 
 def crop_zone(image: Image.Image, points: list[dict[str, float]]) -> Image.Image | None:
@@ -82,15 +91,16 @@ class TemplateIndex:
 
     def index(self, template: dict) -> dict[str, int]:
         """Brings the index of a model up to date with what it is now: `template` is `{template_id, document_id,
-        pages: [{page, key, name, description}], entities: [{id, name, page, points}]}`. Returns how many points there
-        are for it."""
+        pages: [{page, key, name, description}], entities: [{id, name, page, points}]}`. Returns how many pages and
+        entities there are, and how many vectors (each is indexed turned four ways)."""
         self.ensure_collection()
         template_id = template["template_id"]
         images: dict[int, Image.Image] = {}
         for page in template["pages"]:
             images[page["page"]] = Image.open(io.BytesIO(self._read(page["key"]))).convert("RGB")
 
-        wanted: list[tuple[str, Image.Image, dict]] = []
+        # What is looked at: a page of the model, or the crop of an entity's zone.
+        looked_at: list[tuple[str, str | int, Image.Image, dict]] = []
         for page in template["pages"]:
             payload = {
                 "kind": "page",
@@ -98,7 +108,7 @@ class TemplateIndex:
                 "name": page.get("name") or "",
                 "description": page.get("description") or "",
             }
-            wanted.append((point_id("page", template_id, page["page"]), images[page["page"]], payload))
+            looked_at.append(("page", page["page"], images[page["page"]], payload))
         for entity in template.get("entities", []):
             image = images.get(entity.get("page"))
             crop = crop_zone(image, entity["points"]) if image is not None else None
@@ -109,7 +119,15 @@ class TemplateIndex:
                     "entity_id": entity["id"],
                     "name": entity.get("name") or "",
                 }
-                wanted.append((point_id("entity", template_id, entity["id"]), crop, payload))
+                looked_at.append(("entity", entity["id"], crop, payload))
+
+        # Each of them turned every way, with the details of how.
+        wanted: list[tuple[str, Image.Image, dict]] = []
+        for kind, ref, image, payload in looked_at:
+            for rotation in ROTATIONS:
+                seen = turned(image, rotation)
+                details = {**payload, "rotation": rotation, "width": seen.width, "height": seen.height}
+                wanted.append((point_id(kind, template_id, ref, rotation), seen, details))
 
         for batch in _batches(wanted, BATCH):
             vectors = self._embedder.embed([image for _, image, _ in batch])
@@ -140,8 +158,9 @@ class TemplateIndex:
             ),
         )
         return {
-            "pages": sum(1 for _, _, p in wanted if p["kind"] == "page"),
-            "entities": sum(1 for _, _, p in wanted if p["kind"] == "entity"),
+            "pages": len(template["pages"]),
+            "entities": len(looked_at) - len(template["pages"]),
+            "vectors": len(wanted),
         }
 
     def remove(self, template_id: str) -> None:
