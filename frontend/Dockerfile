@@ -29,7 +29,10 @@ FROM nginxinc/nginx-unprivileged:alpine AS runtime
 ARG APK_UPGRADE_AS_OF=2026-11-03
 USER root
 RUN echo "Alpine fixes as of ${APK_UPGRADE_AS_OF}" && apk upgrade --no-cache
-COPY --chown=nginx:nginx docker/nginx.conf /etc/nginx/conf.d/default.conf
+# nginx fills in the variables of the templates at start (only the ones set in the environment) and writes the result
+# to /etc/nginx/conf.d: the address of the backend is the deployment's, not the image's.
+ENV BACKEND_URL=http://backend:8000
+COPY --chown=nginx:nginx docker/default.conf.template /etc/nginx/templates/default.conf.template
 COPY --chown=nginx:nginx --from=build /app/dist /usr/share/nginx/html
 # Explicit rather than inherited from the base image: same user as before (nginx, uid 101), but
 # visible to scanners (Trivy DS-0002 can't see an inherited USER).
