@@ -148,6 +148,21 @@ export async function fakeFetch(path: string, init: RequestInit = {}): Promise<A
     uploads.set(id, document)
     return reply(201, document)
   }
+  if (parts[0] === 'documents' && parts[2] === 'suggestions') {
+    // What a PDF suggests: two fields, on two pages. An image suggests nothing.
+    const document = uploads.get(parts[1])
+    if (!document) return refuse(404, 'Not found')
+    const square = (page: number) => ({ page, points: [{ x: 0.1, y: 0.1 }, { x: 0.5, y: 0.1 }, { x: 0.5, y: 0.2 }, { x: 0.1, y: 0.2 }] })
+    return reply(
+      200,
+      document.contentType === 'application/pdf'
+        ? [
+            { name: 'Nom du demandeur', type: 'text', zone: square(1), source: 'widget' },
+            { name: 'Date de naissance', type: 'date', zone: square(2), source: 'box' },
+          ]
+        : [],
+    )
+  }
   if (parts[0] === 'documents' && method === 'DELETE') {
     uploads.delete(parts[1])
     return reply(204)

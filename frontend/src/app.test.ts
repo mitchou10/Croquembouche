@@ -10,7 +10,7 @@ import { resetCatalogue, useCatalogue } from './composables/useCatalogue'
 import { loadGroups, resetGroups } from './composables/useGroups'
 import { useSession } from './composables/useSession'
 import { requireAuth, routes } from './router'
-import { backendAnalysis, uploaded } from './test/fakeBackend'
+import { backendAnalysis, fakeFetch, uploaded } from './test/fakeBackend'
 
 // Routes load their view on demand, which takes real time rather than just a few microtasks.
 const landsOn = (router: ReturnType<typeof createRouter>, name: string) =>
@@ -1445,6 +1445,71 @@ describe('app', () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('down')))
     await upload(wrapper, png())
     expect(wrapper.get('#document-error').text()).toBe('Le document n’a pas pu être envoyé.')
+  })
+
+  describe('what a PDF suggests', () => {
+    const pdf = () => new File(['x'], 'formulaire.pdf', { type: 'application/pdf' })
+
+    it('offers the entities detected in a PDF, and adds them with their zones, to be improved', async () => {
+      useSession().setUser('dana')
+      const { wrapper } = await mountAt('/catalogue/nouveau')
+      expect(wrapper.find('[data-testid="suggestions"]').exists()).toBe(false)
+      await upload(wrapper, pdf())
+      expect(wrapper.get('[data-testid="suggestions"]').text()).toContain('2 entités détectées dans ce PDF.')
+
+      await wrapper.get('[data-testid="suggestions-add"]').trigger('click')
+
+      expect(wrapper.find('[data-testid="suggestions"]').exists()).toBe(false) // offered once
+      expect(entityCount(wrapper)).toBe('1 / 2')
+      expect(field(wrapper, 'Nom', 1).element.value).toBe('Nom du demandeur')
+      expect(field(wrapper, 'Définition').element.value).toBe('Le champ « Nom du demandeur » du document.')
+      expect(wrapper.get('[data-testid="entity"] input[id$="-zone"]').element.checked).toBe(true) // found by its zone
+      // Its zone is outlined on the page it is on.
+      expect(wrapper.findAll('[data-testid="entity-zone"]')).toHaveLength(1)
+    })
+
+    it('adds them after the entities already there', async () => {
+      useSession().setUser('dana')
+      const { wrapper } = await mountAt('/catalogue/nouveau')
+      await addEntity(wrapper)
+      await upload(wrapper, pdf())
+      await wrapper.get('[data-testid="suggestions-add"]').trigger('click')
+      expect(entityCount(wrapper)).toBe('1 / 3') // its own, then the two of the PDF
+    })
+
+    it('can be ignored', async () => {
+      useSession().setUser('dana')
+      const { wrapper } = await mountAt('/catalogue/nouveau')
+      await upload(wrapper, pdf())
+      await wrapper.get('[data-testid="suggestions-ignore"]').trigger('click')
+      expect(wrapper.find('[data-testid="suggestions"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="entity"]').exists()).toBe(false)
+    })
+
+    it('suggests nothing for an image, or when the backend cannot say, or once the document is taken off', async () => {
+      useSession().setUser('dana')
+      const { wrapper } = await mountAt('/catalogue/nouveau')
+      await upload(wrapper, png())
+      expect(wrapper.find('[data-testid="suggestions"]').exists()).toBe(false)
+
+      await upload(wrapper, pdf())
+      expect(wrapper.find('[data-testid="suggestions"]').exists()).toBe(true)
+      await button(wrapper, 'Retirer le document').trigger('click')
+      expect(wrapper.find('[data-testid="suggestions"]').exists()).toBe(false)
+
+      vi.stubGlobal('fetch', vi.fn(async (path: string, init?: RequestInit) => (path.endsWith('/suggestions') ? Promise.reject(new Error('down')) : fakeFetch(path, init))))
+      await upload(wrapper, pdf())
+      expect(wrapper.find('[data-testid="suggestions"]').exists()).toBe(false)
+      expect(wrapper.find('#document-error').exists()).toBe(false) // the document itself was taken
+    })
+
+    it('are those of the document of the form: a document chosen since leaves the old ones out', async () => {
+      useSession().setUser('dana')
+      const { wrapper } = await mountAt('/catalogue/nouveau')
+      await upload(wrapper, pdf())
+      await upload(wrapper, png())
+      expect(wrapper.find('[data-testid="suggestions"]').exists()).toBe(false)
+    })
   })
 
   it('looks at the pages of a PDF one at a time', async () => {

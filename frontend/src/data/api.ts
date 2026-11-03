@@ -128,6 +128,17 @@ export const fromAnswer = (document: DocumentAnswer): TemplateDocument => ({
   url: pageUrl(document.id, 1),
 })
 
+/** An entity a PDF suggests by itself (its form fields, boxes and blanks), with where it is. */
+export interface SuggestedEntity {
+  name: string
+  type: string
+  zone: Zone
+  source: 'widget' | 'box' | 'blank'
+}
+
+/** GET /api/documents/{id}/suggestions: none for an image. */
+export const fetchSuggestions = (id: string) => request<SuggestedEntity[]>('GET', `/api/documents/${id}/suggestions`)
+
 export const deleteDocument = (id: string) => request<void>('DELETE', `/api/documents/${id}`)
 
 // ------------------------------------------------------------------------------------------------ analyses
