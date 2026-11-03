@@ -4,6 +4,10 @@ import { defineConfig } from 'vitest/config'
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [vue()],
+  server: {
+    // File events do not cross a bind mount on macOS or Windows: docker-compose.override.yaml turns polling on there.
+    watch: { usePolling: process.env.VITE_USE_POLLING === 'true' },
+  },
   test: {
     environment: 'jsdom',
     coverage: {
