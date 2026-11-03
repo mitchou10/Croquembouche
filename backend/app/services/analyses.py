@@ -1,20 +1,14 @@
+import logging
 import re
 import uuid
 
 from starlette.concurrency import run_in_threadpool
 
+from app.config import MatchingSettings
 from app.core.crypto import blind_index
+from app.core.matching import MatchingDispatcher
 from app.core.security.factory import RequestContext
-from app.models.analysis import (
-    Analysis,
-    AnalysisShare,
-    AnalysisTemplate,
-    Detection,
-    DetectionClassification,
-    PageClassification,
-    Run,
-    RunPage,
-)
+from app.models.analysis import Analysis, AnalysisShare, AnalysisTemplate, Detection, DetectionClassification, Run
 from app.repositories.analysis import AnalysisRepository
 from app.repositories.document import DocumentRepository
 from app.schemas.analysis import (
@@ -31,11 +25,13 @@ from app.schemas.analysis import (
     Share,
 )
 from app.schemas.catalogue import DocumentOut, Zone
-from app.services import documents
-from app.services.catalogue import ForbiddenError, InvalidError, NotFoundError
-from app.services.matching import Classification, Matcher, PageResult, TemplateRef
+from app.schemas.matching import MatchingResult
+from app.services import documents, matching_results
+from app.services.catalogue import ForbiddenError, InvalidError, NotFoundError, index_message
 
 __all__ = ["AnalysisService", "ForbiddenError", "InvalidError", "NotFoundError", "group_name"]
+
+logger = logging.getLogger(__name__)
 
 EMAIL = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 
@@ -80,12 +76,12 @@ class AnalysisService:
         self,
         repository: AnalysisRepository,
         document_repository: DocumentRepository,
-        matcher: Matcher,
+        dispatcher: MatchingDispatcher,
         user: RequestContext,
     ) -> None:
         self._repository = repository
         self._documents = document_repository
-        self._matcher = matcher
+        self._dispatcher = dispatcher
         self._user = user
 
     # --- who can see what
@@ -117,10 +113,15 @@ class AnalysisService:
 
     async def _analysis(self, analysis_id: str) -> Analysis:
         """An analysis the person can open: for anyone else it does not exist."""
+        await self._expire()
         analysis = await self._repository.get(analysis_id)
         if analysis is None or not self._can_open(analysis):
             raise NotFoundError(analysis_id)
         return analysis
+
+    async def _expire(self) -> None:
+        """A use the worker never answered for is ended as failed, not left running."""
+        await matching_results.expire(self._repository, self._documents, MatchingSettings().MATCHING_TIMEOUT_SECONDS)
 
     def _own_run(self, analysis: Analysis, run_id: str) -> Run:
         """A use of the analysis that is the person's own: what it found is private to them."""
@@ -133,6 +134,7 @@ class AnalysisService:
 
     async def search(self) -> list[AnalysisOut]:
         """Every analysis, the ones the person cannot open named only: they are told there are others, and which."""
+        await self._expire()
         return [self._view(a) for a in await self._repository.all()]
 
     async def get(self, analysis_id: str) -> AnalysisOut:
@@ -197,63 +199,46 @@ class AnalysisService:
     # --- using it
 
     async def start_run(self, analysis_id: str, file_name: str, data: bytes, keep_screenshot: bool) -> RunOut:
-        """Tries the analysis on a document, which makes a use of it: done at once, with what was found (still to be
-        looked at), and the screenshots of the document's pages if asked to keep them."""
+        """Tries the analysis on a document, which makes a use of it: running, while the worker (which does all the
+        computing) classifies the pages and finds the elements, then done or failed when it hands its answer back. The
+        pages are kept for it to read, and let go of when it has answered: unless the person asked to keep them."""
         analysis = await self._analysis(analysis_id)
         try:
             prepared = await documents.prepare(data)
         except documents.InvalidDocumentError as error:
             raise InvalidError(str(error)) from error
-        pages = prepared.pages(data)
-        # What each model is made of: its pages, which a page of the document can be classified as.
-        templates = [
-            TemplateRef(str(m.template_id), m.template.document.pages if m.template.document else 1)
-            for m in analysis.models
-        ]
-        result = await run_in_threadpool(self._matcher.match, templates, pages)
-
+        saved = await documents.save(self._documents, self._user.user_id, file_name, data, prepared)
         run = Run(
             analysis_id=analysis.id,
             user_id=self._user.user_id,
-            status="done",
-            matches=len(result.found),
+            status="running",
+            matches=0,
             file_name=file_name[:255],
-            page_classifications=[c for page in result.pages for c in self._page_classes(page)],
-            pages=[RunPage(page=page.page) for page in result.pages],
-            detections=[
-                Detection(
-                    zone_page=f.page,
-                    zone_points=f.points,
-                    source="analysis",
-                    position=position,
-                    classifications=self._detection_classes(f.classifications),
-                )
-                for position, f in enumerate(result.found)
-            ],
+            matching_document_id=saved.id,
+            keep_screenshot=keep_screenshot,
         )
-        if keep_screenshot:
-            saved = await documents.save(self._documents, self._user.user_id, file_name, data, prepared)
-            run.screenshot_document_id = saved.id
         analysis.runs.insert(0, run)
         await self._repository.commit()
+        # Only after the use is recorded: the worker's answer is about a use that exists.
+        message = {
+            "run_id": str(run.id),
+            # What each model is made of: where its pages are, and the zones of its entities. A model with no document
+            # has no page to be compared to.
+            "templates": [
+                index_message(m.template) or {"template_id": str(m.template_id), "pages": [], "entities": []}
+                for m in analysis.models
+            ],
+            "page_keys": [documents.page_key(saved, number) for number in range(1, saved.pages + 1)],
+        }
+        try:
+            await run_in_threadpool(self._dispatcher.dispatch, message)
+        except Exception:
+            logger.warning("Could not ask the worker to match the run %s", run.id, exc_info=True)
+            await matching_results.finish(run, MatchingResult(status="failed"), self._documents)
+            await self._repository.commit()
+        run_id = run.id
         analysis = await self._repository.reload(analysis)
-        return next(self._run(r, True) for r in analysis.runs if r.id == run.id)
-
-    @staticmethod
-    def _page_classes(result: PageResult) -> list[PageClassification]:
-        return [
-            PageClassification(
-                page=result.page,
-                template_id=_uuid(c.template_id),
-                template_page=c.template_page,
-                confidence=c.confidence,
-            )
-            for c in result.classifications
-        ]
-
-    @staticmethod
-    def _detection_classes(classes: list[Classification]) -> list[DetectionClassification]:
-        return [DetectionClassification(template_id=_uuid(c.template_id), confidence=c.confidence) for c in classes]
+        return next(self._run(r, True) for r in analysis.runs if r.id == run_id)
 
     async def get_run(self, analysis_id: str, run_id: str) -> RunOut:
         analysis = await self._analysis(analysis_id)
@@ -442,7 +427,3 @@ class AnalysisService:
             status=_status(analysis),  # type: ignore[arg-type]
             matches=sum(r.matches for r in analysis.runs if r.status == "done"),
         )
-
-
-def _uuid(value: str | None) -> uuid.UUID | None:
-    return None if value is None else uuid.UUID(value)

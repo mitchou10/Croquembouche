@@ -6,16 +6,14 @@ broker cannot be reached the model is saved all the same (a later change indexes
 import logging
 from typing import Protocol
 
-from celery import Celery
-
 from app.config import RedisSettings
+from app.core.worker import QUEUE, make_client
 
 logger = logging.getLogger(__name__)
 
-# The names the worker gives its tasks, and the queue it listens to.
+# The names the worker gives its tasks.
 INDEX_TASK = "template_matching.index_template"
 REMOVE_TASK = "template_matching.remove_template"
-QUEUE = "template_matching"
 
 
 class TemplateIndexer(Protocol):
@@ -26,19 +24,7 @@ class TemplateIndexer(Protocol):
 
 class CeleryIndexer:
     def __init__(self, broker_url: str) -> None:
-        self._app = Celery("croquembouche_backend", broker=broker_url)
-        # Do not hang a request on a broker that is down: a few quick tries, then give up.
-        self._app.conf.update(
-            broker_connection_timeout=2,
-            broker_connection_retry=False,
-            broker_transport_options={"socket_timeout": 2, "socket_connect_timeout": 2},
-            task_publish_retry_policy={
-                "max_retries": 1,
-                "interval_start": 0,
-                "interval_step": 0.2,
-                "interval_max": 0.5,
-            },
-        )
+        self._app = make_client(broker_url)
 
     def _send(self, task: str, argument) -> None:
         try:

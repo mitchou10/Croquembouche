@@ -10,6 +10,7 @@ from sqlalchemy.pool import NullPool
 
 from app.config import DatabaseSettings
 from app.core.indexing import get_indexer
+from app.core.matching import get_dispatcher
 from app.core.security.factory import RequestContext, get_current_user
 from app.db import get_db
 from app.dependencies import get_user
@@ -120,3 +121,26 @@ def indexer():
     app.dependency_overrides[get_indexer] = lambda: recorder
     yield recorder
     app.dependency_overrides.pop(get_indexer, None)
+
+
+class RecordingDispatcher:
+    """What the worker would have been asked to match, in order; `fail` makes the broker unreachable."""
+
+    def __init__(self) -> None:
+        self.messages: list[dict] = []
+        self.fail = False
+
+    def dispatch(self, message: dict) -> None:
+        if self.fail:
+            raise ConnectionError("broker down")
+        self.messages.append(message)
+
+
+@pytest.fixture(autouse=True)
+def dispatcher(monkeypatch):
+    """No test reaches a real broker, and the worker's key is known."""
+    recorder = RecordingDispatcher()
+    app.dependency_overrides[get_dispatcher] = lambda: recorder
+    monkeypatch.setenv("INTERNAL_API_KEY", "test-key")
+    yield recorder
+    app.dependency_overrides.pop(get_dispatcher, None)
