@@ -289,8 +289,8 @@ async function submit() {
         />
 
         <div v-if="currentDocument && pageCount > 1" class="template-form__page" data-testid="page-fields">
-          <DsfrInput v-model="pageName" :label="`Nom de la page ${shownPage}`" label-visible :placeholder="pageHint" />
-          <DsfrInput v-model="pageDescription" :label="`Description de la page ${shownPage}`" label-visible />
+          <div><DsfrInput v-model="pageName" :label="`Nom de la page ${shownPage}`" label-visible :placeholder="pageHint" /></div>
+          <div><DsfrInput v-model="pageDescription" :label="`Description de la page ${shownPage}`" label-visible /></div>
         </div>
 
         <div v-if="currentDocument" class="template-form__viewer">
