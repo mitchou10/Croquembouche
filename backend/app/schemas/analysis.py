@@ -80,6 +80,8 @@ class RunOut(CamelModel):
     date: date
     status: Literal["running", "done", "failed"]
     matches: int
+    # Whether the use was tried on a document, so has a result: said to everyone, shown to its person alone.
+    has_result: bool
     file_name: str | None = None
     detections: list[DetectionOut] | None = None
     page: PageOut | None = None
