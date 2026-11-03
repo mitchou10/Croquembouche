@@ -135,3 +135,48 @@ async def test_deleting_a_document_removes_all_of_it(db_client, store):
     assert response.status_code == 204
     assert store.objects == {}
     assert (await db_client.get(f"/api/documents/{document_id}/pages/1")).status_code == 404
+
+
+def _form() -> bytes:
+    document = pymupdf.open()
+    page = document.new_page(width=400, height=600)
+    widget = pymupdf.Widget()
+    widget.field_name, widget.field_type, widget.field_label = "nom", pymupdf.PDF_WIDGET_TYPE_TEXT, "Nom"
+    widget.rect = pymupdf.Rect(50, 50, 250, 70)
+    page.add_widget(widget)
+    return document.tobytes()
+
+
+async def test_a_pdf_suggests_its_entities_and_an_image_none(db_client):
+    pdf_id = (await _upload(db_client, _form(), "form.pdf")).json()["id"]
+    image_id = (await _upload(db_client, png())).json()["id"]
+
+    suggested = await db_client.get(f"/api/documents/{pdf_id}/suggestions")
+
+    assert suggested.status_code == 200
+    assert suggested.json() == [
+        {
+            "name": "Nom",
+            "type": "text",
+            "source": "widget",
+            "zone": {
+                "page": 1,
+                "points": [
+                    {"x": 0.125, "y": 0.0833},
+                    {"x": 0.625, "y": 0.0833},
+                    {"x": 0.625, "y": 0.1167},
+                    {"x": 0.125, "y": 0.1167},
+                ],
+            },
+        }
+    ]
+    assert (await db_client.get(f"/api/documents/{image_id}/suggestions")).json() == []
+
+
+async def test_the_suggestions_of_a_document_are_for_its_owner(db_client, as_user):
+    as_user("alice")
+    document_id = (await _upload(db_client, _form(), "form.pdf")).json()["id"]
+
+    as_user("bob")
+    assert (await db_client.get(f"/api/documents/{document_id}/suggestions")).status_code == 404
+    assert (await db_client.get("/api/documents/nope/suggestions")).status_code == 404

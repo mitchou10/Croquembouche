@@ -1,5 +1,5 @@
 from datetime import date
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import Field, StringConstraints
 
@@ -112,6 +112,16 @@ class TemplateOut(CamelModel):
     stars: list[str]
     suggestions: list[SuggestionOut]
     document: DocumentOut | None = None
+
+
+class SuggestedEntity(CamelModel):
+    """An entity a document suggests by itself, with where it is: to be taken as it is or changed."""
+
+    name: str
+    type: str
+    zone: Zone
+    # Where the suggestion comes from: a form field, a drawn box, or a blank to write on.
+    source: Literal["widget", "box", "blank"]
 
 
 class EntityTypeOut(CamelModel):

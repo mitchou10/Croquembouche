@@ -5,7 +5,7 @@ from fastapi import APIRouter, File, HTTPException, Response, UploadFile, status
 from app.dependencies import CurrentUser, Db
 from app.models.document import Document
 from app.repositories.document import DocumentRepository
-from app.schemas.catalogue import DocumentOut
+from app.schemas.catalogue import DocumentOut, SuggestedEntity, Zone
 from app.services import documents
 
 router = APIRouter(tags=["Documents"])
@@ -43,6 +43,20 @@ async def get_page(document_id: str, number: int, user: CurrentUser, db: Db) -> 
     except documents.DocumentNotFoundError as error:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Page not found") from error
     return Response(content=data, media_type=content_type, headers={"Cache-Control": "private, max-age=3600"})
+
+
+@router.get("/{document_id}/suggestions", summary="The entities a PDF suggests by itself: form fields, boxes, blanks")
+async def suggestions(document_id: str, user: CurrentUser, db: Db) -> list[SuggestedEntity]:
+    document = await _own(DocumentRepository(db), document_id, user)
+    return [
+        SuggestedEntity(
+            name=s.name,
+            type=s.type,
+            zone=Zone(page=s.page, points=s.points),
+            source=s.source,  # type: ignore[arg-type]
+        )
+        for s in await documents.suggest_zones(document)
+    ]
 
 
 @router.delete("/{document_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete a document")
