@@ -88,7 +88,11 @@ class RunOut(CamelModel):
 
 
 class AnalysisOut(CamelModel):
+    """An analysis. One the person cannot open is only named, with its date and how it is going: the rest (who made it,
+    what it is for, its uses, its recipients) is empty."""
+
     id: str
+    can_open: bool
     name: str
     description: str
     owner_id: str
