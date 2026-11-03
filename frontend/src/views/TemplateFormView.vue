@@ -6,8 +6,8 @@ import EntitiesEditor from '../components/EntitiesEditor.vue'
 import TemplateLayout from '../components/TemplateLayout.vue'
 import TagsInput from '../components/TagsInput.vue'
 import { useWideScreen } from '../composables/useWideScreen'
-import { ACCEPTED_DOCUMENT_TYPES, documentError, useCatalogue } from '../composables/useCatalogue'
-import { ApiError, deleteDocument, uploadDocument } from '../data/api'
+import { ACCEPTED_DOCUMENT_TYPES, documentError, newEntity, useCatalogue } from '../composables/useCatalogue'
+import { ApiError, deleteDocument, fetchSuggestions, uploadDocument, type SuggestedEntity } from '../data/api'
 import type { TemplateDocument, TemplateEntity, Zone } from '../data/mock'
 
 // One form, three uses: create a template, edit one you own, or suggest a change to someone else's.
@@ -63,10 +63,41 @@ function setDocument(next: TemplateDocument | null) {
   drawingId.value = null
   if (next?.id) uploadedIds.add(next.id)
   currentDocument.value = next
+  suggestions.value = []
   documentChanged.value = true
   // Zones are positions on a given document: they mean nothing on another one.
   zonesDropped.value = entities.value.some((e) => e.zone)
   for (const entity of entities.value) delete entity.zone
+}
+
+// What a PDF suggests by itself (its form fields, boxes and blanks): offered once, to be taken or left.
+const suggestions = ref<SuggestedEntity[]>([])
+
+async function suggestFrom(document: TemplateDocument) {
+  suggestions.value = []
+  if (!document.id || document.type !== 'application/pdf') return
+  try {
+    const found = await fetchSuggestions(document.id)
+    // Only if it is still the document of the form: another may have been chosen while this one was read.
+    if (currentDocument.value?.id === document.id) suggestions.value = found
+  } catch {
+    // Nothing is suggested: the entities are filled in by hand, as ever.
+  }
+}
+
+/** Adds the suggested entities after the ones already there, each found by its zone; the definition is theirs to improve. */
+function addSuggestions() {
+  entities.value = [
+    ...entities.value,
+    ...suggestions.value.map((s) => ({
+      ...newEntity(),
+      name: s.name,
+      definition: `Le champ « ${s.name} » du document.`,
+      type: s.type,
+      zone: s.zone,
+    })),
+  ]
+  suggestions.value = []
 }
 
 function onDraw(zone: Zone) {
@@ -87,7 +118,9 @@ async function onFile(event: Event) {
   }
   uploading.value = true
   try {
-    setDocument(await uploadDocument(file))
+    const uploaded = await uploadDocument(file)
+    setDocument(uploaded)
+    void suggestFrom(uploaded)
   } catch (error) {
     documentFault.value = error instanceof ApiError ? error.message : 'Le document n’a pas pu être envoyé.'
     input.value = ''
@@ -257,6 +290,12 @@ async function submit() {
           :is-invalid="!!errors.description"
         />
 
+        <p v-if="suggestions.length" class="template-form__suggest fr-mb-0" role="status" data-testid="suggestions">
+          <span>{{ suggestions.length }} entité{{ suggestions.length > 1 ? 's' : '' }} détectée{{ suggestions.length > 1 ? 's' : '' }} dans ce PDF.</span>
+          <button type="button" class="fr-btn fr-btn--sm" data-testid="suggestions-add" @click="addSuggestions">Les ajouter</button>
+          <button type="button" class="fr-btn fr-btn--sm fr-btn--tertiary" data-testid="suggestions-ignore" @click="suggestions = []">Ignorer</button>
+        </p>
+
         <EntitiesEditor
           :key="currentDocument?.url ?? 'no-document'"
           ref="entitiesEditor"
@@ -288,6 +327,16 @@ async function submit() {
 .template-form__actions {
   display: flex;
   gap: 0.5rem;
+}
+
+.template-form__suggest {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0.5rem;
+  background: var(--background-contrast-info);
+  font-size: 0.875rem;
 }
 
 .template-form__body {

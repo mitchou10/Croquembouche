@@ -30,7 +30,8 @@ const errors = ref<Record<string, EntityErrors>>({})
 const incomplete = ref<number[]>([])
 
 const entity = computed(() => entities.value[index.value])
-const inZoneMode = computed(() => !!entity.value && zoneIds.value.includes(entity.value.id))
+// An entity that comes with its zone (one a PDF suggested) is found by it, whoever put it there.
+const inZoneMode = computed(() => !!entity.value && (zoneIds.value.includes(entity.value.id) || !!entity.value.zone))
 const entityErrors = computed<EntityErrors>(() => (entity.value && errors.value[entity.value.id]) || {})
 
 watch(
