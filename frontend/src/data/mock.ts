@@ -109,17 +109,19 @@ export interface Template extends TemplateFields {
 
 export type AnalysisStatus = 'done' | 'running' | 'failed'
 
-/** A group of people an analysis can be shared with. The list comes from the backend (see data/api.ts). */
+/** A group of people an analysis can be shared with: the signed-in user's own (see data/api.ts). */
 export interface Group {
   id: string
   name: string
-  /** How many people it has. */
+}
+
+/** The demo's groups, with who is in them: what the tests' fake backend answers from. */
+export interface GroupSeed extends Group {
   members: number
-  /** Which of them are users of this demo (the backend will say who is in which group). */
   memberIds: string[]
 }
 
-export const groupSeed: Group[] = [
+export const groupSeed: GroupSeed[] = [
   { id: 'g1', name: 'Équipe courriers', members: 12, memberIds: ['alice.martin', 'bob.durand'] },
   { id: 'g2', name: 'Préfecture de Paris', members: 34, memberIds: ['bob.durand', 'dana'] },
   { id: 'g3', name: 'Service contentieux', members: 8, memberIds: ['chloe.petit'] },
@@ -171,6 +173,10 @@ export interface PageClassification {
 export interface AnalysisRun {
   id: string
   userId: string
+  /** What to show of who ran it: their name. */
+  userName: string
+  /** Whether it was tried on a document, so has a result (which is for whoever ran it to see). */
+  hasResult: boolean
   date: string
   status: AnalysisStatus
   matches: number
@@ -188,10 +194,13 @@ export interface AnalysisRun {
 
 export interface Analysis {
   id: string
+  /** False for an analysis one is only told of (named, with its date and status): the rest of it is empty. */
+  canOpen: boolean
   name: string
   description: string
   /** Who made it: they, and whoever it is public or shared to, and an administrator, can open it. */
   ownerId: string
+  ownerName: string
   /** How many times its page was opened. */
   views: number
   /** Each time it was used, newest first. */
@@ -373,7 +382,10 @@ export const templates: Template[] = rawTemplates.map((t) => ({
   })),
 }))
 
-export const analyses: Analysis[] = [
+type RawRun = Omit<AnalysisRun, 'userName' | 'hasResult'>
+type RawAnalysis = Omit<Analysis, 'canOpen' | 'ownerName' | 'runs'> & { runs: RawRun[] }
+
+const rawAnalyses: RawAnalysis[] = [
   {
     id: 'a1', name: 'Courriers octobre', description: '', ownerId: 'alice.martin', views: 42, isPublic: false, shares: [],
     templateIds: ['t1', 't6'], date: '2026-10-30', status: 'done', matches: 128,
@@ -442,6 +454,14 @@ export const analyses: Analysis[] = [
     runs: [{ id: 'r20', userId: 'chloe.petit', date: '2026-09-28', status: 'failed', matches: 0 }],
   },
 ]
+
+// In the demo the name of everyone is their identifier, and what is told of an analysis to whoever opens it is all of it.
+export const analyses: Analysis[] = rawAnalyses.map((a) => ({
+  ...a,
+  canOpen: true,
+  ownerName: a.ownerId,
+  runs: a.runs.map((r) => ({ ...r, userName: r.userId, hasResult: !!r.fileName })),
+}))
 
 export const statusLabels: Record<AnalysisStatus, { label: string; type: 'success' | 'info' | 'error' }> = {
   done: { label: 'Terminée', type: 'success' },
