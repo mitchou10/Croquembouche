@@ -6,7 +6,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import App from './App.vue'
 import { loadAnalyses, resetAnalyses, useAnalyses } from './composables/useAnalyses'
 import { simulatePage, simulateTest } from './test/simulate'
-import { resetCatalogue } from './composables/useCatalogue'
+import { resetCatalogue, useCatalogue } from './composables/useCatalogue'
 import { loadGroups, resetGroups } from './composables/useGroups'
 import { useSession } from './composables/useSession'
 import { requireAuth, routes } from './router'
@@ -374,6 +374,20 @@ describe('app', () => {
       await vi.waitFor(() => expect(page.wrapper.find('.fixed-page, [data-testid="no-access"]').exists()).toBe(true))
       return page
     }
+
+    it('is deleted by its owner alone, after a confirmation, with its uses', async () => {
+      const owner = await open('a1') // alice.martin's
+      await owner.wrapper.get('[data-testid="delete"]').trigger('click')
+      expect(owner.wrapper.get('[data-testid="confirm"]').text()).toContain('Supprimer cette analyse et ses résultats ?')
+      await owner.wrapper.get('[data-testid="confirm-yes"]').trigger('click')
+      await landsOn(owner.router, 'analyses')
+      expect(useAnalyses().find('a1')).toBeUndefined()
+      expect(backendAnalysis('a1')).toBeUndefined()
+      // Someone who can open it, an administrator included, is not offered to.
+      for (const who of ['dana', 'admin']) {
+        expect((await open('a5', who)).wrapper.find('[data-testid="delete"]').exists()).toBe(false)
+      }
+    })
 
     it('shows the name, its state, who made it and what it looks for', async () => {
       const { wrapper } = await open('a1')
@@ -2004,6 +2018,38 @@ describe('app', () => {
   })
 
   describe('the page of a model', () => {
+    it('is deleted by its owner, after a confirmation, and the catalogue goes on without it', async () => {
+      useSession().setUser('dana')
+      const made = await useCatalogue().create({ name: 'À jeter', description: 'Pour voir.', categories: [], entities: [] })
+      const { wrapper, router } = await mountAt(`/catalogue/${made.id}`)
+      await wrapper.get('[data-testid="delete"]').trigger('click')
+      expect(wrapper.get('[data-testid="confirm"]').text()).toContain('Supprimer ce modèle ?')
+      await wrapper.get('[data-testid="confirm-no"]').trigger('click') // not so sure after all
+      expect(wrapper.find('[data-testid="confirm"]').exists()).toBe(false)
+      expect(router.currentRoute.value.name).toBe('catalogue-detail')
+      await wrapper.get('[data-testid="delete"]').trigger('click')
+      await wrapper.get('[data-testid="confirm-yes"]').trigger('click')
+      await landsOn(router, 'catalogue')
+      expect(useCatalogue().find(made.id)).toBeUndefined()
+      expect(wrapper.text()).not.toContain('À jeter')
+    })
+
+    it('is not offered for a model that is someone else\'s', async () => {
+      useSession().setUser('dana')
+      const { wrapper } = await mountAt('/catalogue/t1')
+      expect(wrapper.find('[data-testid="delete"]').exists()).toBe(false)
+    })
+
+    it('says why it is not deleted when an analysis looks for it, and stays', async () => {
+      useSession().setUser('alice.martin')
+      const { wrapper, router } = await mountAt('/catalogue/t1')
+      await wrapper.get('[data-testid="delete"]').trigger('click')
+      await wrapper.get('[data-testid="confirm-yes"]').trigger('click')
+      expect(wrapper.get('[data-testid="action-error"]').text()).toContain('utilisé par')
+      expect(router.currentRoute.value.name).toBe('catalogue-detail')
+      expect(useCatalogue().find('t1')).toBeDefined()
+    })
+
     const tabs = (wrapper: ReturnType<typeof mount>) => wrapper.findAll('[role="tab"]').map((t) => t.text())
 
     it('has the layout of the form, read-only, with the document and the entities', async () => {
