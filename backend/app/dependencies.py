@@ -10,9 +10,11 @@ from app.db import get_db
 from app.repositories.analysis import AnalysisRepository
 from app.repositories.catalogue import CatalogueRepository
 from app.repositories.document import DocumentRepository
+from app.repositories.metrics import MetricsRepository
 from app.repositories.profile import ProfileRepository
 from app.services.analyses import AnalysisService
 from app.services.catalogue import CatalogueService
+from app.services.quality import QualityService
 
 
 def display_name(user: RequestContext) -> str | None:
@@ -39,6 +41,13 @@ def get_catalogue(
 
 
 Catalogue = Annotated[CatalogueService, Depends(get_catalogue)]
+
+
+def get_quality(user: CurrentUser, db: Db) -> QualityService:
+    return QualityService(CatalogueRepository(db), MetricsRepository(db))
+
+
+Quality = Annotated[QualityService, Depends(get_quality)]
 
 
 def get_analyses(

@@ -255,6 +255,16 @@ class AnalysisService:
             raise InvalidError("Choisissez un des modèles de l’analyse.")
         return uuid.UUID(review.template_id)
 
+    @staticmethod
+    def _check_entity(analysis: Analysis, template_id: uuid.UUID, entity_id: str | None) -> uuid.UUID | None:
+        """The entity said to be found is one of the model's own."""
+        if entity_id is None:
+            return None
+        template = next(m.template for m in analysis.models if m.template_id == template_id)
+        if not any(str(e.id) == entity_id for e in template.entities):
+            raise InvalidError("Choisissez une entité du modèle.")
+        return uuid.UUID(entity_id)
+
     def _check_page_review(self, analysis: Analysis, review: Review) -> tuple[uuid.UUID | None, int | None]:
         """The classification of a page is annotated with a model and, when it has several, the page of that model."""
         template_id = self._check_review(analysis, review)
@@ -301,6 +311,7 @@ class AnalysisService:
             raise NotFoundError(run_id)
         template_id = self._check_review(analysis, Review(status="annotated", template_id=body.template_id))
         assert template_id is not None
+        entity_id = self._check_entity(analysis, template_id, body.entity_id)
         run.detections.append(
             Detection(
                 zone_page=body.zone.page,
@@ -308,6 +319,7 @@ class AnalysisService:
                 source="manual",
                 review_status="annotated",
                 review_template_id=template_id,
+                entity_id=entity_id,
                 position=max((d.position for d in run.detections), default=-1) + 1,
                 classifications=[DetectionClassification(template_id=template_id, confidence=1.0)],
             )
@@ -366,6 +378,7 @@ class AnalysisService:
                     classifications=_classes(d.classifications),
                     review=_review(d.review_status, d.review_template_id),
                     source=d.source,  # type: ignore[arg-type]
+                    entity_id=None if d.entity_id is None else str(d.entity_id),
                 )
                 for d in run.detections
             ]
