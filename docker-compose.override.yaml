@@ -19,6 +19,7 @@ services:
       - /app/node_modules
     environment:
       VITE_USE_POLLING: ${VITE_USE_POLLING:-false}
+      BACKEND_URL: http://backend:8000
 
   backend:
     build:

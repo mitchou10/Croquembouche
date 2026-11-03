@@ -7,6 +7,9 @@ export default defineConfig({
   server: {
     // File events do not cross a bind mount on macOS or Windows: docker-compose.override.yaml turns polling on there.
     watch: { usePolling: process.env.VITE_USE_POLLING === 'true' },
+    // The page talks to the backend on its own origin (the session cookie is its own then, with no CORS): `/api` goes
+    // through. In the compose stack the backend is the `backend` service.
+    proxy: { '/api': { target: process.env.BACKEND_URL ?? 'http://localhost:8000' } },
   },
   test: {
     environment: 'jsdom',

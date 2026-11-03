@@ -29,8 +29,8 @@ services:
       KEYCLOAK_CLIENT_ID: croquembouche-backend
       KEYCLOAK_CLIENT_SECRET: dev-only-secret-not-for-prod
       # The fixed redirect_uri registered in Keycloak is {BACKEND_PUBLIC_URL}/api/auth/callback; the browser lands on
-      # FRONTEND_URL after login, and CORS keys off it too.
-      BACKEND_PUBLIC_URL: ${BACKEND_PUBLIC_URL:-http://localhost:8000}
+      # FRONTEND_URL after login. Both are the frontend's origin: it forwards /api to the backend.
+      BACKEND_PUBLIC_URL: ${BACKEND_PUBLIC_URL:-http://localhost:8080}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:8080}
       SESSION_COOKIE_SECURE: "false"
     ports:
