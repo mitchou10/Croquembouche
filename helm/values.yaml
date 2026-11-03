@@ -2190,9 +2190,6 @@ worker_template_matching:
   # @section -- Worker template matching
   envCm:
     QDRANT_URL: "http://croquembouche-qdrant:6333"
-    # The image embedding model: downloaded at the first use into the cache below. Another model has a collection of its own.
-    EMBEDDING_MODEL: "Qdrant/clip-ViT-B-32-vision"
-    EMBEDDING_CACHE_DIR: "/home/worker/.cache/fastembed"
     # Where the result of a use is handed back to (the key, INTERNAL_API_KEY, is in the Secret).
     BACKEND_URL: "http://croquembouche-backend:8000"
     AWS_ENDPOINT_URL: "http://croquembouche-rustfs:9000"
@@ -2340,9 +2337,6 @@ worker_template_matching:
   volumes:
   - name: "tmp"
     emptyDir: {}
-  # The weights of the embedding model (about 350 MB): downloaded again at every start unless this is a volume of its own.
-  - name: "models"
-    emptyDir: {}
   # - name: config-volume
   #   configMap:
   #     name: log-config
@@ -2387,8 +2381,6 @@ worker_template_matching:
   volumeMounts:
   - name: "tmp"
     mountPath: "/tmp"
-  - name: "models"
-    mountPath: "/home/worker/.cache"
   # - name: config-volume
   #   mountPath: /app/config
   #   subPath: config

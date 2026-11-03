@@ -1,0 +1,368 @@
+# What every environment of the platform (DSO cluster: Harbor, Vault, CloudNativePG) shares. The host, the TLS secret,
+# the IP whitelist and the sizes of one environment belong to its own values file, layered over this one.
+fullnameOverride: croquembouche
+
+global:
+  # Project name: Harbor project of the images (<project>/croquembouche-<service>) and Vault KV mount.
+  project: exploration
+  vault:
+    # Environment prefix: secrets live at <project>/<env>/croquembouche/<name>
+    env: dev
+  # One Ingress for the whole application: `/api` goes to the backend, everything else to the frontend.
+  # The real host (and `tls`) belong to the environment file; `whitelist` (a list of CIDRs, from the
+  # shared `ipwhitelist.yaml`) restricts the source addresses, any address when it is empty.
+  ingress:
+    enabled: true
+    annotations:
+      monitor: enabled
+      nginx.ingress.kubernetes.io/whitelist-source-range: '{{ .Values.whitelist | join "," | default "0.0.0.0/0" }}'
+      # A document is up to 20 MB (the backend says no, with a reason, to what is bigger): nginx-ingress
+      # refuses a body over 1 MB by default.
+      nginx.ingress.kubernetes.io/proxy-body-size: "25m"
+      k8s.apisix.apache.org/allowlist-source-range: '{{ .Values.whitelist | join "," | default "0.0.0.0/0" }}'
+    hosts:
+    - name: "croquembouche.example.org"
+      paths:
+      - path: "/api"
+        pathType: "Prefix"
+        backend:
+          serviceName: "croquembouche-backend"
+          portNumber: 8000
+      - path: "/"
+        pathType: "Prefix"
+        backend:
+          serviceName: "croquembouche-frontend"
+          portNumber: 8080
+  imagePullSecrets:
+  - name: "registry-pull-secret"
+
+backend:
+  image:
+    registry: "harbor.sdid.cpin.numerique-interieur.com"
+    repository: "{{ .Values.global.project }}/croquembouche-backend"
+    pullPolicy: "Always"
+  replicaCount: 2
+  serviceAccount:
+    enabled: true
+    create: true
+  # Every secret comes from Vault (see `extraObjects`); the Secrets are read through envFrom.
+  envFrom:
+  - secretRef:
+      name: "croquembouche-s3"
+  - secretRef:
+      name: "croquembouche-keycloak"
+  - secretRef:
+      name: "croquembouche-app"
+  - secretRef:
+      name: "croquembouche-worker"
+  - secretRef:
+      name: "croquembouche-redis"
+  - secretRef:
+      name: "croquembouche-db-infos"
+  envCm:
+    KEYCLOAK_REALM: "mirai"
+    KEYCLOAK_CLIENT_ID: "croquembouche"
+    SESSION_COOKIE_SECURE: "true"
+    # The object store is an external S3, not the RustFS of the chart.
+    AWS_ENDPOINT_URL: "https://s3.example.org"
+
+frontend:
+  image:
+    registry: "harbor.sdid.cpin.numerique-interieur.com"
+    repository: "{{ .Values.global.project }}/croquembouche-frontend"
+    pullPolicy: "Always"
+  replicaCount: 2
+  serviceAccount:
+    enabled: true
+    create: true
+
+worker_template_matching:
+  image:
+    registry: "harbor.sdid.cpin.numerique-interieur.com"
+    repository: "{{ .Values.global.project }}/croquembouche-worker-template-matching"
+    pullPolicy: "Always"
+  replicaCount: 1
+  serviceAccount:
+    enabled: true
+    create: true
+  envFrom:
+  - secretRef:
+      name: "croquembouche-s3"
+  - secretRef:
+      name: "croquembouche-worker"
+  - secretRef:
+      name: "croquembouche-redis"
+  envCm:
+    AWS_ENDPOINT_URL: "https://s3.example.org"
+
+jobs:
+  migrate:
+    hook:
+      enabled: true
+      types:
+      - "post-install"
+      - "pre-upgrade"
+      weight: 0
+      deletePolicy: "before-hook-creation,hook-succeeded"
+    image:
+      registry: "harbor.sdid.cpin.numerique-interieur.com"
+      repository: "{{ .Values.global.project }}/croquembouche-backend"
+      pullPolicy: "IfNotPresent"
+    command: ["alembic", "upgrade", "head"]
+    envFrom:
+    - secretRef:
+        name: "croquembouche-db-infos"
+    serviceAccount:
+      enabled: true
+      create: true
+    backoffLimit: 2
+    activeDeadlineSeconds: 900
+    initContainers:
+    - name: wait-for-postgres
+      # Same image as the migration itself (Harbor, already pulled): no dependency on docker.io, which is
+      # unreachable from restricted environments. Polls the TCP port every second; alembic then fails fast if
+      # PostgreSQL is not really ready (the cluster is created by the same release, so on a first install it
+      # is not there yet when the job starts).
+      image: "harbor.sdid.cpin.numerique-interieur.com/{{ .Values.global.project }}/croquembouche-backend:{{ .Chart.AppVersion }}"
+      imagePullPolicy: "IfNotPresent"
+      command:
+      - "python"
+      - "-c"
+      - |-
+        import os,socket,time
+        from urllib.parse import urlsplit
+        u = urlsplit(os.environ['DATABASE_URL'])
+        print(f'Waiting for PostgreSQL at {u.hostname}:{u.port or 5432}', flush=True)
+        while True:
+            try:
+                socket.create_connection((u.hostname, u.port or 5432), 2).close()
+                break
+            except OSError:
+                time.sleep(1)
+        print('PostgreSQL reachable', flush=True)
+      envFrom:
+      - secretRef:
+          name: "croquembouche-db-infos"
+      securityContext:
+        runAsUser: 1000
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: ["ALL"]
+        readOnlyRootFilesystem: true
+        runAsNonRoot: true
+        seccompProfile:
+          type: "RuntimeDefault"
+      resources:
+        limits:
+          cpu: "100m"
+          memory: "128Mi"
+        requests:
+          cpu: "100m"
+          memory: "128Mi"
+    resources:
+      limits:
+        cpu: "500m"
+        memory: "256Mi"
+      requests:
+        cpu: "250m"
+        memory: "128Mi"
+
+redis:
+  fullnameOverride: croquembouche-redis
+  architecture: standalone
+  auth:
+    existingSecret: "croquembouche-redis"
+    existingSecretPasswordKey: "REDIS_PASSWORD"
+  # The chart's generated redis.conf has no `dir` directive, so redis defaults to CWD (/). With
+  # readOnlyRootFilesystem: true (chart default), RDB snapshots fail with "MISCONF Redis is configured to save RDB
+  # snapshots, but it's currently unable to persist to disk." Point `dir` at the persistent volume (/data).
+  config:
+    content: |
+      # Redis configuration
+      bind * -::*
+      dir /data
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "128Mi"
+    limits:
+      cpu: "500m"
+      memory: "256Mi"
+
+# The pages of the models, as vectors (worker/template_matching).
+qdrant:
+  enabled: true
+  fullnameOverride: croquembouche-qdrant
+  replicaCount: 1
+  # The chart's `ensure-dir-ownership` init container chowns the volumes, but takes no resources, which the namespace
+  # quota refuses a pod without. The pod's fsGroup already gives the volumes to the container's group.
+  updateVolumeFsOwnership: false
+  persistence:
+    size: "10Gi"
+  resources:
+    requests:
+      cpu: "250m"
+      memory: "512Mi"
+    limits:
+      cpu: "1"
+      memory: "1Gi"
+
+postgres:
+  enabled: false
+
+# A known external S3 is used instead: no need to self-host object storage.
+rustfs:
+  enabled: false
+
+cnpg:
+  enabled: true
+  fullnameOverride: "croquembouche-pg-cluster"
+  mode: "standalone"
+  cluster:
+    imageName: "ghcr.io/cloudnative-pg/postgresql:17.7"
+    resources:
+      requests:
+        cpu: "250m"
+        memory: "512Mi"
+      limits:
+        cpu: "500m"
+        memory: "1Gi"
+    enableSuperuserAccess: true
+    superuserSecret: "croquembouche-db-superuser"
+    initdb:
+      database: "croquembouche"
+      owner: "croquembouche"
+      secret:
+        name: "croquembouche-db-appuser"
+    monitoring:
+      enabled: true
+
+# Where the Secrets come from: Vault, through the Vault Secrets Operator, at <project>/<env>/croquembouche/<name>.
+extraObjects:
+  croquembouche-s3:
+    apiVersion: secrets.hashicorp.com/v1beta1
+    kind: VaultStaticSecret
+    metadata:
+      name: croquembouche-s3
+    spec:
+      vaultAuthRef: vault-auth
+      mount: '{{ .Values.global.project }}'
+      path: '{{ .Values.global.vault.env }}/croquembouche/s3'
+      type: kv-v2
+      destination:
+        name: croquembouche-s3
+        create: true
+  croquembouche-keycloak:
+    apiVersion: secrets.hashicorp.com/v1beta1
+    kind: VaultStaticSecret
+    metadata:
+      name: croquembouche-keycloak
+    spec:
+      vaultAuthRef: vault-auth
+      mount: '{{ .Values.global.project }}'
+      path: '{{ .Values.global.vault.env }}/croquembouche/keycloak'
+      type: kv-v2
+      destination:
+        name: croquembouche-keycloak
+        create: true
+  # DATA_ENCRYPTION_KEYS and BLIND_INDEX_PEPPER: keep them, what is encrypted cannot be read without them.
+  croquembouche-app:
+    apiVersion: secrets.hashicorp.com/v1beta1
+    kind: VaultStaticSecret
+    metadata:
+      name: croquembouche-app
+    spec:
+      vaultAuthRef: vault-auth
+      mount: '{{ .Values.global.project }}'
+      path: '{{ .Values.global.vault.env }}/croquembouche/app'
+      type: kv-v2
+      destination:
+        name: croquembouche-app
+        create: true
+  # INTERNAL_API_KEY: what the worker hands its results back to the backend with, so both read it.
+  croquembouche-worker:
+    apiVersion: secrets.hashicorp.com/v1beta1
+    kind: VaultStaticSecret
+    metadata:
+      name: croquembouche-worker
+    spec:
+      vaultAuthRef: vault-auth
+      mount: '{{ .Values.global.project }}'
+      path: '{{ .Values.global.vault.env }}/croquembouche/worker'
+      type: kv-v2
+      destination:
+        name: croquembouche-worker
+        create: true
+  croquembouche-redis:
+    apiVersion: secrets.hashicorp.com/v1beta1
+    kind: VaultStaticSecret
+    metadata:
+      name: croquembouche-redis
+    spec:
+      vaultAuthRef: vault-auth
+      mount: '{{ .Values.global.project }}'
+      path: '{{ .Values.global.vault.env }}/croquembouche/redis'
+      type: kv-v2
+      destination:
+        name: croquembouche-redis
+        create: true
+        # Keeps the raw REDIS_PASSWORD (used by the redis chart's own `auth.existingSecret` above) and adds a
+        # computed REDIS_URL for the app's envFrom - a single Vault path serves both. Assumes the Vault-stored
+        # password has no URL-reserved characters.
+        transformation:
+          templates:
+            REDIS_URL:
+              text: 'redis://:{{ "{{" }} get .Secrets "REDIS_PASSWORD" {{ "}}" }}@croquembouche-redis:6379/0'
+  croquembouche-db-superuser:
+    apiVersion: secrets.hashicorp.com/v1beta1
+    kind: VaultStaticSecret
+    metadata:
+      name: croquembouche-db-superuser
+    spec:
+      vaultAuthRef: vault-auth
+      mount: '{{ .Values.global.project }}'
+      path: '{{ .Values.global.vault.env }}/croquembouche/db-superuser'
+      type: kv-v2
+      destination:
+        name: croquembouche-db-superuser
+        create: true
+        # CNPG requires a kubernetes.io/basic-auth secret (username + password keys) for superuserSecret.
+        type: kubernetes.io/basic-auth
+  croquembouche-db-appuser:
+    apiVersion: secrets.hashicorp.com/v1beta1
+    kind: VaultStaticSecret
+    metadata:
+      name: croquembouche-db-appuser
+    spec:
+      vaultAuthRef: vault-auth
+      mount: '{{ .Values.global.project }}'
+      path: '{{ .Values.global.vault.env }}/croquembouche/db-appuser'
+      type: kv-v2
+      destination:
+        name: croquembouche-db-appuser
+        create: true
+        # CNPG requires a kubernetes.io/basic-auth secret (username + password keys) for initdb.secret.
+        type: kubernetes.io/basic-auth
+  # The same credentials as the app user, as the URL the backend and the migration read.
+  croquembouche-db-infos:
+    apiVersion: secrets.hashicorp.com/v1beta1
+    kind: VaultStaticSecret
+    metadata:
+      name: croquembouche-db-infos
+    spec:
+      vaultAuthRef: vault-auth
+      mount: '{{ .Values.global.project }}'
+      path: '{{ .Values.global.vault.env }}/croquembouche/db-appuser'
+      type: kv-v2
+      destination:
+        name: croquembouche-db-infos
+        create: true
+        transformation:
+          excludes:
+          - ".*"
+          templates:
+            # The host is `cnpg.fullnameOverride`-rw; the database and the owner are the ones of `cnpg.cluster.initdb`.
+            # The driver is `postgresql+asyncpg` (backend/app/config/database.py). Assumes the password has no
+            # URL-reserved characters.
+            DATABASE_URL:
+              text: 'postgresql+asyncpg://{{ "{{" }} get .Secrets "username" {{ "}}" }}:{{ "{{" }} get .Secrets "password" {{ "}}" }}@croquembouche-pg-cluster-rw:5432/croquembouche'
