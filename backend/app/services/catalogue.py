@@ -1,5 +1,6 @@
 import uuid
 
+from app.core.indexing import TemplateIndexer
 from app.core.security.factory import RequestContext
 from app.models.catalogue import (
     EntityStar,
@@ -107,6 +108,34 @@ def _template_fields_dict(template: Template) -> dict:
     }
 
 
+def index_message(template: Template) -> dict | None:
+    """What the worker needs to index a model: where the image of each page of its document is (and what was said of the
+    page), and the zone of each entity that has one. None for a model with no document."""
+    document = template.document
+    if document is None:
+        return None
+    notes = {note.page: note for note in template.page_notes}
+    return {
+        "template_id": str(template.id),
+        "name": template.name,
+        "document_id": str(document.id),
+        "pages": [
+            {
+                "page": number,
+                "key": documents.page_key(document, number),
+                "name": (notes[number].name or "") if number in notes else "",
+                "description": (notes[number].description or "") if number in notes else "",
+            }
+            for number in range(1, document.pages + 1)
+        ],
+        "entities": [
+            {"id": str(e.id), "name": e.name, "page": e.zone_page, "points": e.zone_points}
+            for e in template.entities
+            if e.zone_page is not None and e.zone_points
+        ],
+    }
+
+
 def changed(template: Template, fields: dict) -> bool:
     return _template_fields_dict(template) != fields
 
@@ -117,11 +146,33 @@ def _display_name(profile) -> str:
 
 class CatalogueService:
     def __init__(
-        self, repository: CatalogueRepository, document_repository: DocumentRepository, user: RequestContext
+        self,
+        repository: CatalogueRepository,
+        document_repository: DocumentRepository,
+        indexer: TemplateIndexer,
+        user: RequestContext,
     ) -> None:
         self._repository = repository
         self._documents = document_repository
+        self._indexer = indexer
         self._user = user
+
+    async def _saved(self, template: Template, reindex: bool = False) -> TemplateOut:
+        """The model as it is after a commit, read again with everything it holds; the worker is asked to index it when
+        what was saved is what the matching sees."""
+        reloaded = await self._repository.reload(template)
+        if reindex:
+            self._reindex(reloaded)
+        return self._view(reloaded)
+
+    def _reindex(self, template: Template) -> None:
+        """Asks the worker to index the model as it is now: its pages and the zones of its entities. A model with no
+        document has nothing to see, so it is taken out of the index."""
+        message = index_message(template)
+        if message is None:
+            self._indexer.remove(str(template.id))
+        else:
+            self._indexer.index(message)
 
     # --- reading
 
@@ -150,7 +201,7 @@ class CatalogueService:
         await self._apply(template, fields, document_id, replace_document=True)
         self._repository.add(template)
         await self._repository.commit()
-        return self._view(await self._repository.reload(template))
+        return await self._saved(template, reindex=True)
 
     async def update(self, template_id: str, fields: TemplateFields, document: tuple[bool, str | None]) -> TemplateOut:
         """Only the owner changes a template directly. `document`: whether to change it, and to what."""
@@ -159,7 +210,7 @@ class CatalogueService:
             raise ForbiddenError("Seul le propriétaire modifie le modèle.")
         await self._apply(template, fields, document[1], replace_document=document[0])
         await self._repository.commit()
-        return self._view(await self._repository.reload(template))
+        return await self._saved(template, reindex=True)
 
     async def delete(self, template_id: str) -> None:
         """Only the owner deletes a model; one an analysis looks for stays, or that analysis would look for nothing. Its
@@ -172,8 +223,10 @@ class CatalogueService:
             plural = "s" if used > 1 else ""
             raise ConflictError(f"Ce modèle est utilisé par {used} analyse{plural} : supprimez-la{plural} d’abord.")
         document = template.document
+        template_id = str(template.id)
         await self._repository.delete(template)
         await self._repository.commit()
+        self._indexer.remove(template_id)
         if document is not None and not await self._repository.count_templates_with(document.id):
             await documents.delete(self._documents, document)
 
@@ -291,7 +344,8 @@ class CatalogueService:
             await self._apply(template, fields, None, replace_document=False)
         suggestion.status = "accepted" if accept else "rejected"
         await self._repository.commit()
-        return self._view(await self._repository.reload(template))
+        # What was proposed is the model now: the worker sees it.
+        return await self._saved(template, reindex=accept)
 
     async def toggle_suggestion_star(self, template_id: str, suggestion_id: str) -> TemplateOut:
         template = await self._template(template_id)

@@ -126,13 +126,18 @@ async def save(
     return document
 
 
+def page_key(document: Document, number: int) -> str:
+    """Where the image of a page (from 1) is in the store: the screenshot of a PDF's page, or the image itself."""
+    if document.content_type == "application/pdf":
+        return _key(document, f"pages/{number}.png")
+    return _key(document, f"original.{_EXTENSIONS[document.content_type]}")
+
+
 async def page(document: Document, number: int) -> tuple[bytes, str]:
     """The image of a page (from 1): the screenshot of a PDF's page, or the image itself."""
     if not 1 <= number <= document.pages:
         raise DocumentNotFoundError(f"{document.id}/{number}")
-    if document.content_type == "application/pdf":
-        return await run_in_threadpool(storage.get_object, _key(document, f"pages/{number}.png"))
-    return await run_in_threadpool(storage.get_object, _key(document, f"original.{_EXTENSIONS[document.content_type]}"))
+    return await run_in_threadpool(storage.get_object, page_key(document, number))
 
 
 async def delete(repository: DocumentRepository, document: Document) -> None:
