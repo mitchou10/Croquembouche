@@ -31,7 +31,7 @@ def test_the_remove_task_removes_a_model(fake_index):
 
 
 def test_the_tasks_try_again_when_something_is_not_ready():
-    for task in (tasks.index_template, tasks.remove_template):
+    for task in (tasks.index_template, tasks.remove_template, tasks.classify_pages):
         assert task.autoretry_for == (Exception,) and task.retry_backoff and task.retry_kwargs["max_retries"] == 4
 
 
@@ -55,3 +55,24 @@ def test_each_model_has_a_collection_of_its_own(monkeypatch):
 
     assert clip == "templates--qdrant-clip-vit-b-32-vision"
     assert config.collection_name() == "templates--google-siglip2-base-patch16-224"
+
+
+def test_the_classify_task_reads_the_pages_and_classifies_them(monkeypatch):
+    classifier = MagicMock()
+    classifier.classify.return_value = [{"page": 1, "classifications": []}]
+    monkeypatch.setattr(tasks, "get_classifier", lambda: classifier)
+    monkeypatch.setattr(tasks.storage, "get_bytes", lambda key: key.encode())
+
+    assert tasks.classify_pages(["t1"], ["a", "b"]) == [{"page": 1, "classifications": []}]
+    classifier.classify.assert_called_once_with(["t1"], [b"a", b"b"])
+
+
+def test_the_classifier_is_built_once_from_the_settings(monkeypatch):
+    monkeypatch.setattr(tasks, "_classifier", None)
+    monkeypatch.setattr(tasks, "QdrantClient", lambda url: MagicMock())
+    monkeypatch.setattr(tasks.embeddings, "get_embedder", lambda: MagicMock())
+
+    first = tasks.get_classifier()
+
+    assert tasks.get_classifier() is first
+    monkeypatch.setattr(tasks, "_classifier", None)
