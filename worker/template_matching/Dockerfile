@@ -13,6 +13,8 @@ FROM python:3.13-slim AS runtime
 # image carries known CVEs. Removed rather than upgraded, so there is nothing left to keep patched.
 RUN python -m pip uninstall -y pip
 RUN useradd --create-home --uid 1000 worker
+# Where the embedding model is downloaded to: owned by the worker, so that a volume mounted here is too.
+RUN mkdir -p /home/worker/.cache/fastembed && chown -R worker:worker /home/worker/.cache
 WORKDIR /app
 COPY --from=builder --chown=worker:worker /app/.venv /app/.venv
 COPY --from=builder --chown=worker:worker /app/app /app/app
