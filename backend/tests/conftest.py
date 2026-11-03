@@ -68,9 +68,11 @@ async def db_client(db):
 
 @pytest.fixture
 def as_user():
-    """Signs the requests of the test in as someone: `as_user("alice", name="Alice Martin")`."""
+    """Signs the requests of the test in as someone: `as_user("alice", name="Alice Martin", groups=["/team"])`."""
 
-    def sign_in(user_id: str, *, admin: bool = False, name: str = "", email: str = "") -> None:
+    def sign_in(
+        user_id: str, *, admin: bool = False, name: str = "", email: str = "", groups: list[str] | None = None
+    ) -> None:
         first, _, last = name.partition(" ")
         app.dependency_overrides[get_current_user] = lambda: RequestContext(
             user_id=user_id,
@@ -79,6 +81,7 @@ def as_user():
             is_admin=admin,
             first_name=first,
             last_name=last,
+            groups=groups or [],
         )
 
     yield sign_in
