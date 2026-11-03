@@ -13,6 +13,7 @@ from app.models.analysis import (
     DetectionClassification,
     PageClassification,
     Run,
+    RunPage,
 )
 from app.repositories.analysis import AnalysisRepository
 from app.repositories.document import DocumentRepository
@@ -32,7 +33,7 @@ from app.schemas.analysis import (
 from app.schemas.catalogue import DocumentOut, Zone
 from app.services import documents
 from app.services.catalogue import ForbiddenError, InvalidError, NotFoundError
-from app.services.matching import Classification, Matcher
+from app.services.matching import Classification, Matcher, PageResult, TemplateRef
 
 __all__ = ["AnalysisService", "ForbiddenError", "InvalidError", "NotFoundError", "group_name"]
 
@@ -55,13 +56,21 @@ def _status(analysis: Analysis) -> str:
     return "failed" if analysis.runs and analysis.runs[0].status == "failed" else "done"
 
 
-def _review(status: str, template_id: uuid.UUID | None) -> ReviewOut:
-    return ReviewOut(status=status, template_id=None if template_id is None else str(template_id))  # type: ignore[arg-type]
+def _review(status: str, template_id: uuid.UUID | None, template_page: int | None = None) -> ReviewOut:
+    return ReviewOut(
+        status=status,  # type: ignore[arg-type]
+        template_id=None if template_id is None else str(template_id),
+        template_page=template_page,
+    )
 
 
 def _classes(rows) -> list[ClassificationOut]:
     return [
-        ClassificationOut(template_id=None if c.template_id is None else str(c.template_id), confidence=c.confidence)
+        ClassificationOut(
+            template_id=None if c.template_id is None else str(c.template_id),
+            template_page=getattr(c, "template_page", None),
+            confidence=c.confidence,
+        )
         for c in rows
     ]
 
@@ -196,8 +205,12 @@ class AnalysisService:
         except documents.InvalidDocumentError as error:
             raise InvalidError(str(error)) from error
         pages = prepared.pages(data)
-        template_ids = [str(m.template_id) for m in analysis.models]
-        result = await run_in_threadpool(self._matcher.match, template_ids, pages)
+        # What each model is made of: its pages, which a page of the document can be classified as.
+        templates = [
+            TemplateRef(str(m.template_id), m.template.document.pages if m.template.document else 1)
+            for m in analysis.models
+        ]
+        result = await run_in_threadpool(self._matcher.match, templates, pages)
 
         run = Run(
             analysis_id=analysis.id,
@@ -205,7 +218,8 @@ class AnalysisService:
             status="done",
             matches=len(result.found),
             file_name=file_name[:255],
-            page_classifications=self._page_classes(result.page),
+            page_classifications=[c for page in result.pages for c in self._page_classes(page)],
+            pages=[RunPage(page=page.page) for page in result.pages],
             detections=[
                 Detection(
                     zone_page=f.page,
@@ -226,8 +240,16 @@ class AnalysisService:
         return next(self._run(r, True) for r in analysis.runs if r.id == run.id)
 
     @staticmethod
-    def _page_classes(classes: list[Classification]) -> list[PageClassification]:
-        return [PageClassification(template_id=_uuid(c.template_id), confidence=c.confidence) for c in classes]
+    def _page_classes(result: PageResult) -> list[PageClassification]:
+        return [
+            PageClassification(
+                page=result.page,
+                template_id=_uuid(c.template_id),
+                template_page=c.template_page,
+                confidence=c.confidence,
+            )
+            for c in result.classifications
+        ]
 
     @staticmethod
     def _detection_classes(classes: list[Classification]) -> list[DetectionClassification]:
@@ -248,6 +270,21 @@ class AnalysisService:
             raise InvalidError("Choisissez un des modèles de l’analyse.")
         return uuid.UUID(review.template_id)
 
+    def _check_page_review(self, analysis: Analysis, review: Review) -> tuple[uuid.UUID | None, int | None]:
+        """The classification of a page is annotated with a model and, when it has several, the page of that model."""
+        template_id = self._check_review(analysis, review)
+        if template_id is None:
+            return None, None
+        template = next(m.template for m in analysis.models if m.template_id == template_id)
+        pages = template.document.pages if template.document else 1
+        if review.template_page is None:
+            if pages > 1:
+                raise InvalidError("Choisissez la page du modèle.")
+            return template_id, 1 if template.document else None
+        if not 1 <= review.template_page <= pages:
+            raise InvalidError("Ce modèle n’a pas cette page.")
+        return template_id, review.template_page
+
     async def review_detection(self, analysis_id: str, run_id: str, detection_id: str, review: Review) -> RunOut:
         analysis = await self._analysis(analysis_id)
         run = self._own_run(analysis, run_id)
@@ -258,13 +295,16 @@ class AnalysisService:
         detection.review_status = review.status
         return await self._saved(analysis, run)
 
-    async def review_page(self, analysis_id: str, run_id: str, review: Review) -> RunOut:
+    async def review_page(self, analysis_id: str, run_id: str, page: int, review: Review) -> RunOut:
+        """What the person decides of the classification of one page of the document: right, wrong, or another page
+        of another model."""
         analysis = await self._analysis(analysis_id)
         run = self._own_run(analysis, run_id)
-        if not run.page_classifications:
-            raise NotFoundError("page")
-        run.page_review_template_id = self._check_review(analysis, review)
-        run.page_review_status = review.status
+        decided = next((p for p in run.pages if p.page == page), None)
+        if decided is None:
+            raise NotFoundError(f"page {page}")
+        decided.review_template_id, decided.review_template_page = self._check_page_review(analysis, review)
+        decided.review_status = review.status
         return await self._saved(analysis, run)
 
     async def add_element(self, analysis_id: str, run_id: str, body: ElementCreate) -> RunOut:
@@ -346,11 +386,15 @@ class AnalysisService:
             ]
             if has_result
             else None,
-            page=PageOut(
-                classifications=_classes(run.page_classifications),
-                review=_review(run.page_review_status, run.page_review_template_id),
-            )
-            if has_result and run.page_classifications
+            pages=[
+                PageOut(
+                    page=decided.page,
+                    classifications=_classes([c for c in run.page_classifications if c.page == decided.page]),
+                    review=_review(decided.review_status, decided.review_template_id, decided.review_template_page),
+                )
+                for decided in run.pages
+            ]
+            if has_result and run.pages
             else None,
             screenshot=DocumentOut(
                 id=str(run.screenshot.id),
