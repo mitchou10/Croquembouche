@@ -263,3 +263,50 @@ async def test_a_person_without_a_name_is_shown_by_their_address_then_their_iden
     second = await create(db_client)
 
     assert first["ownerName"] == "u1@example.org" and second["ownerName"] == "u2"
+
+
+async def test_only_the_owner_deletes_a_model(db_client, as_user):
+    as_user("alice", name="Alice")
+    template = await create(db_client)
+    url = f"/api/templates/{template['id']}"
+
+    as_user("bob", name="Bob")
+    assert (await db_client.delete(url)).status_code == 403
+    as_user("root", admin=True)
+    assert (await db_client.delete(url)).status_code == 403  # an administrator decides on suggestions, not on this
+    as_user("alice")
+    assert (await db_client.delete(url)).status_code == 204
+
+    assert (await db_client.get(url)).status_code == 404
+    assert (await db_client.get("/api/templates")).json() == []
+    assert (await db_client.delete(url)).status_code == 404
+    assert (await db_client.delete("/api/templates/not-a-uuid")).status_code == 404
+
+
+async def test_a_model_an_analysis_looks_for_is_not_deleted(db_client, as_user):
+    as_user("alice")
+    one, other = await create(db_client), await create(db_client, name="Autre")
+    analysis = {"name": "Courriers", "templateIds": [one["id"]], "isPublic": True}
+    assert (await db_client.post("/api/analyses", json=analysis)).status_code == 201
+
+    refused = await db_client.delete(f"/api/templates/{one['id']}")
+
+    assert refused.status_code == 409 and "1 analyse" in refused.json()["detail"]
+    assert (await db_client.get(f"/api/templates/{one['id']}")).status_code == 200
+    assert (await db_client.delete(f"/api/templates/{other['id']}")).status_code == 204  # nothing looks for this one
+
+
+async def test_the_document_goes_with_the_model_unless_another_uses_it(db_client, as_user, store):
+    as_user("alice")
+    first = (await db_client.post("/api/documents", files={"file": ("a.png", png())})).json()
+    second = (await db_client.post("/api/documents", files={"file": ("b.png", png())})).json()
+    alone = await create(db_client, documentId=first["id"])
+    shared_one = await create(db_client, documentId=second["id"])
+    shared_two = await create(db_client, documentId=second["id"])
+
+    assert (await db_client.delete(f"/api/templates/{alone['id']}")).status_code == 204
+    assert (await db_client.get(f"/api/documents/{first['id']}/pages/1")).status_code == 404
+    assert (await db_client.delete(f"/api/templates/{shared_one['id']}")).status_code == 204
+    assert (await db_client.get(f"/api/documents/{second['id']}/pages/1")).status_code == 200  # still another's
+    assert (await db_client.delete(f"/api/templates/{shared_two['id']}")).status_code == 204
+    assert store.objects == {}

@@ -133,6 +133,18 @@ class AnalysisService:
         """One more look at the page of an analysis: counted for whoever can open it, and for no one else."""
         return await self._repository.count_view(await self._analysis(analysis_id))
 
+    async def delete(self, analysis_id: str) -> None:
+        """Only the owner deletes an analysis, with its uses and what they found, and the screenshots kept with them
+        (whoever's they are)."""
+        analysis = await self._analysis(analysis_id)
+        if not self._is_owner(analysis):
+            raise ForbiddenError("Seul le propriétaire supprime l’analyse.")
+        screenshots = [run.screenshot for run in analysis.runs if run.screenshot is not None]
+        await self._repository.delete(analysis)
+        await self._repository.commit()
+        for screenshot in screenshots:
+            await documents.delete(self._documents, screenshot)
+
     # --- making an analysis
 
     async def create(self, body: AnalysisCreate) -> AnalysisOut:

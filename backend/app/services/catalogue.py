@@ -11,6 +11,7 @@ from app.models.catalogue import (
     TemplateStar,
 )
 from app.repositories.catalogue import CatalogueRepository
+from app.repositories.document import DocumentRepository
 from app.schemas.catalogue import (
     MAX_EXAMPLES,
     DocumentOut,
@@ -19,6 +20,7 @@ from app.schemas.catalogue import (
     TemplateFields,
     TemplateOut,
 )
+from app.services import documents
 
 # What can be suggested as a category before anyone has made one up.
 DEFAULT_CATEGORIES = ["Identité", "Tampon", "Signature", "Code", "Formulaire", "Autre"]
@@ -34,6 +36,10 @@ class ForbiddenError(Exception):
 
 class InvalidError(Exception):
     """What was sent cannot be kept; the message says why, for the person who sent it."""
+
+
+class ConflictError(Exception):
+    """What is asked cannot be done in the state things are in; the message says why."""
 
 
 def clean_list(values: list[str], ignore_case: bool = False) -> list[str]:
@@ -88,8 +94,11 @@ def _display_name(profile) -> str:
 
 
 class CatalogueService:
-    def __init__(self, repository: CatalogueRepository, user: RequestContext) -> None:
+    def __init__(
+        self, repository: CatalogueRepository, document_repository: DocumentRepository, user: RequestContext
+    ) -> None:
         self._repository = repository
+        self._documents = document_repository
         self._user = user
 
     # --- reading
@@ -129,6 +138,22 @@ class CatalogueService:
         await self._apply(template, fields, document[1], replace_document=document[0])
         await self._repository.commit()
         return self._view(await self._repository.reload(template))
+
+    async def delete(self, template_id: str) -> None:
+        """Only the owner deletes a model; one an analysis looks for stays, or that analysis would look for nothing. Its
+        example document goes with it, unless another model uses the same one."""
+        template = await self._template(template_id)
+        if not self._is_owner(template):
+            raise ForbiddenError("Seul le propriétaire supprime le modèle.")
+        used = await self._repository.count_analyses_using(template.id)
+        if used:
+            plural = "s" if used > 1 else ""
+            raise ConflictError(f"Ce modèle est utilisé par {used} analyse{plural} : supprimez-la{plural} d’abord.")
+        document = template.document
+        await self._repository.delete(template)
+        await self._repository.commit()
+        if document is not None and not await self._repository.count_templates_with(document.id):
+            await documents.delete(self._documents, document)
 
     async def _apply(self, template: Template, fields: TemplateFields, document_id: str | None, replace_document: bool):
         cleaned = _fields_dict(fields)

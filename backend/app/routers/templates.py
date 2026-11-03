@@ -9,7 +9,7 @@ from app.schemas.catalogue import (
     TemplateOut,
     TemplateUpdate,
 )
-from app.services.catalogue import ForbiddenError, InvalidError, NotFoundError
+from app.services.catalogue import ConflictError, ForbiddenError, InvalidError, NotFoundError
 
 router = APIRouter(tags=["Catalogue"])
 
@@ -24,6 +24,8 @@ async def _run(call):
         raise HTTPException(status.HTTP_403_FORBIDDEN, str(error)) from error
     except InvalidError as error:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(error)) from error
+    except ConflictError as error:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(error)) from error
 
 
 @router.get("", summary="The catalogue: every model, searched and filtered")
@@ -46,6 +48,11 @@ async def update(template_id: str, body: TemplateUpdate, service: Catalogue) -> 
     # Absent keeps the document, null removes it: told apart by what was actually sent.
     document = ("documentId" in body.model_fields_set or "document_id" in body.model_fields_set, body.document_id)
     return await _run(service.update(template_id, body, document))
+
+
+@router.delete("/{template_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete a model: its owner only")
+async def delete(template_id: str, service: Catalogue) -> None:
+    await _run(service.delete(template_id))
 
 
 @router.put("/{template_id}/star", summary="Star a model, or take the star back")

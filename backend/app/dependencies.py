@@ -32,7 +32,7 @@ Db = Annotated[AsyncSession, Depends(get_db)]
 
 
 def get_catalogue(user: CurrentUser, db: Db) -> CatalogueService:
-    return CatalogueService(CatalogueRepository(db), user)
+    return CatalogueService(CatalogueRepository(db), DocumentRepository(db), user)
 
 
 Catalogue = Annotated[CatalogueService, Depends(get_catalogue)]

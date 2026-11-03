@@ -358,3 +358,36 @@ async def test_an_element_the_analysis_missed_is_added_by_hand_and_taken_away(db
     first_use = (await db_client.get(f"/api/analyses/{analysis['id']}")).json()["runs"][-1]
     nothing = f"/api/analyses/{analysis['id']}/runs/{first_use['id']}/elements"
     assert (await db_client.post(nothing, json={"zone": SQUARE, "templateId": models[0]})).status_code == 404
+
+
+async def test_only_the_owner_deletes_an_analysis_with_what_it_holds(db_client, as_user, models, store):
+    as_user("alice", name="Alice")
+    analysis = await create(db_client, models, isPublic=True)
+    await run(db_client, analysis, keep=True)
+    as_user("bob", name="Bob")
+    bobs = await run(db_client, analysis, pdf(2), "b.pdf", keep=True)
+    url = f"/api/analyses/{analysis['id']}"
+
+    assert (await db_client.delete(url)).status_code == 403  # he can open it, not delete it
+    as_user("root", admin=True)
+    assert (await db_client.delete(url)).status_code == 403
+    assert store.objects  # nothing was touched
+
+    as_user("alice", name="Alice")
+    assert (await db_client.delete(url)).status_code == 204
+
+    assert (await db_client.get(url)).status_code == 404
+    assert (await db_client.get("/api/analyses")).json() == []
+    assert store.objects == {}  # the screenshots of every use went too, bob's included
+    as_user("bob")
+    assert (await db_client.get(f"/api/documents/{bobs['screenshot']['id']}/pages/1")).status_code == 404
+    assert (await db_client.delete(url)).status_code == 404
+
+
+async def test_an_analysis_one_cannot_open_cannot_be_deleted_either(db_client, as_user, models):
+    as_user("alice")
+    private = await create(db_client, models)
+    as_user("bob")
+
+    assert (await db_client.delete(f"/api/analyses/{private['id']}")).status_code == 404
+    assert (await db_client.delete("/api/analyses/not-a-uuid")).status_code == 404
