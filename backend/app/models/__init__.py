@@ -6,6 +6,7 @@ from app.models.analysis import (
     DetectionClassification,
     PageClassification,
     Run,
+    RunPage,
 )
 from app.models.base import Base
 from app.models.catalogue import (
@@ -18,6 +19,7 @@ from app.models.catalogue import (
     Template,
     TemplateCategory,
     TemplateEntity,
+    TemplatePage,
     TemplateStar,
 )
 from app.models.document import Document
@@ -36,12 +38,14 @@ __all__ = [
     "EntityType",
     "PageClassification",
     "Run",
+    "RunPage",
     "Suggestion",
     "SuggestionComment",
     "SuggestionStar",
     "Template",
     "TemplateCategory",
     "TemplateEntity",
+    "TemplatePage",
     "TemplateStar",
     "UserProfile",
 ]

@@ -6,6 +6,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, EncryptedText, TimestampMixin, UUIDMixin, utcnow
+from app.models.catalogue import Template
 from app.models.document import Document
 from app.models.user import UserProfile
 
@@ -33,6 +34,8 @@ class AnalysisTemplate(Base):
     analysis_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("analyses.id", ondelete="CASCADE"), primary_key=True)
     template_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("templates.id"), primary_key=True)
 
+    template: Mapped[Template] = relationship(lazy="selectin")
+
 
 class AnalysisShare(UUIDMixin, Base):
     """Who an analysis is shared with: a person by e-mail address (personal data: encrypted) or a group by name. It is
@@ -58,27 +61,46 @@ class Run(UUIDMixin, Base):
     file_name: Mapped[str | None] = mapped_column("file_name_encrypted", EncryptedText)
     screenshot_document_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("documents.id", ondelete="SET NULL"))
     file_decision: Mapped[str | None] = mapped_column(String(8))  # kept, deleted
-    page_review_status: Mapped[str] = mapped_column(String(16), default="pending")
-    page_review_template_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("templates.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), default=utcnow)
 
     user: Mapped[UserProfile] = relationship(lazy="selectin")
     screenshot: Mapped[Document | None] = relationship(lazy="selectin")
     page_classifications: Mapped[list["PageClassification"]] = relationship(
-        order_by="PageClassification.confidence.desc()", cascade="all, delete-orphan", lazy="selectin"
+        order_by="PageClassification.page, PageClassification.confidence.desc()",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+    pages: Mapped[list["RunPage"]] = relationship(
+        order_by="RunPage.page", cascade="all, delete-orphan", lazy="selectin"
     )
     detections: Mapped[list["Detection"]] = relationship(
         order_by="Detection.position", cascade="all, delete-orphan", lazy="selectin"
     )
 
 
+class RunPage(Base):
+    """What the person decided of the classification of one page of the document tried: right, wrong, or another model
+    (and the page of it)."""
+
+    __tablename__ = "run_pages"
+
+    run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("runs.id", ondelete="CASCADE"), primary_key=True)
+    page: Mapped[int] = mapped_column(Integer, primary_key=True)
+    review_status: Mapped[str] = mapped_column(String(16), default="pending", server_default="pending")
+    review_template_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("templates.id", ondelete="SET NULL"))
+    review_template_page: Mapped[int | None] = mapped_column(Integer)
+
+
 class PageClassification(UUIDMixin, Base):
-    """Which model the page as a whole could be; no template is « other »."""
+    """What a page of the document could be: a page of a model (« form X, page 3 »), or none of them (« other »)."""
 
     __tablename__ = "page_classifications"
 
     run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("runs.id", ondelete="CASCADE"), index=True)
+    # The page of the document tried (from 1), and the page of the model it is classified as.
+    page: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
     template_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("templates.id", ondelete="CASCADE"))
+    template_page: Mapped[int | None] = mapped_column(Integer)
     confidence: Mapped[float] = mapped_column(Float)
 
 
