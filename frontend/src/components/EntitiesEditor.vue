@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { isImage, MAX_EXAMPLE_LENGTH, MAX_EXAMPLES, newEntity } from '../composables/useCatalogue'
+import { canPreview, MAX_EXAMPLE_LENGTH, MAX_EXAMPLES, newEntity } from '../composables/useCatalogue'
 import { entityTypeDefinition, entityTypeLabel, useEntityTypes } from '../composables/useEntityTypes'
 import type { TemplateDocument, TemplateEntity } from '../data/mock'
 import InfoTip from './InfoTip.vue'
@@ -157,7 +157,7 @@ defineExpose({ validate, incomplete })
               type="radio"
               :name="`mode-${entity.id}`"
               :checked="inZoneMode"
-              :disabled="!isImage(document)"
+              :disabled="!canPreview(document)"
               @change="setMode('zone')"
             />
             <label class="fr-label" :for="`mode-${entity.id}-zone`">Par zone</label>
@@ -176,7 +176,6 @@ defineExpose({ validate, incomplete })
       </div>
       <p v-if="inZoneMode && entityErrors.zone" class="fr-error-text fr-mb-0" role="alert">{{ entityErrors.zone }}</p>
       <p v-if="!document" class="fr-hint-text fr-mb-0">Ajoutez un document d’exemple pour pouvoir dessiner une zone.</p>
-      <p v-else-if="!isImage(document)" class="fr-hint-text fr-mb-0">Pas encore disponible pour un PDF : seules les images peuvent être annotées.</p>
 
       <div class="entity__meaning">
         <DsfrInputGroup
