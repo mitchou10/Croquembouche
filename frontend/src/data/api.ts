@@ -1,4 +1,16 @@
-import { groupSeed, type EntityTypeInfo, type Group, type Template, type TemplateDocument } from './mock'
+import type {
+  Analysis,
+  AnalysisRun,
+  Classification,
+  EntityTypeInfo,
+  Group,
+  Review,
+  ReviewedDetection,
+  Share,
+  Template,
+  TemplateDocument,
+  Zone,
+} from './mock'
 
 /** What the backend refuses, with the reason it gives (in French, to show as is). */
 export class ApiError extends Error {
@@ -35,11 +47,8 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 /** GET /api/entity-types */
 export const fetchEntityTypes = () => request<EntityTypeInfo[]>('GET', '/api/entity-types')
 
-/** GET /api/groups: the groups an analysis can be shared with. Still the demo data: the backend has no groups yet. */
-export async function fetchGroups(): Promise<Group[]> {
-  await Promise.resolve()
-  return structuredClone(groupSeed)
-}
+/** GET /api/groups: the groups an analysis can be shared with, the signed-in user's own. */
+export const fetchGroups = () => request<Group[]>('GET', '/api/groups')
 
 /** What a model is made of, as the backend takes it: the entities keep their id when they already exist. */
 export interface TemplateBody {
@@ -118,3 +127,80 @@ export const fromAnswer = (document: DocumentAnswer): TemplateDocument => ({
 })
 
 export const deleteDocument = (id: string) => request<void>('DELETE', `/api/documents/${id}`)
+
+// ------------------------------------------------------------------------------------------------ analyses
+
+interface ReviewAnswer {
+  status: Review['status']
+  templateId: string | null
+}
+
+interface RunAnswer extends Omit<AnalysisRun, 'fileName' | 'detections' | 'page' | 'screenshot' | 'fileDecision'> {
+  fileName: string | null
+  detections: (Omit<ReviewedDetection, 'review'> & { review: ReviewAnswer })[] | null
+  page: { classifications: Classification[]; review: ReviewAnswer } | null
+  screenshot: DocumentAnswer | null
+  fileDecision: 'kept' | 'deleted' | null
+}
+
+interface AnalysisAnswer extends Omit<Analysis, 'runs'> {
+  runs: RunAnswer[]
+}
+
+/** The backend says « none » with null: the page, by leaving it out. */
+const toReview = ({ status, templateId }: ReviewAnswer): Review => ({ status, ...(templateId && { templateId }) })
+
+function toRun(run: RunAnswer): AnalysisRun {
+  const { fileName, detections, page, screenshot, fileDecision, ...rest } = run
+  return {
+    ...rest,
+    ...(fileName && { fileName }),
+    ...(detections && { detections: detections.map((d) => ({ ...d, review: toReview(d.review) })) }),
+    ...(page && { page: { classifications: page.classifications, review: toReview(page.review) } }),
+    screenshot: screenshot ? fromAnswer(screenshot) : null,
+    ...(fileDecision && { fileDecision }),
+  }
+}
+
+const toAnalysis = (analysis: AnalysisAnswer): Analysis => ({ ...analysis, runs: analysis.runs.map(toRun) })
+
+const analyses = '/api/analyses'
+
+export const fetchAnalyses = async () => (await request<AnalysisAnswer[]>('GET', analyses)).map(toAnalysis)
+export const fetchAnalysis = async (id: string) => toAnalysis(await request<AnalysisAnswer>('GET', `${analyses}/${id}`))
+
+export interface AnalysisBody {
+  name: string
+  description: string
+  templateIds: string[]
+  isPublic: boolean
+  shares: Share[]
+}
+export const postAnalysis = async (body: AnalysisBody) => toAnalysis(await request<AnalysisAnswer>('POST', analyses, body))
+
+/** One more look at the page of an analysis; says how many there are now. */
+export const postView = async (id: string) => (await request<{ views: number }>('POST', `${analyses}/${id}/views`)).views
+
+/** Tries the analysis on a document, which makes a use of it. */
+export async function postRun(id: string, file: File, keepScreenshot: boolean): Promise<AnalysisRun> {
+  const form = new FormData()
+  form.append('file', file)
+  form.append('keepScreenshot', String(keepScreenshot))
+  return toRun(await request<RunAnswer>('POST', `${analyses}/${id}/runs`, form))
+}
+
+const runCall = async (method: string, id: string, runId: string, path: string, body?: unknown) =>
+  toRun(await request<RunAnswer>(method, `${analyses}/${id}/runs/${runId}${path}`, body))
+
+const reviewBody = (review: Review) => ({ status: review.status, ...(review.templateId && { templateId: review.templateId }) })
+
+export const putDetectionReview = (id: string, runId: string, detectionId: string, review: Review) =>
+  runCall('PUT', id, runId, `/detections/${detectionId}/review`, reviewBody(review))
+export const putPageReview = (id: string, runId: string, review: Review) =>
+  runCall('PUT', id, runId, '/page/review', reviewBody(review))
+export const postElement = (id: string, runId: string, element: { zone: Zone; templateId: string }) =>
+  runCall('POST', id, runId, '/elements', element)
+export const deleteElement = (id: string, runId: string, detectionId: string) =>
+  runCall('DELETE', id, runId, `/elements/${detectionId}`)
+export const putFileDecision = (id: string, runId: string, decision: 'kept' | 'deleted') =>
+  runCall('PUT', id, runId, '/file', { decision })
