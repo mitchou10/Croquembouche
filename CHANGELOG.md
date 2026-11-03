@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.6.0](https://github.com/mitchou10/Croquembouche/compare/v1.5.0...v1.6.0) (2026-11-03)
+
+
+### Features
+
+* **backend:** give the quality of the analysis for a person and for everyone, over every model ([7320b46](https://github.com/mitchou10/Croquembouche/commit/7320b46b346a8655a4434142dcb93d5136e3849c))
+* **backend:** measure the analysis from the decisions of the users, per model and per entity ([987978d](https://github.com/mitchou10/Croquembouche/commit/987978d17efa18fb12720de782f095093db8efba))
+* **frontend:** add an evaluation page with one's own decisions and, for an admin, everyone's ([f6bdc2d](https://github.com/mitchou10/Croquembouche/commit/f6bdc2d9bf9601a1659f7a727c57b58fe1e8a309))
+* **frontend:** show the quality of the analysis on a model, and the entity of an added element ([51dde5e](https://github.com/mitchou10/Croquembouche/commit/51dde5ed44e482197939e1323f8bddaaa5dbf9e7))
+
 ## [1.5.0](https://github.com/mitchou10/Croquembouche/compare/v1.4.0...v1.5.0) (2026-11-03)
 
 
