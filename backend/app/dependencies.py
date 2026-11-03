@@ -3,6 +3,7 @@ from typing import Annotated
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.indexing import TemplateIndexer, get_indexer
 from app.core.security.factory import RequestContext, get_current_user
 from app.db import get_db
 from app.repositories.analysis import AnalysisRepository
@@ -31,8 +32,10 @@ CurrentUser = Annotated[RequestContext, Depends(get_user)]
 Db = Annotated[AsyncSession, Depends(get_db)]
 
 
-def get_catalogue(user: CurrentUser, db: Db) -> CatalogueService:
-    return CatalogueService(CatalogueRepository(db), DocumentRepository(db), user)
+def get_catalogue(
+    user: CurrentUser, db: Db, indexer: Annotated[TemplateIndexer, Depends(get_indexer)]
+) -> CatalogueService:
+    return CatalogueService(CatalogueRepository(db), DocumentRepository(db), indexer, user)
 
 
 Catalogue = Annotated[CatalogueService, Depends(get_catalogue)]

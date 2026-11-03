@@ -406,3 +406,116 @@ async def test_the_pages_of_a_model_are_suggested_and_accepted_like_the_rest(db_
         )
     ).json()
     assert accepted["pages"][1]["name"] == "Détail" and accepted["pages"][1]["label"] == "Formulaire X · Détail"
+
+
+async def test_a_model_with_a_document_is_indexed_with_its_pages_and_its_entity_zones(db_client, as_user, indexer):
+    as_user("alice")
+    zone = {"page": 2, "points": [{"x": 0.1, "y": 0.1}, {"x": 0.4, "y": 0.1}, {"x": 0.4, "y": 0.3}]}
+    entities = [
+        {"name": "Signature", "type": "text", "zone": zone},
+        {"name": "Date", "type": "date"},
+    ]  # one has no zone
+    model = await _pdf_model(
+        db_client,
+        name="Formulaire X",
+        entities=entities,
+        pages=[{"page": 2, "name": "Pièces", "description": "Annexes"}],
+    )
+
+    [(action, message)] = indexer.calls
+
+    assert action == "index"
+    assert message["template_id"] == model["id"] and message["name"] == "Formulaire X"
+    assert message["document_id"] == model["document"]["id"]
+    assert [p["page"] for p in message["pages"]] == [1, 2, 3]
+    assert [p["key"] for p in message["pages"]] == [
+        f"documents/{model['document']['id']}/pages/{n}.png" for n in (1, 2, 3)
+    ]
+    assert (message["pages"][1]["name"], message["pages"][1]["description"]) == ("Pièces", "Annexes")
+    assert message["pages"][0]["name"] == ""
+    assert [(e["name"], e["page"]) for e in message["entities"]] == [("Signature", 2)]  # only the ones with a zone
+    assert message["entities"][0]["points"] == zone["points"]
+
+
+async def test_the_page_of_an_image_is_the_image_itself(db_client, as_user, indexer):
+    as_user("alice")
+    document = (await db_client.post("/api/documents", files={"file": ("scan.png", png())})).json()
+
+    await create(db_client, documentId=document["id"])
+
+    [(_, message)] = indexer.calls
+    assert message["pages"] == [
+        {"page": 1, "key": f"documents/{document['id']}/original.png", "name": "", "description": ""}
+    ]
+
+
+async def test_a_model_with_no_document_has_nothing_to_index_and_is_taken_out(db_client, as_user, indexer):
+    as_user("alice")
+
+    model = await create(db_client)
+
+    assert indexer.calls == [("remove", model["id"])]
+
+
+async def test_a_change_to_a_model_is_indexed_again_and_a_star_or_a_comment_is_not(db_client, as_user, indexer):
+    as_user("alice")
+    model = await _pdf_model(db_client, name="Formulaire X")
+    url = f"/api/templates/{model['id']}"
+    indexer.calls.clear()
+
+    await db_client.put(f"{url}/star")  # not what the matching sees
+    assert indexer.calls == []
+
+    await db_client.put(url, json=fields(name="Formulaire X", pages=[{"page": 1, "name": "Couverture"}]))
+    assert [a for a, _ in indexer.calls] == ["index"]
+    assert indexer.calls[0][1]["pages"][0]["name"] == "Couverture"
+
+    await db_client.put(url, json=fields(name="Formulaire X", documentId=None))  # the document is taken off
+    assert [a for a, _ in indexer.calls] == ["index", "remove"]
+
+
+async def test_an_accepted_suggestion_is_indexed_and_a_refused_one_is_not(db_client, as_user, indexer):
+    as_user("alice")
+    model = await _pdf_model(db_client, name="Formulaire X")
+    as_user("bob")
+    for name in ("Accepté", "Refusé"):
+        await db_client.post(
+            f"/api/templates/{model['id']}/suggestions", json={"fields": fields(name=name, documentId=None)}
+        )
+    suggestions = (await db_client.get(f"/api/templates/{model['id']}")).json()["suggestions"]
+    by_name = {s["fields"]["name"]: s["id"] for s in suggestions}
+    as_user("alice")
+    indexer.calls.clear()
+
+    await db_client.put(
+        f"/api/templates/{model['id']}/suggestions/{by_name['Refusé']}/decision", json={"accept": False}
+    )
+    assert indexer.calls == []
+    await db_client.put(
+        f"/api/templates/{model['id']}/suggestions/{by_name['Accepté']}/decision", json={"accept": True}
+    )
+
+    assert [(a, m["name"]) for a, m in indexer.calls] == [("index", "Accepté")]
+
+
+async def test_a_deleted_model_is_taken_out_of_the_index(db_client, as_user, indexer):
+    as_user("alice")
+    model = await _pdf_model(db_client)
+    indexer.calls.clear()
+
+    await db_client.delete(f"/api/templates/{model['id']}")
+
+    assert indexer.calls == [("remove", model["id"])]
+
+
+async def test_a_model_that_is_refused_is_not_indexed(db_client, as_user, indexer):
+    as_user("alice")
+    await db_client.post("/api/templates", json=fields(name="  "))  # invalid
+    model = await create(db_client)
+    indexer.calls.clear()
+    as_user("bob")
+
+    await db_client.put(f"/api/templates/{model['id']}", json=fields(name="Piraté"))  # not the owner
+    await db_client.delete(f"/api/templates/{model['id']}")
+
+    assert indexer.calls == []
