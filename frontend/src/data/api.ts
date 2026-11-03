@@ -219,6 +219,9 @@ export async function postRun(id: string, file: File, keepScreenshot: boolean): 
 const runCall = async (method: string, id: string, runId: string, path: string, body?: unknown) =>
   toRun(await request<RunAnswer>(method, `${analyses}/${id}/runs/${runId}${path}`, body))
 
+/** A use as it is now: the worker may have answered since. */
+export const fetchRun = (id: string, runId: string) => runCall('GET', id, runId, '')
+
 const reviewBody = (review: Review) => ({
   status: review.status,
   ...(review.templateId && { templateId: review.templateId }),

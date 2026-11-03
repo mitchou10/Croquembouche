@@ -320,6 +320,23 @@ function canOpen(analysis: Analysis, user: string, admin: boolean): boolean {
   return analysis.shares.some((s) => (s.kind === 'email' ? s.value.toLowerCase() === emailOf(user) : groups.includes(s.value)))
 }
 
+// The uses the worker has not answered yet, with how it answers, and how many times each was asked for.
+const answers = new Map<string, () => void>()
+const asked = new Map<string, number>()
+
+function answer(run: AnalysisRun, analysis: Analysis, detections: ReviewedDetection[], pages: NonNullable<AnalysisRun['pages']>, broken: boolean) {
+  answers.delete(run.id)
+  if (broken) {
+    run.status = 'failed'
+    return
+  }
+  run.status = 'done'
+  run.matches = detections.length
+  run.detections = detections
+  run.pages = pages
+  analysis.matches += run.matches
+}
+
 /** What the backend sends of a use: what it found is for the person who ran it alone. */
 function runView(run: AnalysisRun, user: string) {
   const mine = run.userId === user
@@ -421,32 +438,43 @@ function analysesRoute(user: string, admin: boolean, method: string, parts: stri
       review: { status: 'pending' as const },
       source: 'analysis' as const,
     }))
+    const pages = Array.from({ length: pagesInFile(file) }, (_, i) => ({
+      page: i + 1,
+      classifications: simulatePage(analysis, file, i + 1, pagesOfModel),
+      review: { status: 'pending' as const },
+    }))
+    // A file whose name says « slow » is answered by the worker later, as the real one is: running, then done (or failed
+    // when it says « broken »), at the second time it is asked for.
+    const later = /slow|broken/.test(file.name)
     const run: AnalysisRun = {
       id: newId('r'),
       userId: user,
       userName: user,
       hasResult: true,
       date: today(),
-      status: 'done',
-      matches: detections.length,
+      status: later ? 'running' : 'done',
+      matches: later ? 0 : detections.length,
       fileName: file.name,
-      detections,
-      pages: Array.from({ length: pagesInFile(file) }, (_, i) => ({
-        page: i + 1,
-        classifications: simulatePage(analysis, file, i + 1, pagesOfModel),
-        review: { status: 'pending' as const },
-      })),
+      detections: later ? [] : detections,
+      pages: later ? undefined : pages,
       screenshot: keep ? { id: newId('d'), name: file.name, type: file.type, url: '', pages: file.type === 'application/pdf' ? 3 : 1 } : null,
     }
     analysis.runs = [run, ...analysis.runs]
     analysis.matches += run.matches
+    if (later) answers.set(run.id, () => answer(run, analysis, detections, pages, file.name.includes('broken')))
     return reply(201, runView(run, user))
   }
 
   const run = analysis.runs.find((r) => r.id === parts[3])
   // What a use found is its person's alone, an administrator included.
   if (!run || run.userId !== user) return refuse(404, 'Not found')
-  if (parts.length === 4) return reply(200, runView(run, user))
+  if (parts.length === 4) {
+    // The worker answers the second time the use is asked for.
+    const seen = (asked.get(run.id) ?? 0) + 1
+    asked.set(run.id, seen)
+    if (seen >= 2) answers.get(run.id)?.()
+    return reply(200, runView(run, user))
+  }
   const detection = run.detections?.find((d) => d.id === parts[5])
 
   if (parts[4] === 'detections' && parts[6] === 'review') {

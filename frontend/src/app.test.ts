@@ -612,6 +612,39 @@ describe('app', () => {
         expect(useAnalyses().analyses.value.find((a) => a.id === 'a1')!.runs).toHaveLength(5)
       })
 
+      it('says the analysis is running while the worker computes, then shows the result', async () => {
+        vi.useFakeTimers()
+        try {
+          const { wrapper } = await open('a1')
+          await send(wrapper, image('slow.png'))
+          expect(wrapper.get('[data-testid="run-running"]').text()).toContain('Analyse en cours')
+          expect(figures(wrapper)).toMatchObject({ 'En cours': '1', Terminées: '3' })
+          await vi.advanceTimersByTimeAsync(4000)
+          await flushPromises()
+          expect(wrapper.find('[data-testid="run-running"]').exists()).toBe(false)
+          expect(wrapper.find('[data-testid="test-summary"]').exists()).toBe(true)
+          expect(figures(wrapper)).toMatchObject({ 'En cours': '0', Terminées: '4' })
+        } finally {
+          vi.useRealTimers()
+        }
+      })
+
+      it('says so when the worker fails, and lets the person try again', async () => {
+        vi.useFakeTimers()
+        try {
+          const { wrapper } = await open('a1')
+          await send(wrapper, image('broken.png'))
+          await vi.advanceTimersByTimeAsync(4000)
+          await flushPromises()
+          expect(wrapper.get('[data-testid="run-failed"]').text()).toContain('a échoué')
+          expect(figures(wrapper)).toMatchObject({ 'En erreur': '2' })
+          await wrapper.get('[data-testid="another"]').trigger('click')
+          expect(wrapper.find('[data-testid="dropzone"]').exists()).toBe(true)
+        } finally {
+          vi.useRealTimers()
+        }
+      })
+
       it('shows the document with the elements found outlined on it, each named and with how sure it is', async () => {
         const { wrapper } = await open('a1')
         const name = nameWith(models, 1)

@@ -32,6 +32,7 @@ const {
   modelNames,
   canSeeResult,
   startRun,
+  follow,
   reviewDetection,
   reviewPage,
   addElement,
@@ -93,6 +94,8 @@ const askAboutFile = computed(() => allReviewed.value && !!run.value?.screenshot
 
 function open(runId: string) {
   selectedRunId.value = runId
+  // A use that is still running is asked for until the worker has answered.
+  if (analysis.value && findRun(analysis.value.id, runId)?.status === 'running') follow(analysis.value.id, runId)
   viewerPage.value = 1
   current.value = 0
   adding.value = false
@@ -364,6 +367,18 @@ const sharing = computed(() => {
             </ol>
             <p class="fr-hint-text fr-mb-0">Le résultat d’un test n’est visible que par vous, même pour un administrateur.</p>
           </div>
+        </div>
+
+        <div v-else-if="run.status === 'running'" role="tabpanel" class="side__panel" data-testid="results">
+          <p class="fr-mb-0" role="status" data-testid="run-running">
+            <strong>Analyse en cours…</strong> Le résultat s’affichera ici dès qu’il sera prêt.
+          </p>
+        </div>
+
+        <div v-else-if="run.status === 'failed'" role="tabpanel" class="side__panel" data-testid="results">
+          <p class="fr-error-text fr-mb-0" role="alert" data-testid="run-failed">
+            L’analyse de ce document a échoué. Vous pouvez réessayer avec « Nouveau test ».
+          </p>
         </div>
 
         <div v-else role="tabpanel" class="side__panel" data-testid="results">

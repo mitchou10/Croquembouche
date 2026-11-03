@@ -30,6 +30,7 @@ export function resetAnalyses() {
   analyses.value = []
   failed.value = false
   actionError.value = ''
+  following.clear()
   loading = null
 }
 
@@ -47,6 +48,12 @@ async function attempt(run: () => Promise<unknown>): Promise<boolean> {
     return false
   }
 }
+
+// How often a running use is asked for, and for how long: a worker that has not answered by then is the backend's to
+// end as failed, the page only stops asking.
+const POLL_MS = 2000
+const POLL_LIMIT = 450
+const following = new Set<string>()
 
 export interface AnalysisStats {
   views: number
@@ -102,6 +109,33 @@ export function useAnalyses() {
     keep({ ...analysis, runs })
   }
 
+  /**
+   * Follows a use that is running until the worker has answered (done or failed): its state is asked for every couple of
+   * seconds, and the analysis, which counts what its uses found, is read again at the end.
+   */
+  function follow(analysisId: string, runId: string) {
+    if (following.has(runId)) return
+    following.add(runId)
+    let asked = 0
+    const tick = async () => {
+      let over = ++asked > POLL_LIMIT
+      try {
+        const run = await api.fetchRun(analysisId, runId)
+        keepRun(analysisId, run)
+        if (run.status !== 'running') {
+          keep(await api.fetchAnalysis(analysisId))
+          over = true
+        }
+      } catch (error) {
+        // The use is gone (its analysis was deleted): nothing to follow. Anything else is tried again.
+        over ||= error instanceof api.ApiError && error.status === 404
+      }
+      if (over) following.delete(runId)
+      else setTimeout(tick, POLL_MS)
+    }
+    setTimeout(tick, POLL_MS)
+  }
+
   /** One more look at the page of an analysis: counted for whoever can open it, and for no one else. */
   const registerView = (id: string) =>
     attempt(async () => {
@@ -140,8 +174,8 @@ export function useAnalyses() {
   const findRun = (analysisId: string, runId: string) => find(analysisId)?.runs.find((r) => r.id === runId)
 
   /**
-   * Tries an analysis on a document, which makes a use of it: done at once, with what was found (still to be looked at),
-   * and the screenshots of the document if asked to keep them. Null when the backend refuses, and `actionError` says why.
+   * Tries an analysis on a document, which makes a use of it: running while the worker computes (see `follow`), then done
+   * with what was found (still to be looked at), and the screenshots of the document if asked to keep them. Null when the backend refuses, and `actionError` says why.
    */
   async function startRun(analysisId: string, file: File, options: { saveScreenshot: boolean }): Promise<AnalysisRun | null> {
     let started: AnalysisRun | null = null
@@ -150,6 +184,7 @@ export function useAnalyses() {
       keepRun(analysisId, started)
       // What the analysis counts of its uses has changed.
       keep(await api.fetchAnalysis(analysisId))
+      if (started.status === 'running') follow(analysisId, started.id)
     })
     return done ? started : null
   }
@@ -209,6 +244,7 @@ export function useAnalyses() {
     ownsRun,
     canSeeResult,
     startRun,
+    follow,
     reviewDetection,
     reviewPage,
     addElement,
