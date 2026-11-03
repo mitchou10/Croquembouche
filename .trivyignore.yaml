@@ -1,0 +1,3 @@
+# Trivy findings accepted as noise rather than fixed. Add an entry here, with the reason, only
+# when the underlying condition can't actually be satisfied.
+misconfigurations: []

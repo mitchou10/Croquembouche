@@ -1,0 +1,129 @@
+name: Unit Tests
+
+# Every service runs its tests with coverage, then ci/crap.py turns the lcov report
+# into a CRAP score per function (complexity^2 * (1 - coverage)^3 + complexity).
+# It only reports until the repository variable CRAP_BLOCKING is set to `true`;
+# CRAP_THRESHOLD (default 30) is the score above which a function fails the job.
+# Add the services the backend tests need (database, queue...) under
+# `unit-tests-backend` as they appear.
+
+on:
+  workflow_call:
+    inputs:
+      NODE_VERSION:
+        description: Node version used to run the frontend tests
+        required: false
+        type: string
+        default: "22"
+      PYTHON_VERSION:
+        description: Python version used to run backend tests
+        required: false
+        type: string
+        default: "3.12"
+  workflow_dispatch:
+    inputs:
+      NODE_VERSION:
+        description: Node version used to run the frontend tests
+        required: false
+        type: string
+        default: "22"
+      PYTHON_VERSION:
+        description: Python version used to run backend tests
+        required: false
+        type: string
+        default: "3.12"
+
+env:
+  CRAP_THRESHOLD: ${{ vars.CRAP_THRESHOLD || '30' }}
+  CRAP_FAIL: ${{ vars.CRAP_BLOCKING == 'true' && '--fail' || '' }}
+
+jobs:
+  unit-tests-frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          package_json_file: frontend/package.json
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ inputs.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+
+      # Vitest with @vitest/coverage-v8, reporters: ['text', 'lcov'] -> frontend/coverage/lcov.info
+      - name: Run tests
+        working-directory: frontend
+        run: pnpm run test:coverage
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+
+      - name: CRAP score
+        run: uvx --from lizard==1.17.13 python ci/crap.py --src frontend/src --lcov frontend/coverage/lcov.info --name frontend $CRAP_FAIL
+
+  unit-tests-backend:
+    name: Backend
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          python-version: ${{ inputs.PYTHON_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: uv sync --group dev
+
+      - name: Run tests
+        working-directory: backend
+        run: uv run pytest --cov=app --cov-report=term-missing --cov-report=lcov:coverage.lcov
+
+      - name: CRAP score
+        run: uvx --from lizard==1.17.13 python ci/crap.py --src backend/app --lcov backend/coverage.lcov --name backend $CRAP_FAIL
+
+  unit-tests-worker-template-matching:
+    name: worker/template_matching
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          python-version: ${{ inputs.PYTHON_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: worker/template_matching/uv.lock
+
+      - name: Install worker dependencies
+        working-directory: worker/template_matching
+        run: uv sync --group dev
+
+      - name: Run tests
+        working-directory: worker/template_matching
+        run: uv run pytest --cov=app --cov-report=term-missing --cov-report=lcov:coverage.lcov
+
+      - name: CRAP score
+        run: uvx --from lizard==1.17.13 python ci/crap.py --src worker/template_matching/app --lcov worker/template_matching/coverage.lcov --name worker/template_matching $CRAP_FAIL
