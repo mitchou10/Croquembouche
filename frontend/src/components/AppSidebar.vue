@@ -9,6 +9,7 @@ const { displayName, isAdmin } = useSession()
 const everyone = [
   { name: 'catalogue', path: '/catalogue', label: 'Catalogue', icon: 'fr-icon-folder-2-line' },
   { name: 'analyses', path: '/analyses', label: 'Analyses', icon: 'fr-icon-search-line' },
+  { name: 'evaluation', path: '/evaluation', label: 'Évaluation', icon: 'fr-icon-checkbox-circle-line' },
 ]
 // What only the administrator has.
 const administrator = [{ name: 'overview', path: '/vue-d-ensemble', label: 'Vue d’ensemble', icon: 'fr-icon-line-chart-line' }]

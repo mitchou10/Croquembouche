@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { fetchQuality } from '../data/api'
-import type { Quality, TemplateQuality } from '../data/mock'
+import type { TemplateQuality } from '../data/mock'
+import QualityBlocks from './QualityBlocks.vue'
 
 /**
  * How right the analysis has been on a model, from what people decided of its predictions (validated, invalidated,
@@ -33,26 +34,6 @@ const percent = (value: number | null) => (value === null ? '—' : `${Math.roun
 const nothingDecided = computed(
   () => !!quality.value && quality.value.pages.reviewed + quality.value.elements.reviewed + quality.value.pages.missed + quality.value.elements.missed === 0,
 )
-
-interface Block {
-  id: string
-  title: string
-  quality: Quality
-  extra?: { label: string; value: string }
-}
-const blocks = computed<Block[]>(() =>
-  quality.value
-    ? [
-        {
-          id: 'pages',
-          title: 'Classification des pages',
-          quality: quality.value.pages,
-          extra: { label: 'Page du modèle exacte', value: percent(quality.value.pages.exact) },
-        },
-        { id: 'elements', title: 'Éléments trouvés', quality: quality.value.elements },
-      ]
-    : [],
-)
 </script>
 
 <template>
@@ -68,29 +49,13 @@ const blocks = computed<Block[]>(() =>
         Personne n’a encore validé ni corrigé de prédiction pour ce modèle.
       </p>
 
-      <section v-for="block in blocks" :key="block.id" class="quality__block" :aria-labelledby="`quality-${block.id}`" :data-testid="`quality-${block.id}`">
-        <h3 :id="`quality-${block.id}`" class="fr-h6 fr-mb-0">{{ block.title }}</h3>
-        <dl class="quality__figures">
-          <div><dt>Précision</dt><dd data-testid="precision">{{ percent(block.quality.precision) }}</dd></div>
-          <div><dt>Rappel</dt><dd data-testid="recall">{{ percent(block.quality.recall) }}</dd></div>
-          <div><dt>F1</dt><dd data-testid="f1">{{ percent(block.quality.f1) }}</dd></div>
-          <div v-if="block.extra"><dt>{{ block.extra.label }}</dt><dd data-testid="exact">{{ block.extra.value }}</dd></div>
-        </dl>
-        <p class="quality__counts fr-mb-0" data-testid="counts">
-          {{ block.quality.correct }} juste{{ block.quality.correct > 1 ? 's' : '' }} ·
-          {{ block.quality.wrong }} fausse{{ block.quality.wrong > 1 ? 's' : '' }} ·
-          {{ block.quality.missed }} manquée{{ block.quality.missed > 1 ? 's' : '' }} ·
-          {{ block.quality.pending }} en attente
-        </p>
-        <p v-if="block.quality.meanConfidenceCorrect !== null || block.quality.meanConfidenceWrong !== null" class="quality__confidence fr-hint-text fr-mb-0" data-testid="confidence">
-          Confiance moyenne : {{ percent(block.quality.meanConfidenceCorrect) }} quand c’était juste, {{ percent(block.quality.meanConfidenceWrong) }} quand c’était faux.
-        </p>
-      </section>
+      <QualityBlocks :pages="quality.pages" :elements="quality.elements" />
 
       <section class="quality__block" aria-labelledby="quality-entities" data-testid="quality-entities">
         <h3 id="quality-entities" class="fr-h6 fr-mb-0">Entités</h3>
         <p v-if="!quality.entities.length" class="fr-hint-text fr-mb-0">Ce modèle n’a pas d’entité.</p>
-        <table v-else class="quality__table">
+        <div v-else class="scroll">
+        <table class="quality__table">
           <caption class="fr-sr-only">Qualité de chaque entité du modèle</caption>
           <thead>
             <tr>
@@ -115,12 +80,17 @@ const blocks = computed<Block[]>(() =>
             </tr>
           </tbody>
         </table>
+        </div>
       </section>
     </template>
   </div>
 </template>
 
 <style scoped>
+.scroll {
+  overflow-x: auto;
+}
+
 .quality {
   display: grid;
   gap: 0.75rem;
@@ -131,24 +101,6 @@ const blocks = computed<Block[]>(() =>
   gap: 0.375rem;
   padding: 0.5rem 0.75rem 0.625rem;
   border: 1px solid var(--border-default-grey);
-}
-
-.quality__figures {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem 1.5rem;
-  margin: 0;
-}
-
-.quality__figures dt {
-  font-size: 0.75rem;
-  color: var(--text-mention-grey);
-}
-
-.quality__figures dd {
-  margin: 0;
-  font-size: 1.25rem;
-  font-weight: 700;
 }
 
 .quality__table {
