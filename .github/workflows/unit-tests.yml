@@ -19,7 +19,7 @@ on:
         description: Python version used to run backend tests
         required: false
         type: string
-        default: "3.12"
+        default: "3.13"
   workflow_dispatch:
     inputs:
       NODE_VERSION:
@@ -31,7 +31,7 @@ on:
         description: Python version used to run backend tests
         required: false
         type: string
-        default: "3.12"
+        default: "3.13"
 
 env:
   CRAP_THRESHOLD: ${{ vars.CRAP_THRESHOLD || '30' }}
@@ -72,7 +72,7 @@ jobs:
         uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
 
       - name: CRAP score
-        run: uvx --from lizard==1.17.13 python ci/crap.py --src frontend/src --lcov frontend/coverage/lcov.info --name frontend $CRAP_FAIL
+        run: uvx --from lizard==1.17.13 python ci/crap.py --src frontend/src --root frontend --lcov frontend/coverage/lcov.info --name frontend $CRAP_FAIL
 
   unit-tests-backend:
     name: Backend
@@ -99,7 +99,7 @@ jobs:
         run: uv run pytest --cov=app --cov-report=term-missing --cov-report=lcov:coverage.lcov
 
       - name: CRAP score
-        run: uvx --from lizard==1.17.13 python ci/crap.py --src backend/app --lcov backend/coverage.lcov --name backend $CRAP_FAIL
+        run: uvx --from lizard==1.17.13 python ci/crap.py --src backend/app --root backend --lcov backend/coverage.lcov --name backend $CRAP_FAIL
 
   unit-tests-worker-template-matching:
     name: worker/template_matching
@@ -126,4 +126,4 @@ jobs:
         run: uv run pytest --cov=app --cov-report=term-missing --cov-report=lcov:coverage.lcov
 
       - name: CRAP score
-        run: uvx --from lizard==1.17.13 python ci/crap.py --src worker/template_matching/app --lcov worker/template_matching/coverage.lcov --name worker/template_matching $CRAP_FAIL
+        run: uvx --from lizard==1.17.13 python ci/crap.py --src worker/template_matching/app --root worker/template_matching --lcov worker/template_matching/coverage.lcov --name worker/template_matching $CRAP_FAIL

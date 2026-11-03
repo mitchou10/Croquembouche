@@ -5,7 +5,7 @@ Complexity comes from lizard (Python, TypeScript and Vue alike), coverage from a
 lcov report (pytest-cov and vitest both write one), so a single script serves
 every service.
 
-    crap.py --src backend/app --lcov backend/coverage.lcov --name backend
+    crap.py --src backend/app --lcov backend/coverage.lcov --root backend --name backend
 
 Prints a table of the worst functions, appends it to the GitHub job summary when
 there is one, and exits 1 if a function is over --threshold and --fail is set.
@@ -44,7 +44,11 @@ def complexity(src: Path) -> list[dict]:
     ).stdout
     fields = ["nloc", "ccn", "tokens", "params", "length", "location", "file", "name", "long_name", "start", "end"]
     rows = (dict(zip(fields, row)) for row in csv.reader(io.StringIO(out)))
-    return [r for r in rows if r["file"].endswith((".py", ".ts", ".vue"))]
+    return [
+        r
+        for r in rows
+        if r["file"].endswith((".py", ".ts", ".vue")) and not r["file"].endswith((".test.ts", ".spec.ts"))
+    ]
 
 
 def crap(ccn: int, cov: float) -> float:
@@ -56,12 +60,13 @@ def main() -> int:
     ap.add_argument("--src", required=True, type=Path, help="source directory to analyse")
     ap.add_argument("--lcov", required=True, type=Path, help="lcov coverage report")
     ap.add_argument("--name", required=True, help="label used in the report")
+    ap.add_argument("--root", type=Path, default=Path.cwd(), help="directory the lcov paths are relative to")
     ap.add_argument("--threshold", type=float, default=float(os.environ.get("CRAP_THRESHOLD", 30)))
     ap.add_argument("--fail", action="store_true", help="exit 1 when a function is over the threshold")
     ap.add_argument("--top", type=int, default=15)
     args = ap.parse_args()
 
-    coverage = parse_lcov(args.lcov, Path.cwd())
+    coverage = parse_lcov(args.lcov, args.root.resolve())
     rows = []
     for fn in complexity(args.src):
         lines = coverage.get(str(Path(fn["file"]).resolve()))

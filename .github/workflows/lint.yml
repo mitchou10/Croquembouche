@@ -16,7 +16,7 @@ on:
         description: Python version used to run the backend linter
         required: false
         type: string
-        default: "3.12"
+        default: "3.13"
   workflow_dispatch:
     inputs:
       NODE_VERSION:
@@ -28,7 +28,7 @@ on:
         description: Python version used to run the backend linter
         required: false
         type: string
-        default: "3.12"
+        default: "3.13"
 
 jobs:
   lint-frontend:
