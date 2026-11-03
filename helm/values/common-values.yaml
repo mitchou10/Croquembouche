@@ -101,7 +101,7 @@ jobs:
       enabled: true
       types:
       - "post-install"
-      - "pre-upgrade"
+      - "post-upgrade"
       weight: 0
       deletePolicy: "before-hook-creation,hook-succeeded"
     image:
