@@ -1,0 +1,2440 @@
+import VueDsfr from '@gouvminint/vue-dsfr'
+import { flushPromises, mount } from '@vue/test-utils'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+import { createMemoryHistory, createRouter } from 'vue-router'
+import App from './App.vue'
+import { resetAnalyses, simulatePage, simulateTest, useAnalyses } from './composables/useAnalyses'
+import { resetCatalogue } from './composables/useCatalogue'
+import { loadGroups } from './composables/useGroups'
+import { useSession } from './composables/useSession'
+import { requireAuth, routes } from './router'
+
+// Routes load their view on demand, which takes real time rather than just a few microtasks.
+const landsOn = (router: ReturnType<typeof createRouter>, name: string) =>
+  vi.waitFor(() => expect(router.currentRoute.value.name).toBe(name))
+
+async function mountAt(path: string) {
+  const router = createRouter({ history: createMemoryHistory(), routes })
+  router.beforeEach(requireAuth)
+  await router.push(path)
+  const wrapper = mount(App, { global: { plugins: [VueDsfr, router] } })
+  await flushPromises()
+  return { wrapper, router }
+}
+
+const { analyses } = useAnalyses()
+
+describe('app', () => {
+  beforeEach(() => {
+    let blobs = 0
+    URL.createObjectURL = vi.fn(() => `blob:test-${++blobs}`)
+    URL.revokeObjectURL = vi.fn()
+    localStorage.clear()
+    resetCatalogue()
+    resetAnalyses()
+    useSession().logout()
+  })
+
+  it('shows the landing page to visitors', async () => {
+    const { wrapper } = await mountAt('/')
+    expect(wrapper.text()).toContain('Retrouvez un motif dans toutes vos images')
+  })
+
+  it('redirects a visitor from the app to the login page', async () => {
+    const { router } = await mountAt('/analyses')
+    expect(router.currentRoute.value.name).toBe('login')
+  })
+
+  it('signs in, lands on the catalogue and shows the sidebar with the user id', async () => {
+    const { wrapper, router } = await mountAt('/connexion')
+    await wrapper.get('input[autocomplete="username"]').setValue('alice')
+    await wrapper.get('form').trigger('submit')
+    await landsOn(router, 'catalogue')
+    const nav = wrapper.get('nav[aria-label="Navigation principale"]')
+    expect(nav.text()).toContain('Catalogue')
+    expect(nav.text()).toContain('Analyses')
+    expect(wrapper.get('.app-sidebar__user').text()).toBe('alice')
+  })
+
+  it('does not follow an external redirect after login', async () => {
+    const { wrapper, router } = await mountAt('/connexion?redirect=//evil.example')
+    await wrapper.get('input[autocomplete="username"]').setValue('alice')
+    await wrapper.get('form').trigger('submit')
+    await landsOn(router, 'catalogue')
+  })
+
+  it('refuses a blank identifier', async () => {
+    const { wrapper, router } = await mountAt('/connexion')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(router.currentRoute.value.name).toBe('login')
+    expect(wrapper.text()).toContain('Renseignez votre identifiant.')
+  })
+
+  it('opens the settings from the user id and signs out from there', async () => {
+    useSession().login('alice')
+    const { wrapper, router } = await mountAt('/catalogue')
+    await wrapper.get('.app-sidebar__user').trigger('click')
+    await landsOn(router, 'settings')
+    await wrapper.findAll('button').find((b) => b.text() === 'Se déconnecter')!.trigger('click')
+    await landsOn(router, 'landing')
+    expect(useSession().isAuthenticated.value).toBe(false)
+  })
+
+  it('filters the catalogue', async () => {
+    useSession().login('alice')
+    const { wrapper } = await mountAt('/catalogue')
+    await wrapper.get('input[type="search"]').setValue('QR')
+    expect(wrapper.text()).toContain('Code QR de suivi')
+    expect(wrapper.text()).not.toContain('Logo Marianne')
+  })
+
+  it('creates a template that the creator owns and can then pick in a new analysis', async () => {
+    useSession().login('dana')
+    const { wrapper, router } = await mountAt('/catalogue/nouveau')
+    await field(wrapper, 'Nom').setValue('Tampon préfecture')
+    await field(wrapper, 'Description').setValue('Tampon rectangulaire bleu')
+    await wrapper.get('form').trigger('submit')
+    await landsOn(router, 'catalogue-detail')
+    await vi.waitFor(() => expect(wrapper.get('h1').text()).toBe('Tampon préfecture'))
+    expect(wrapper.get('[data-testid="template-owner"]').text()).toBe('dana')
+    expect(wrapper.text()).toContain('Modifier')
+
+    await router.push('/analyses/nouvelle')
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Tampon préfecture'))
+  })
+
+  it('validates the template form', async () => {
+    useSession().login('dana')
+    const { wrapper, router } = await mountAt('/catalogue/nouveau')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(router.currentRoute.value.name).toBe('catalogue-new')
+    expect(wrapper.text()).toContain('Donnez un nom au modèle.')
+    expect(wrapper.text()).toContain('Ajoutez une description.')
+    expect(wrapper.get('[data-testid="missing"]').text()).toBe('À compléter : le nom, la description.')
+  })
+
+  it('stars and unstars a template from its page', async () => {
+    useSession().login('dana')
+    const { wrapper } = await mountAt('/catalogue/t3')
+    const star = wrapper.get('[data-testid="star"]')
+    expect(star.text()).toContain('Ajouter aux favoris (0)')
+    await star.trigger('click')
+    expect(star.text()).toContain('Retirer des favoris (1)')
+    expect(star.attributes('aria-pressed')).toBe('true')
+    await star.trigger('click')
+    expect(star.text()).toContain('Ajouter aux favoris (0)')
+  })
+
+  it('lets the owner edit directly', async () => {
+    useSession().login('bob.durand')
+    const { wrapper, router } = await mountAt('/catalogue/t5/modifier')
+    expect(wrapper.get('h1').text()).toBe('Modifier le modèle')
+    await wrapper.findAll('input:not([type="file"])')[0].setValue('Case cochée v2')
+    await wrapper.get('form').trigger('submit')
+    await landsOn(router, 'catalogue-detail')
+    await vi.waitFor(() => expect(wrapper.get('h1').text()).toBe('Case cochée v2'))
+  })
+
+  it('turns a non-owner edit into a suggestion that the owner accepts', async () => {
+    useSession().login('dana')
+    const first = await mountAt('/catalogue/t2')
+    expect(first.wrapper.text()).toContain('Suggérer une modification')
+    await first.router.push('/catalogue/t2/modifier')
+    await vi.waitFor(() => expect(first.wrapper.get('h1').text()).toBe('Suggérer une modification'))
+    await field(first.wrapper, 'Nom').setValue('Tampon « Reçu » v2')
+    await first.wrapper.get('form').trigger('submit')
+    await landsOn(first.router, 'catalogue-detail')
+    // A suggestion is sent to be seen: the page opens on the suggestions.
+    expect(first.router.currentRoute.value.query.onglet).toBe('suggestions')
+    await vi.waitFor(() => expect(first.wrapper.text()).toContain('En attente'))
+    expect(first.wrapper.get('h1').text()).toBe('Tampon « Reçu »') // unchanged until accepted
+    expect(first.wrapper.text()).not.toContain('Accepter')
+
+    useSession().login('bob.durand')
+    const second = await mountAt('/catalogue/t2?onglet=suggestions')
+    await second.wrapper.findAll('button').find((b) => b.text() === 'Accepter')!.trigger('click')
+    await vi.waitFor(() => expect(second.wrapper.get('h1').text()).toBe('Tampon « Reçu » v2'))
+    expect(second.wrapper.text()).toContain('Acceptée')
+  })
+
+  it('refuses a suggestion that changes nothing', async () => {
+    useSession().login('dana')
+    const { wrapper, router } = await mountAt('/catalogue/t4/modifier')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(router.currentRoute.value.name).toBe('catalogue-edit')
+    expect(wrapper.text()).toContain('Modifiez au moins un champ')
+  })
+
+  describe('the administrator', () => {
+    it('is named in the sidebar, and only the administrator', async () => {
+      useSession().login('admin')
+      const admin = await mountAt('/catalogue')
+      expect(admin.wrapper.get('[data-testid="admin-badge"]').text()).toBe('Admin')
+      useSession().login('dana')
+      const other = await mountAt('/catalogue')
+      expect(other.wrapper.find('[data-testid="admin-badge"]').exists()).toBe(false)
+    })
+
+    it('can accept a suggestion on a model it does not own', async () => {
+      useSession().login('admin')
+      const { wrapper } = await mountAt('/catalogue/t1?onglet=suggestions')
+      expect(wrapper.get('[role="tablist"]').text()).toContain('1 en attente')
+      // Not the owner: the page offers to suggest, not to edit.
+      expect(wrapper.get('a[href$="/catalogue/t1/modifier"]').text()).toBe('Suggérer une modification')
+      await wrapper.findAll('button').find((b) => b.text() === 'Accepter')!.trigger('click')
+      await flushPromises()
+      expect(wrapper.text()).toContain('Acceptée')
+      expect(wrapper.get('[data-testid="description"]').text()).toContain('version couleur')
+    })
+
+    it('can refuse one too', async () => {
+      useSession().login('admin')
+      const { wrapper } = await mountAt('/catalogue/t1?onglet=suggestions')
+      await wrapper.findAll('button').find((b) => b.text() === 'Refuser')!.trigger('click')
+      await flushPromises()
+      expect(wrapper.text()).toContain('Refusée')
+      expect(wrapper.get('[data-testid="description"]').text()).not.toContain('version couleur')
+    })
+
+    it('is told on the catalogue which models have suggestions waiting, as is their owner and not anyone else', async () => {
+      const waiting = async (who: string) => {
+        useSession().login(who)
+        const { wrapper } = await mountAt('/catalogue')
+        return wrapper.text().includes('1 suggestion')
+      }
+      expect(await waiting('admin')).toBe(true)
+      expect(await waiting('alice.martin')).toBe(true)
+      expect(await waiting('dana')).toBe(false)
+    })
+
+    it('says that « admin » gives the administrator\'s rights, on the sign-in page', async () => {
+      const { wrapper } = await mountAt('/connexion')
+      expect(wrapper.text()).toContain('« admin » donne les droits d’administrateur')
+    })
+  })
+
+  describe('the catalogue, all or only one\'s own', () => {
+    const tileTitles = (wrapper: ReturnType<typeof mount>) => wrapper.findAll('.tile__title').map((t) => t.text())
+
+    it('shows everything at first, and says which view is on', async () => {
+      useSession().login('alice.martin')
+      const { wrapper } = await mountAt('/catalogue')
+      expect(button(wrapper, 'Tous').attributes('aria-pressed')).toBe('true')
+      expect(button(wrapper, 'Mes modèles').attributes('aria-pressed')).toBe('false')
+      expect(wrapper.get('[data-testid="list-total"]').text()).toBe('11 modèles')
+    })
+
+    it('keeps only one\'s own models, then everything again', async () => {
+      useSession().login('alice.martin')
+      const { wrapper } = await mountAt('/catalogue')
+      await button(wrapper, 'Mes modèles').trigger('click')
+      expect(button(wrapper, 'Mes modèles').attributes('aria-pressed')).toBe('true')
+      expect(tileTitles(wrapper)).toEqual(['Logo Marianne', 'Signature type', 'Cachet de la poste', 'Logo CAF'])
+      expect(wrapper.get('[data-testid="list-total"]').text()).toBe('4 modèles')
+      await button(wrapper, 'Tous').trigger('click')
+      expect(wrapper.get('[data-testid="list-total"]').text()).toBe('11 modèles')
+    })
+
+    it('goes with the search', async () => {
+      useSession().login('alice.martin')
+      const { wrapper } = await mountAt('/catalogue')
+      await button(wrapper, 'Mes modèles').trigger('click')
+      await wrapper.get('input[type="search"]').setValue('logo')
+      expect(tileTitles(wrapper)).toEqual(['Logo Marianne', 'Logo CAF'])
+      await wrapper.get('input[type="search"]').setValue('zzz')
+      expect(wrapper.text()).toContain('Aucun modèle ne correspond à « zzz ».')
+    })
+
+    it('invites whoever has no model yet to make one', async () => {
+      useSession().login('dana')
+      const { wrapper } = await mountAt('/catalogue')
+      await button(wrapper, 'Mes modèles').trigger('click')
+      expect(wrapper.text()).toContain('Vous n’avez pas encore de modèle.')
+      expect(wrapper.get('[data-testid="list-total"]').text()).toBe('0 modèle')
+    })
+
+    it('includes a model one has just made', async () => {
+      useSession().login('dana')
+      const { wrapper, router } = await mountAt('/catalogue/nouveau')
+      await field(wrapper, 'Nom').setValue('Mon tampon')
+      await field(wrapper, 'Description').setValue('Fait par moi')
+      await wrapper.get('form').trigger('submit')
+      await landsOn(router, 'catalogue-detail')
+      await router.push('/catalogue')
+      await vi.waitFor(() => expect(button(wrapper, 'Mes modèles')).toBeDefined())
+      await button(wrapper, 'Mes modèles').trigger('click')
+      expect(tileTitles(wrapper)).toEqual(['Mon tampon'])
+    })
+  })
+
+  describe('the cards', () => {
+    it('show the description of each model, the whole card being the link', async () => {
+      useSession().login('dana')
+      const { wrapper } = await mountAt('/catalogue')
+      const first = wrapper.get('.tile')
+      expect(first.get('.tile__description').text()).toBe('Bloc-marque de la République française.')
+      expect(first.findAll('a')).toHaveLength(1)
+      expect(first.get('a').attributes('href')).toBe('/catalogue/t1')
+    })
+
+    it('say what an analysis is for, or else which models it looks for', async () => {
+      useSession().login('admin') // opens everything
+      const { wrapper } = await mountAt('/analyses')
+      const description = (title: string) =>
+        wrapper.findAll('.tile').find((t) => t.get('.tile__title').text() === title)!.get('.tile__description').text()
+      expect(description('Accusés de réception T3')).toBe('Tampons des accusés du troisième trimestre, à recouper avec le registre.')
+      expect(description('Courriers octobre')).toBe('Logo Marianne, Filigrane « Copie »') // no description: the models
+    })
+
+    it('say whether an analysis is public, shared, or neither', async () => {
+      useSession().login('admin') // opens everything
+      const { wrapper } = await mountAt('/analyses')
+      const sharing = (title: string) =>
+        wrapper.findAll('.tile').find((t) => t.get('.tile__title').text() === title)!.find('[data-testid="sharing"]')
+      expect(sharing('Courriers octobre').exists()).toBe(false) // private, and shared with no one
+      expect(sharing('Accusés de réception T3').text()).toBe('Partagée · 1')
+      expect(sharing('Contrats signés').text()).toBe('Partagée · 2')
+      expect(sharing('Contrats signés').attributes('title')).toContain('marie.dupont@example.org, Service contentieux')
+      expect(sharing('Attestations CAF').text()).toBe('Publique')
+      expect(sharing('Attestations CAF').attributes('title')).toBe('Visible par tous les utilisateurs')
+    })
+
+    it('show the models and the details of each analysis', async () => {
+      useSession().login('admin') // opens everything
+      const { wrapper } = await mountAt('/analyses')
+      const first = wrapper.get('.tile')
+      expect(first.get('.tile__title').text()).toBe('Courriers octobre')
+      expect(first.get('.tile__description').text()).toBe('Logo Marianne, Filigrane « Copie »')
+      expect(first.text()).toContain('Terminée')
+      expect(first.text()).toContain('2026-10-30 · 128 correspondances')
+      expect(first.get('a').attributes('href')).toBe('/analyses/a1') // its dashboard
+    })
+  })
+
+  describe('the analyses one can open', () => {
+    const tile = (wrapper: ReturnType<typeof mount>, title: string) =>
+      wrapper.findAll('.tile').find((t) => t.get('.tile__title').text() === title)!
+
+    it('are links to their dashboard, and the others are named without one', async () => {
+      useSession().login('alice.martin')
+      const { wrapper } = await mountAt('/analyses')
+      await vi.waitFor(() => expect(tile(wrapper, 'Accusés de réception T3').find('a').exists()).toBe(true)) // by her group, once loaded
+      expect(tile(wrapper, 'Courriers octobre').get('a').attributes('href')).toBe('/analyses/a1') // hers
+      expect(tile(wrapper, 'Attestations CAF').get('a').attributes('href')).toBe('/analyses/a5') // public
+      const closed = tile(wrapper, 'Formulaires CERFA') // someone else's, and private
+      expect(closed.find('a').exists()).toBe(false)
+      expect(closed.get('[data-testid="restricted"]').text()).toBe('Accès restreint')
+      expect(closed.get('.tile__description').text()).toBe('Vous n’avez pas accès à cette analyse.')
+      expect(closed.text()).not.toContain('correspondance') // nothing of what is inside
+    })
+
+    it('are all of them for the administrator', async () => {
+      useSession().login('admin')
+      const { wrapper } = await mountAt('/analyses')
+      expect(wrapper.findAll('.tile a').length).toBe(wrapper.findAll('.tile').length)
+      expect(wrapper.findAll('[data-testid="restricted"]')).toHaveLength(0)
+    })
+
+    it('include what is shared with one\'s address or one\'s group', async () => {
+      useSession().login('dana')
+      const { wrapper } = await mountAt('/analyses')
+      await vi.waitFor(() => expect(tile(wrapper, 'Courriers de la poste').find('a').exists()).toBe(true)) // group « Préfecture de Paris »
+      expect(tile(wrapper, 'Courriers octobre').find('a').exists()).toBe(false)
+      await wrapper.get('button[title="Page suivante"]').trigger('click') // the seventh analysis is on the second page
+      expect(tile(wrapper, 'Contrats paraphés').find('a').exists()).toBe(true) // dana@example.org
+    })
+
+    it('opens the dashboard when one is clicked', async () => {
+      useSession().login('alice.martin')
+      const { wrapper, router } = await mountAt('/analyses')
+      await tile(wrapper, 'Courriers octobre').get('a').trigger('click')
+      await vi.waitFor(() => expect(router.currentRoute.value.name).toBe('analysis-detail'))
+      expect(router.currentRoute.value.params.id).toBe('a1')
+    })
+  })
+
+  describe('the dashboard of an analysis', () => {
+    const figures = (wrapper: ReturnType<typeof mount>) =>
+      Object.fromEntries(wrapper.findAll('[data-testid="stat"]').map((s) => [s.get('[data-testid="stat-label"]').text(), s.get('[data-testid="stat-value"]').text()]))
+    const open = async (id: string, who = 'alice.martin') => {
+      await loadGroups()
+      useSession().login(who)
+      const page = await mountAt(`/analyses/${id}`)
+      await vi.waitFor(() => expect(page.wrapper.find('.fixed-page, [data-testid="no-access"]').exists()).toBe(true))
+      return page
+    }
+
+    it('shows the name, its state, who made it and what it looks for', async () => {
+      const { wrapper } = await open('a1')
+      expect(wrapper.get('h1').text()).toBe('Courriers octobre')
+      expect(wrapper.find('.fr-badge').text()).toBe('Terminée')
+      expect(wrapper.get('[data-testid="meta"]').text()).toContain('alice.martin')
+      expect(wrapper.get('[data-testid="meta"]').text()).toContain('Logo Marianne, Filigrane « Copie »')
+      expect(wrapper.get('[data-testid="sharing"]').text()).toBe('Privée')
+    })
+
+    it('shows how often it was seen and used, and how its uses went', async () => {
+      const { wrapper } = await open('a1')
+      // 42 views, and this one: the page is counted when it opens.
+      expect(figures(wrapper)).toEqual({ Vues: '43', Utilisations: '4', Terminées: '3', 'En cours': '0', 'En erreur': '1' })
+    })
+
+    it('counts a view each time the page is opened, for whoever can', async () => {
+      await open('a1')
+      const second = await open('a1')
+      expect(figures(second.wrapper).Vues).toBe('44')
+      const { analyses } = useAnalyses()
+      expect(analyses.value.find((a) => a.id === 'a1')!.views).toBe(44)
+    })
+
+    const showRuns = async (wrapper: ReturnType<typeof mount>) => {
+      await wrapper.findAll('[role="tab"]').find((t) => t.text().startsWith('Utilisations'))!.trigger('click')
+    }
+    const showElements = async (wrapper: ReturnType<typeof mount>) => {
+      await wrapper.findAll('[role="tab"]').find((t) => t.text().startsWith('Éléments'))!.trigger('click')
+    }
+    const showPage = async (wrapper: ReturnType<typeof mount>) => {
+      await wrapper.findAll('[role="tab"]').find((t) => t.text() === 'Page')!.trigger('click')
+    }
+
+    it('names the uses on a tab, with how many there are', async () => {
+      const { wrapper } = await open('a5')
+      expect(wrapper.findAll('[role="tab"]').map((t) => t.text())).toEqual(['Résultat', 'Utilisations (5)'])
+      expect(wrapper.get('[role="tab"][aria-selected="true"]').text()).toBe('Résultat') // the test comes first
+      expect(wrapper.find('[data-testid="run"]').exists()).toBe(false)
+    })
+
+    it('lists the last uses, a page at a time', async () => {
+      const { wrapper } = await open('a5') // five uses
+      await showRuns(wrapper)
+      expect(wrapper.findAll('[data-testid="run"]')).toHaveLength(4)
+      expect(wrapper.get('[data-testid="pager-count"]').text()).toBe('1 / 2')
+      expect(wrapper.findAll('[data-testid="run"]')[0].text()).toContain('2026-10-12')
+      expect(wrapper.findAll('[data-testid="run"]')[0].text()).toContain('alice.martin')
+      expect(wrapper.findAll('[data-testid="run"]')[0].text()).toContain('214 correspondances')
+      await wrapper.get('button[title="Page suivante"]').trigger('click')
+      expect(wrapper.findAll('[data-testid="run"]')).toHaveLength(1)
+      expect(wrapper.findAll('[data-testid="run"]')[0].text()).toContain('En échec')
+    })
+
+    it('has no pager when the uses fit on one page', async () => {
+      const { wrapper } = await open('a1')
+      await showRuns(wrapper)
+      expect(wrapper.findAll('[data-testid="run"]')).toHaveLength(4)
+      expect(wrapper.find('[data-testid="pager-count"]').exists()).toBe(false)
+    })
+
+    it('says whether the analysis is public or shared', async () => {
+      expect((await open('a5')).wrapper.get('[data-testid="sharing"]').text()).toBe('Publique')
+      expect((await open('a4')).wrapper.get('[data-testid="sharing"]').text()).toBe('Partagée · 2')
+    })
+
+    it('is for everyone who can open the analysis: by a group, by an address, because it is public', async () => {
+      expect((await open('a2', 'bob.durand')).wrapper.get('h1').text()).toBe('Accusés de réception T3') // owner
+      expect((await open('a2', 'alice.martin')).wrapper.get('h1').text()).toBe('Accusés de réception T3') // her group
+      expect((await open('a7', 'dana')).wrapper.get('h1').text()).toBe('Contrats paraphés') // her address
+      expect((await open('a5', 'dana')).wrapper.get('h1').text()).toBe('Attestations CAF') // public
+      const group = await open('a6', 'dana') // « Préfecture de Paris »
+      expect(figures(group.wrapper).Utilisations).toBe('2')
+    })
+
+    it('is for the administrator whatever the analysis', async () => {
+      const { wrapper } = await open('a3', 'admin')
+      expect(wrapper.get('h1').text()).toBe('Formulaires CERFA')
+      expect(figures(wrapper)['En erreur']).toBe('2')
+    })
+
+    it('says so, and counts nothing, when one cannot open it', async () => {
+      const { wrapper } = await open('a3', 'dana')
+      expect(wrapper.get('[data-testid="no-access"]').text()).toContain('Vous n’avez pas accès à cette analyse.')
+      expect(wrapper.find('h1').exists()).toBe(false)
+      expect(useAnalyses().analyses.value.find((a) => a.id === 'a3')!.views).toBe(9)
+    })
+
+    it('says so for an analysis that does not exist', async () => {
+      useSession().login('alice.martin')
+      await loadGroups()
+      const { wrapper } = await mountAt('/analyses/nope')
+      await vi.waitFor(() => expect(wrapper.text()).toContain('Cette analyse n’existe pas.'))
+    })
+
+    it('shows a new analysis as one use, running, and no view yet but its own', async () => {
+      useSession().login('dana')
+      await loadGroups()
+      const created = useAnalyses().createAnalysis({ name: 'À moi', description: 'Pour voir.', templateIds: ['t1'], isPublic: false, shares: [] })
+      const { wrapper } = await mountAt(`/analyses/${created.id}`)
+      await vi.waitFor(() => expect(wrapper.find('h1').exists()).toBe(true))
+      expect(figures(wrapper)).toEqual({ Vues: '1', Utilisations: '1', Terminées: '0', 'En cours': '1', 'En erreur': '0' })
+      expect(wrapper.get('[data-testid="meta"]').text()).toContain('Pour voir.')
+    })
+
+    describe('testing the analysis', () => {
+      const send = async (wrapper: ReturnType<typeof mount>, file: File) => {
+        const input = wrapper.get('input[type="file"]')
+        Object.defineProperty(input.element, 'files', { value: [file], configurable: true })
+        await input.trigger('change')
+        await flushPromises()
+      }
+      const detections = (wrapper: ReturnType<typeof mount>) => wrapper.findAll('[data-testid="detection"]')
+      /** Sends the document and goes to the elements, where what the analysis found is listed. */
+      const sendShow = async (wrapper: ReturnType<typeof mount>, file: File) => {
+        await send(wrapper, file)
+        await showElements(wrapper)
+      }
+      const summary = (wrapper: ReturnType<typeof mount>) => wrapper.get('[data-testid="test-summary"]').text()
+      const models = ['t1', 't6']
+      /** A name of file in which the made-up analysis finds at least `atLeast` elements, or none at all (`atLeast` 0). */
+      const nameWith = (templateIds: string[], atLeast: number) =>
+        Array.from({ length: 300 }, (_, i) => `essai-${i}.png`).find((name) => {
+          const n = simulateTest({ templateIds }, { name, size: 1 }).length
+          return atLeast === 0 ? n === 0 : n >= atLeast
+        })!
+      const image = (name: string) => new File(['x'], name, { type: 'image/png' })
+
+      it('starts with the way it works, a place to drop a document, and the choice of keeping a capture', async () => {
+        const { wrapper } = await open('a1')
+        expect(wrapper.get('h2#tester-title').text()).toBe('Tester l’analyse')
+        expect(wrapper.get('[data-testid="dropzone"]').text()).toContain('Déposez un document ici')
+        expect(wrapper.get('[data-testid="dropzone"]').text()).toContain('image ou PDF, 20 Mo au plus')
+        const steps = wrapper.get('[data-testid="steps"]').text()
+        expect(steps).toContain('Logo Marianne, Filigrane « Copie »') // what it looks for
+        expect(steps).toContain('Un test est une utilisation')
+        expect(steps).toContain('Validez ou invalidez chaque prédiction')
+        expect(steps).toContain('visible que par vous, même pour un administrateur')
+        expect(wrapper.get('[data-testid="save-screenshot"]').element.checked).toBe(true) // kept unless said otherwise
+        expect(wrapper.find('[data-testid="detection"]').exists()).toBe(false)
+        expect(wrapper.find('.doc-viewer').exists()).toBe(false)
+      })
+
+      it('takes an image or a PDF', async () => {
+        const { wrapper } = await open('a1')
+        expect(wrapper.get('input[type="file"]').attributes('accept')).toBe('image/png,image/jpeg,image/webp,image/gif,application/pdf')
+      })
+
+      it('tries the analysis as soon as a document is chosen, which is a use of it', async () => {
+        const { wrapper } = await open('a1')
+        await sendShow(wrapper, image(nameWith(models, 1)))
+        expect(wrapper.find('[data-testid="steps"]').exists()).toBe(false)
+        expect(wrapper.find('[data-testid="dropzone"]').exists()).toBe(false)
+        expect(detections(wrapper)).toHaveLength(1)
+        expect(figures(wrapper)).toMatchObject({ Utilisations: '5', Terminées: '4' }) // 4 and 3 before
+        expect(useAnalyses().analyses.value.find((a) => a.id === 'a1')!.runs).toHaveLength(5)
+      })
+
+      it('shows the document with the elements found outlined on it, each named and with how sure it is', async () => {
+        const { wrapper } = await open('a1')
+        const name = nameWith(models, 1)
+        await send(wrapper, image(name))
+        expect(wrapper.get('h2#tester-title').text()).toBe('Document testé')
+        expect(wrapper.get('[data-testid="tested-name"]').text()).toBe(name)
+        expect(wrapper.find('.doc-viewer img').attributes('src')).toMatch(/^blob:test-/)
+        const found = simulateTest({ templateIds: models }, { name, size: 1 })
+        expect(wrapper.findAll('[data-testid="entity-zone"]')).toHaveLength(found.length)
+        const labels = wrapper.findAll('[data-testid="entity-label"]').map((l) => l.text())
+        expect(labels).toHaveLength(found.length)
+        for (const label of labels) expect(label).toMatch(/^(Logo Marianne|Filigrane « Copie »|Autre, non reconnu) · \d+ %$/)
+      })
+
+      it('sums up what was found, and how many predictions have been looked at', async () => {
+        const { wrapper } = await open('a1')
+        await send(wrapper, image(nameWith(models, 1)))
+        expect(summary(wrapper)).toMatch(/^\d+ éléments? · \d modèles? sur 2 · 0 \/ \d+ vérifiée$/)
+      })
+
+      it('shows each element in turn, with what it could be and how sure the analysis is of each', async () => {
+        const { wrapper } = await open('a1')
+        const name = nameWith(models, 2)
+        await sendShow(wrapper, image(name))
+        const found = simulateTest({ templateIds: models }, { name, size: 1 })
+        expect(detections(wrapper)).toHaveLength(1) // one at a time
+        expect(wrapper.get('[data-testid="pager-count"]').text()).toBe(`1 / ${found.length}`)
+        const rows = wrapper.findAll('[data-testid="classification"]')
+        expect(rows).toHaveLength(found[0].classifications.length)
+        expect(rows[0].classes()).toContain('classes__row--best')
+        const percents = rows.map((r) => Number(r.get('.classes__percent').text().replace(' %', '')))
+        expect(percents.reduce((n, p) => n + p, 0)).toBe(100)
+        expect([...percents].sort((a, b) => b - a)).toEqual(percents)
+        expect(wrapper.get('[data-testid="detection-confidence"]').text()).toBe(`${percents[0]} %`)
+        await wrapper.get('button[title="Élément suivant"]').trigger('click')
+        expect(wrapper.get('h3').text()).toBe('Élément 2')
+      })
+
+      it('outlines in red, on the document, the element being shown', async () => {
+        const { wrapper } = await open('a1')
+        await sendShow(wrapper, image(nameWith(models, 2)))
+        const highlighted = () => wrapper.findAll('[data-testid="entity-zone"]').map((z) => z.classes().includes('doc-viewer__polygon--highlight'))
+        expect(highlighted().filter(Boolean)).toHaveLength(1)
+        expect(highlighted()[0]).toBe(true)
+        await wrapper.get('button[title="Élément suivant"]').trigger('click')
+        expect(highlighted()[0]).toBe(false)
+        expect(highlighted()[1]).toBe(true)
+      })
+
+      it('says so when nothing is found, which is still a use, with the document shown', async () => {
+        const { wrapper } = await open('a1')
+        await send(wrapper, image(nameWith(models, 0)))
+        expect(wrapper.get('[data-testid="nothing-found"]').text()).toBe('Aucun élément trouvé dans ce document.')
+        expect(wrapper.find('[data-testid="detection"]').exists()).toBe(false)
+        expect(wrapper.findAll('[data-testid="entity-zone"]')).toHaveLength(0)
+        expect(wrapper.find('.doc-viewer').exists()).toBe(true)
+        expect(figures(wrapper).Utilisations).toBe('5')
+      })
+
+      it('refuses a document that is not an image or a PDF, makes no use of it, and keeps the place to drop one', async () => {
+        const { wrapper } = await open('a1')
+        await send(wrapper, new File(['x'], 'notes.txt', { type: 'text/plain' }))
+        expect(wrapper.get('[role="alert"]').text()).toContain('image')
+        expect(wrapper.find('[data-testid="dropzone"]').exists()).toBe(true)
+        expect(figures(wrapper).Utilisations).toBe('4')
+        await send(wrapper, png())
+        expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+        expect(wrapper.find('[data-testid="dropzone"]').exists()).toBe(false)
+      })
+
+      it('takes a document dropped on the place for it', async () => {
+        const { wrapper } = await open('a1')
+        const file = image(nameWith(models, 1))
+        const zone = wrapper.get('[data-testid="dropzone"]')
+        await zone.trigger('dragover')
+        expect(zone.classes()).toContain('dropzone--over')
+        await zone.trigger('dragleave')
+        expect(zone.classes()).not.toContain('dropzone--over')
+        await zone.trigger('drop', { dataTransfer: { files: [file] } })
+        await flushPromises()
+        expect(wrapper.get('[data-testid="tested-name"]').text()).toBe(file.name)
+        await showElements(wrapper)
+        expect(detections(wrapper)).toHaveLength(1)
+      })
+
+      it('says what it can of a PDF: the elements, and no capture to show', async () => {
+        const { wrapper } = await open('a1')
+        await sendShow(wrapper, new File(['x'], nameWith(models, 1).replace('.png', '.pdf'), { type: 'application/pdf' }))
+        expect(detections(wrapper)).toHaveLength(1)
+        expect(wrapper.find('.doc-viewer').exists()).toBe(false)
+        expect(wrapper.get('[data-testid="no-screenshot"]').text()).toContain('Aucune capture n’a été enregistrée')
+      })
+
+      it('answers the same for the same document', async () => {
+        const { wrapper } = await open('a1')
+        const file = image(nameWith(models, 1))
+        await sendShow(wrapper, file)
+        const first = wrapper.get('[data-testid="detection"]').text()
+        await wrapper.get('[data-testid="another"]').trigger('click')
+        await sendShow(wrapper, file)
+        expect(wrapper.get('[data-testid="detection"]').text()).toBe(first)
+      })
+
+      it('goes back to the place to drop a document with « Nouveau test », and keeps the result among the uses', async () => {
+        const { wrapper } = await open('a1')
+        await send(wrapper, image(nameWith(models, 1)))
+        await wrapper.get('[data-testid="another"]').trigger('click')
+        expect(wrapper.find('[data-testid="dropzone"]').exists()).toBe(true)
+        expect(wrapper.find('[data-testid="steps"]').exists()).toBe(true)
+        expect(wrapper.get('[role="tab"]:not([aria-selected="true"])').text()).toBe('Utilisations (5)')
+        expect(wrapper.findAll('[role="tab"]')[1].text()).toBe('Utilisations (5)')
+      })
+
+      it('lists every class of an analysis of many models, four at most, saying how many are left', async () => {
+        useSession().login('admin')
+        await loadGroups()
+        const ids = ['t1', 't2', 't3', 't4', 't5']
+        const many = useAnalyses().createAnalysis({ name: 'Beaucoup', description: '', templateIds: ids, isPublic: true, shares: [] })
+        const { wrapper } = await mountAt(`/analyses/${many.id}`)
+        await vi.waitFor(() => expect(wrapper.find('h1').exists()).toBe(true))
+        await send(wrapper, image(nameWith(ids, 1)))
+        expect(wrapper.findAll('[data-testid="classification"]')).toHaveLength(4)
+        expect(wrapper.get('[data-testid="classifications-hidden"]').text()).toBe('+ 2 autres classes encore moins probables')
+      })
+
+      it('keeps the result when the tab of the uses is looked at, and comes back to it', async () => {
+        const { wrapper } = await open('a1')
+        await send(wrapper, image(nameWith(models, 1)))
+        await showRuns(wrapper)
+        expect(wrapper.find('[data-testid="runs"]').exists()).toBe(true)
+        expect(wrapper.find('[data-testid="test-summary"]').exists()).toBe(false)
+        await wrapper.findAll('[role="tab"]')[0].trigger('click')
+        expect(wrapper.find('[data-testid="test-summary"]').exists()).toBe(true)
+        expect(wrapper.find('.doc-viewer').exists()).toBe(true) // and the document never went away
+      })
+
+      it('forgets what was shown when another analysis is shown', async () => {
+        const { wrapper, router } = await open('a1')
+        await send(wrapper, image(nameWith(models, 1)))
+        await router.push('/analyses/a4')
+        await vi.waitFor(() => expect(wrapper.get('h1').text()).toBe('Contrats signés'))
+        expect(wrapper.find('[data-testid="test-summary"]').exists()).toBe(false)
+        expect(wrapper.find('[data-testid="dropzone"]').exists()).toBe(true)
+        expect(wrapper.get('[data-testid="steps"]').text()).toContain('Signature type')
+      })
+
+      describe('keeping a capture of the document, or not', () => {
+        it('keeps one by default, and says so', async () => {
+          const { wrapper } = await open('a1')
+          await send(wrapper, image(nameWith(models, 1)))
+          expect(wrapper.find('.doc-viewer img').exists()).toBe(true)
+          expect(wrapper.get('[data-testid="file-state"]').text()).toContain('Capture enregistrée.')
+          expect(useAnalyses().analyses.value.find((a) => a.id === 'a1')!.runs[0].screenshot).toMatchObject({ type: 'image/png' })
+        })
+
+        it('keeps none when the box is unticked: the elements are listed without the document', async () => {
+          const { wrapper } = await open('a1')
+          await wrapper.get('[data-testid="save-screenshot"]').setValue(false)
+          await send(wrapper, image(nameWith(models, 1)))
+          expect(wrapper.find('.doc-viewer').exists()).toBe(false)
+          expect(wrapper.get('[data-testid="no-screenshot"]').text()).toContain('Aucune capture n’a été enregistrée pour ce test')
+          expect(wrapper.get('[data-testid="file-state"]').text()).toBe('Capture non enregistrée.')
+          expect(useAnalyses().analyses.value.find((a) => a.id === 'a1')!.runs[0].screenshot).toBeNull()
+          await showElements(wrapper)
+          expect(detections(wrapper)).toHaveLength(1) // the predictions can still be looked at
+        })
+
+        it('keeps none of a PDF, even when asked to', async () => {
+          const { wrapper } = await open('a1')
+          await send(wrapper, new File(['x'], nameWith(models, 1).replace('.png', '.pdf'), { type: 'application/pdf' }))
+          expect(wrapper.get('[data-testid="file-state"]').text()).toBe('Capture non enregistrée.')
+        })
+      })
+
+      describe('looking at the predictions', () => {
+        const trial = async () => {
+          const page = await open('a1')
+          await send(page.wrapper, image(nameWith(models, 2)))
+          await showElements(page.wrapper)
+          return page
+        }
+        const state = (wrapper: ReturnType<typeof mount>) => wrapper.get('[data-testid="review-state"]').text()
+        const labels = (wrapper: ReturnType<typeof mount>) => wrapper.findAll('[data-testid="entity-label"]').map((l) => l.text())
+        const progress = (wrapper: ReturnType<typeof mount>) => wrapper.get('[data-testid="progress"]').text()
+
+        it('starts with every prediction still to look at', async () => {
+          const { wrapper } = await trial()
+          expect(state(wrapper)).toBe('À vérifier')
+          expect(progress(wrapper)).toMatch(/^0 \/ \d+ vérifiée$/)
+        })
+
+        it('confirms a prediction, which is then said on the document', async () => {
+          const { wrapper } = await trial()
+          const before = labels(wrapper)[0]
+          await wrapper.get('[data-testid="review-validate"]').trigger('click')
+          expect(state(wrapper)).toBe('Prédiction validée')
+          expect(progress(wrapper)).toMatch(/^1 \/ \d+ vérifiée$/)
+          expect(labels(wrapper)[0]).toBe(`✓ ${before.replace(/ · \d+ %$/, '')}`)
+        })
+
+        it('rejects a prediction, which is then said on the document', async () => {
+          const { wrapper } = await trial()
+          const before = labels(wrapper)[0]
+          await wrapper.get('[data-testid="review-invalidate"]').trigger('click')
+          expect(state(wrapper)).toBe('Prédiction invalidée')
+          expect(labels(wrapper)[0]).toBe(`✗ ${before.replace(/ · \d+ %$/, '')} (invalidée)`)
+        })
+
+        it('annotates a prediction with a model of the analysis, and only with one of them', async () => {
+          const { wrapper } = await trial()
+          const options = wrapper.findAll('[data-testid="review-annotate"] option').filter((o) => o.attributes('disabled') === undefined)
+          expect(options.map((o) => o.text())).toEqual(['Logo Marianne', 'Filigrane « Copie »']) // not « other », nor the others of the catalogue
+          await wrapper.get('[data-testid="review-annotate"]').setValue('t6')
+          expect(state(wrapper)).toBe('Annotée : Filigrane « Copie »')
+          expect(labels(wrapper)[0]).toBe('✎ Filigrane « Copie »')
+        })
+
+        it('takes a decision back, or changes it', async () => {
+          const { wrapper } = await trial()
+          await wrapper.get('[data-testid="review-validate"]').trigger('click')
+          await wrapper.get('[data-testid="review-invalidate"]').trigger('click')
+          expect(state(wrapper)).toBe('Prédiction invalidée')
+          expect(progress(wrapper)).toMatch(/^1 \//)
+          await wrapper.get('[data-testid="review-reset"]').trigger('click')
+          expect(state(wrapper)).toBe('À vérifier')
+          expect(progress(wrapper)).toMatch(/^0 \//)
+        })
+
+        it('has a decision for each element of its own', async () => {
+          const { wrapper } = await trial()
+          await wrapper.get('[data-testid="review-validate"]').trigger('click')
+          await wrapper.get('button[title="Élément suivant"]').trigger('click')
+          expect(state(wrapper)).toBe('À vérifier')
+          await wrapper.get('[data-testid="review-invalidate"]').trigger('click')
+          await wrapper.get('button[title="Élément précédent"]').trigger('click')
+          expect(state(wrapper)).toBe('Prédiction validée')
+        })
+
+        it('is kept in the use: it is still there after looking at the other tab', async () => {
+          const { wrapper } = await trial()
+          await wrapper.get('[data-testid="review-validate"]').trigger('click')
+          await showRuns(wrapper)
+          await wrapper.get('[data-testid="run-open"]').trigger('click') // the use just made, first in the list
+          await showElements(wrapper)
+          expect(state(wrapper)).toBe('Prédiction validée')
+        })
+      })
+
+      describe('the classification of the page', () => {
+        const trial = async (n = 1) => {
+          const page = await open('a1')
+          const name = nameWith(models, n)
+          await send(page.wrapper, image(name))
+          return { ...page, name }
+        }
+        const state = (wrapper: ReturnType<typeof mount>) => wrapper.get('[data-testid="review-state"]').text()
+        const progress = (wrapper: ReturnType<typeof mount>) => wrapper.get('[data-testid="progress"]').text()
+        const tabsOf = (wrapper: ReturnType<typeof mount>) => wrapper.findAll('[role="tab"]').map((t) => t.text())
+
+        it('has a tab of its own, which comes first, and one for the elements and one for the uses', async () => {
+          const { wrapper, name } = await trial()
+          const found = simulateTest({ templateIds: models }, { name, size: 1 }).length
+          expect(tabsOf(wrapper)).toEqual(['Page', `Éléments (${found})`, 'Utilisations (5)'])
+          expect(wrapper.get('[role="tab"][aria-selected="true"]').text()).toBe('Page')
+        })
+
+        it('says which model the page corresponds to, how sure the analysis is, and what else it could be', async () => {
+          const { wrapper, name } = await trial()
+          const expected = simulatePage({ templateIds: models }, { name, size: 1 })
+          const card = wrapper.get('[data-testid="page-card"]')
+          expect(card.get('h3').text()).toBe('Classification de la page')
+          const best = expected[0].templateId === 't1' ? 'Logo Marianne' : 'Filigrane « Copie »'
+          expect(card.get('[data-testid="detection-best"]').text()).toBe(best)
+          expect(card.get('[data-testid="detection-confidence"]').text()).toBe(`${Math.round(expected[0].confidence * 100)} %`)
+          expect(card.findAll('[data-testid="classification"]')).toHaveLength(expected.length)
+          const percents = card.findAll('.classes__percent').map((p) => Number(p.text().replace(' %', '')))
+          expect(percents.reduce((n, p) => n + p, 0)).toBe(100)
+        })
+
+        it('is not one of the elements, and is not drawn on the document', async () => {
+          const { wrapper } = await trial()
+          expect(wrapper.find('[data-testid="detection"]').exists()).toBe(false) // the card of an element
+          expect(wrapper.find('[data-testid="pager-count"]').exists()).toBe(false)
+          expect(wrapper.findAll('[data-testid="entity-label"]').length).toBe(simulateTest({ templateIds: models }, { name: nameWith(models, 1), size: 1 }).length)
+        })
+
+        it('is still to be looked at, and counted with the elements', async () => {
+          const { wrapper, name } = await trial()
+          const found = simulateTest({ templateIds: models }, { name, size: 1 }).length
+          expect(state(wrapper)).toBe('À vérifier')
+          expect(progress(wrapper)).toBe(`0 / ${found + 1} vérifiée`)
+        })
+
+        it('is confirmed with a button', async () => {
+          const { wrapper } = await trial()
+          await wrapper.get('[data-testid="review-validate"]').trigger('click')
+          expect(state(wrapper)).toBe('Prédiction validée')
+          expect(progress(wrapper)).toMatch(/^1 \/ \d+ vérifiée$/)
+        })
+
+        it('is rejected with a button', async () => {
+          const { wrapper } = await trial()
+          await wrapper.get('[data-testid="review-invalidate"]').trigger('click')
+          expect(state(wrapper)).toBe('Prédiction invalidée')
+        })
+
+        it('is annotated with a model of the analysis, and with no other', async () => {
+          const { wrapper } = await trial()
+          const options = wrapper.findAll('[data-testid="review-annotate"] option').filter((o) => o.attributes('disabled') === undefined)
+          expect(options.map((o) => o.text())).toEqual(['Logo Marianne', 'Filigrane « Copie »'])
+          await wrapper.get('[data-testid="review-annotate"]').setValue('t6')
+          expect(state(wrapper)).toBe('Annotée : Filigrane « Copie »')
+        })
+
+        it('has a decision taken back, or changed', async () => {
+          const { wrapper } = await trial()
+          await wrapper.get('[data-testid="review-validate"]').trigger('click')
+          await wrapper.get('[data-testid="review-invalidate"]').trigger('click')
+          expect(state(wrapper)).toBe('Prédiction invalidée')
+          await wrapper.get('[data-testid="review-reset"]').trigger('click')
+          expect(state(wrapper)).toBe('À vérifier')
+        })
+
+        it('keeps its decision when the other tabs are looked at', async () => {
+          const { wrapper } = await trial()
+          await wrapper.get('[data-testid="review-validate"]').trigger('click')
+          await showElements(wrapper)
+          await showRuns(wrapper)
+          await showPage(wrapper)
+          expect(state(wrapper)).toBe('Prédiction validée')
+        })
+
+        it('is its own decision, apart from the elements\'', async () => {
+          const { wrapper } = await trial(2)
+          await wrapper.get('[data-testid="review-validate"]').trigger('click') // the page
+          await showElements(wrapper)
+          expect(state(wrapper)).toBe('À vérifier') // the first element is another matter
+        })
+
+        it('is looked at from the list of the uses too', async () => {
+          const { wrapper } = await open('a1')
+          await showRuns(wrapper)
+          await wrapper.findAll('[data-testid="run-open"]')[0].trigger('click') // the demo use
+          expect(wrapper.get('[data-testid="page-card"]').exists()).toBe(true)
+          await wrapper.get('[data-testid="review-validate"]').trigger('click')
+          expect(state(wrapper)).toBe('Prédiction validée')
+        })
+
+        it('is what the question about the file waits for, as much as the elements', async () => {
+          const { wrapper } = await trial(1)
+          await showElements(wrapper)
+          const total = Number(wrapper.get('[data-testid="pager-count"]').text().split(' / ')[1])
+          for (let i = 0; i < total; i++) {
+            await wrapper.get('[data-testid="review-validate"]').trigger('click')
+            if (i < total - 1) await wrapper.get('button[title="Élément suivant"]').trigger('click')
+          }
+          expect(wrapper.find('[data-testid="file-question"]').exists()).toBe(false) // the page is not looked at yet
+          await showPage(wrapper)
+          await wrapper.get('[data-testid="review-validate"]').trigger('click')
+          expect(wrapper.find('[data-testid="file-question"]').exists()).toBe(true)
+        })
+      })
+
+      describe('adding an element by hand', () => {
+        const trial = async (options: { capture?: boolean; file?: File } = {}) => {
+          const page = await open('a1')
+          if (options.capture === false) await page.wrapper.get('[data-testid="save-screenshot"]').setValue(false)
+          await send(page.wrapper, options.file ?? image(nameWith(models, 1)))
+          await showElements(page.wrapper)
+          return page
+        }
+        const add = (wrapper: ReturnType<typeof mount>) => wrapper.get('[data-testid="add-element"]')
+        const elementsTab = (wrapper: ReturnType<typeof mount>) => wrapper.findAll('[role="tab"]')[1].text()
+        const count = (wrapper: ReturnType<typeof mount>) => Number(elementsTab(wrapper).match(/\((\d+)\)/)![1])
+        const zones = (wrapper: ReturnType<typeof mount>) => wrapper.findAll('[data-testid="entity-zone"]')
+        /** Draws a triangle on the document, closed with Enter. */
+        const draw = async (wrapper: ReturnType<typeof mount>) => {
+          await click(wrapper, [20, 10])
+          await click(wrapper, [120, 10])
+          await click(wrapper, [120, 60])
+          key('Enter')
+          await flushPromises()
+        }
+
+        it('is offered with the elements, and not with the page', async () => {
+          const { wrapper } = await trial()
+          expect(add(wrapper).text()).toBe('Ajouter un élément')
+          expect(add(wrapper).attributes('disabled')).toBeUndefined()
+          await showPage(wrapper)
+          expect(wrapper.find('[data-testid="add-element"]').exists()).toBe(false)
+        })
+
+        it('needs the capture of the document, to draw on', async () => {
+          const { wrapper } = await trial({ capture: false })
+          expect(add(wrapper).attributes('disabled')).toBeDefined()
+          expect(add(wrapper).attributes('title')).toContain('Il faut une capture du document')
+          expect(wrapper.get('[data-testid="cannot-draw"]').text()).toContain('gardez une capture du document')
+        })
+
+        it('cannot be done on a PDF, which has no capture', async () => {
+          const { wrapper } = await trial({ file: new File(['x'], nameWith(models, 1).replace('.png', '.pdf'), { type: 'application/pdf' }) })
+          expect(add(wrapper).attributes('disabled')).toBeDefined()
+        })
+
+        it('cannot be done once the file is deleted', async () => {
+          const { wrapper } = await trial()
+          await wrapper.get('[data-testid="file-state"] [data-testid="file-delete"]').trigger('click')
+          expect(add(wrapper).attributes('disabled')).toBeDefined()
+        })
+
+        it('asks which model it is, among those of the analysis only, and for a zone on the document', async () => {
+          const { wrapper } = await trial()
+          await add(wrapper).trigger('click')
+          const panel = wrapper.get('[data-testid="adding"]')
+          expect(panel.findAll('option').map((o) => o.text())).toEqual(['Logo Marianne', 'Filigrane « Copie »'])
+          expect(panel.get('[data-testid="adding-hint"]').text()).toContain('Dessinez la zone sur le document')
+          expect(wrapper.find('[data-testid="add-element"]').exists()).toBe(false) // the button gives way to the panel
+          expect(wrapper.find('[data-testid="zoom-level"]').exists()).toBe(true)
+          expect(wrapper.findAll('.doc-viewer button').map((b) => b.text())).toEqual(expect.arrayContaining(['Polygone', 'Rectangle'])) // the tools
+        })
+
+        it('is given up with Cancel, or Escape', async () => {
+          const { wrapper } = await trial()
+          await add(wrapper).trigger('click')
+          await wrapper.get('[data-testid="add-cancel"]').trigger('click')
+          expect(wrapper.find('[data-testid="adding"]').exists()).toBe(false)
+          expect(wrapper.findAll('.doc-viewer button').map((b) => b.text())).not.toContain('Polygone')
+          await add(wrapper).trigger('click')
+          key('Escape')
+          await flushPromises()
+          expect(wrapper.find('[data-testid="adding"]').exists()).toBe(false)
+        })
+
+        it('adds an element when a polygon is drawn, annotated with the model chosen', async () => {
+          const { wrapper } = await trial()
+          const rect = stubStage()
+          const before = count(wrapper)
+          await add(wrapper).trigger('click')
+          await draw(wrapper)
+          expect(count(wrapper)).toBe(before + 1)
+          expect(wrapper.find('[data-testid="adding"]').exists()).toBe(false)
+          expect(wrapper.find('[data-testid="manual-element"]').exists()).toBe(true) // and it is the one shown
+          expect(wrapper.get('[data-testid="manual-element"]').text()).toContain('Ajouté à la main')
+          expect(wrapper.get('[data-testid="manual-model"]').text()).toBe('Logo Marianne')
+          expect(zones(wrapper).at(-1)!.attributes('points')).toBe('10,10 60,10 60,60')
+          expect(wrapper.findAll('[data-testid="entity-label"]').at(-1)!.text()).toBe('✎ Logo Marianne')
+          rect.mockRestore()
+        })
+
+        it('annotates with the model picked in the list', async () => {
+          const { wrapper } = await trial()
+          const rect = stubStage()
+          await add(wrapper).trigger('click')
+          await wrapper.get('[data-testid="new-element-model"]').setValue('t6')
+          await draw(wrapper)
+          expect(wrapper.get('[data-testid="manual-model"]').text()).toBe('Filigrane « Copie »')
+          expect(wrapper.findAll('[data-testid="entity-label"]').at(-1)!.text()).toBe('✎ Filigrane « Copie »')
+          rect.mockRestore()
+        })
+
+        it('takes a rectangle as well as a polygon', async () => {
+          const { wrapper } = await trial()
+          const rect = stubStage()
+          await add(wrapper).trigger('click')
+          await wrapper.findAll('.doc-viewer button').find((b) => b.text() === 'Rectangle')!.trigger('click')
+          await drag(wrapper, [20, 10], [120, 60])
+          expect(zones(wrapper).at(-1)!.attributes('points')).toBe('10,10 60,10 60,60 10,60')
+          rect.mockRestore()
+        })
+
+        it('counts as looked at, as a decision already taken', async () => {
+          const { wrapper } = await trial()
+          const rect = stubStage()
+          const before = wrapper.get('[data-testid="progress"]').text().match(/^(\d+) \/ (\d+)/)!
+          await add(wrapper).trigger('click')
+          await draw(wrapper)
+          const after = wrapper.get('[data-testid="progress"]').text().match(/^(\d+) \/ (\d+)/)!
+          expect([Number(after[1]), Number(after[2])]).toEqual([Number(before[1]) + 1, Number(before[2]) + 1])
+          rect.mockRestore()
+        })
+
+        it('has neither prediction to look at nor confidence: it is the person\'s own annotation', async () => {
+          const { wrapper } = await trial()
+          const rect = stubStage()
+          await add(wrapper).trigger('click')
+          await draw(wrapper)
+          expect(wrapper.find('[data-testid="review"]').exists()).toBe(false)
+          expect(wrapper.find('[data-testid="detection-confidence"]').exists()).toBe(false)
+          rect.mockRestore()
+        })
+
+        it('is taken away with its button, and nothing else is', async () => {
+          const { wrapper } = await trial()
+          const rect = stubStage()
+          const before = count(wrapper)
+          await add(wrapper).trigger('click')
+          await draw(wrapper)
+          await wrapper.get('[data-testid="manual-remove"]').trigger('click')
+          expect(count(wrapper)).toBe(before)
+          expect(wrapper.find('[data-testid="manual-element"]').exists()).toBe(false)
+          expect(wrapper.find('[data-testid="detection"]').exists()).toBe(true) // what the analysis found is still there
+          expect(wrapper.find('[data-testid="manual-remove"]').exists()).toBe(false) // and cannot be taken away
+          rect.mockRestore()
+        })
+
+        it('can be added when nothing was found, which then is not « nothing » any more', async () => {
+          const { wrapper } = await trial({ file: image(nameWith(models, 0)) })
+          const rect = stubStage()
+          expect(wrapper.get('[data-testid="nothing-found"]').exists()).toBe(true)
+          await add(wrapper).trigger('click')
+          await draw(wrapper)
+          expect(wrapper.find('[data-testid="nothing-found"]').exists()).toBe(false)
+          expect(count(wrapper)).toBe(1)
+          expect(wrapper.get('[data-testid="test-summary"]').text()).toMatch(/^1 élément · 1 modèle sur 2/)
+          rect.mockRestore()
+        })
+
+        it('stays with the use: it is there again when the use is opened from the list', async () => {
+          const { wrapper } = await trial()
+          const rect = stubStage()
+          const before = count(wrapper)
+          await add(wrapper).trigger('click')
+          await draw(wrapper)
+          await showRuns(wrapper)
+          await wrapper.get('[data-testid="run-open"]').trigger('click') // the use just made, first in the list
+          expect(count(wrapper)).toBe(before + 1)
+          rect.mockRestore()
+        })
+
+        it('is for one\'s own results only: the administrator cannot add to someone else\'s', async () => {
+          const { wrapper } = await open('a5', 'admin')
+          await showRuns(wrapper)
+          expect(wrapper.findAll('[data-testid="run-open"]')).toHaveLength(0) // none of alice\'s or dana\'s is theirs to open
+          expect(wrapper.find('[data-testid="add-element"]').exists()).toBe(false)
+        })
+      })
+
+      describe('the document, once the predictions are looked at', () => {
+        const trial = async (saveScreenshot = true) => {
+          const page = await open('a1')
+          if (!saveScreenshot) await page.wrapper.get('[data-testid="save-screenshot"]').setValue(false)
+          await send(page.wrapper, image(nameWith(models, 2)))
+          return page
+        }
+        const validateAll = async (wrapper: ReturnType<typeof mount>) => {
+          await wrapper.get('[data-testid="review-validate"]').trigger('click') // the page, which is also looked at
+          await showElements(wrapper)
+          const total = Number(wrapper.get('[data-testid="pager-count"]').text().split(' / ')[1])
+          for (let i = 0; i < total; i++) {
+            await wrapper.get('[data-testid="review-validate"]').trigger('click')
+            if (i < total - 1) await wrapper.get('button[title="Élément suivant"]').trigger('click')
+          }
+        }
+
+        it('is not asked about while some predictions are still to look at, but can be deleted at any time', async () => {
+          const { wrapper } = await trial()
+          expect(wrapper.find('[data-testid="file-question"]').exists()).toBe(false)
+          expect(wrapper.get('[data-testid="file-state"] [data-testid="file-delete"]').text()).toBe('Supprimer le fichier')
+        })
+
+        it('asks what to do with it once everything is looked at', async () => {
+          const { wrapper } = await trial()
+          await validateAll(wrapper)
+          const question = wrapper.get('[data-testid="file-question"]')
+          expect(question.text()).toContain('Toutes les prédictions sont vérifiées.')
+          expect(question.text()).toContain('Supprimer le fichier de test ?')
+          expect(question.get('[data-testid="file-delete"]').text()).toBe('Supprimer le fichier')
+          expect(question.get('[data-testid="file-keep"]').text()).toBe('Le conserver')
+        })
+
+        it('deletes the file when told to, keeping the results and the decisions', async () => {
+          const { wrapper } = await trial()
+          await validateAll(wrapper)
+          await wrapper.get('[data-testid="file-question"] [data-testid="file-delete"]').trigger('click')
+          expect(wrapper.find('[data-testid="file-question"]').exists()).toBe(false)
+          expect(wrapper.find('.doc-viewer').exists()).toBe(false)
+          expect(wrapper.get('[data-testid="no-screenshot"]').text()).toContain('La capture de ce document a été supprimée')
+          expect(wrapper.get('[data-testid="file-state"]').text()).toBe('Fichier supprimé.')
+          expect(URL.revokeObjectURL).toHaveBeenCalled()
+          expect(wrapper.get('[data-testid="review-state"]').text()).toBe('Prédiction validée') // the decisions stay
+          await showElements(wrapper)
+          expect(detections(wrapper)).toHaveLength(1)
+        })
+
+        it('keeps the file when told to, and stops asking', async () => {
+          const { wrapper } = await trial()
+          await validateAll(wrapper)
+          await wrapper.get('[data-testid="file-keep"]').trigger('click')
+          expect(wrapper.find('[data-testid="file-question"]').exists()).toBe(false)
+          expect(wrapper.find('.doc-viewer').exists()).toBe(true)
+          expect(wrapper.get('[data-testid="file-state"]').text()).toContain('Capture enregistrée (conservée).')
+          await showElements(wrapper)
+          await wrapper.get('[data-testid="review-reset"]').trigger('click') // changing one's mind does not bring the question back
+          await wrapper.get('[data-testid="review-validate"]').trigger('click')
+          expect(wrapper.find('[data-testid="file-question"]').exists()).toBe(false)
+        })
+
+        it('deletes the file before everything is looked at, with the small button', async () => {
+          const { wrapper } = await trial()
+          await wrapper.get('[data-testid="file-state"] [data-testid="file-delete"]').trigger('click')
+          expect(wrapper.find('.doc-viewer').exists()).toBe(false)
+          expect(wrapper.get('[data-testid="file-state"]').text()).toBe('Fichier supprimé.')
+        })
+
+        it('does not ask when no capture was kept: there is nothing to delete', async () => {
+          const { wrapper } = await trial(false)
+          await validateAll(wrapper)
+          expect(wrapper.find('[data-testid="file-question"]').exists()).toBe(false)
+          expect(wrapper.get('[data-testid="file-state"]').text()).toBe('Capture non enregistrée.')
+        })
+
+        it('does not ask for a use that found nothing: there is nothing to look at', async () => {
+          const { wrapper } = await open('a1')
+          await send(wrapper, image(nameWith(models, 0)))
+          expect(wrapper.find('[data-testid="file-question"]').exists()).toBe(false)
+          expect(wrapper.get('[data-testid="file-state"] [data-testid="file-delete"]').exists()).toBe(true)
+        })
+      })
+    })
+
+    describe('the result of a use is private to the person who ran it', () => {
+      const send = async (wrapper: ReturnType<typeof mount>, file: File) => {
+        const input = wrapper.get('input[type="file"]')
+        Object.defineProperty(input.element, 'files', { value: [file], configurable: true })
+        await input.trigger('change')
+        await flushPromises()
+      }
+      const rows = (wrapper: ReturnType<typeof mount>) => wrapper.findAll('[data-testid="run"]')
+
+      it('can be opened from the list of the uses, with its document and what was decided', async () => {
+        const { wrapper } = await open('a1') // alice.martin ran r1, which has a result and a capture
+        await showRuns(wrapper)
+        expect(rows(wrapper)[0].get('[data-testid="run-open"]').exists()).toBe(true)
+        await rows(wrapper)[0].get('[data-testid="run-open"]').trigger('click')
+        expect(wrapper.get('[role="tab"][aria-selected="true"]').text()).toBe('Page')
+        expect(wrapper.get('[data-testid="tested-name"]').text()).toBe('courrier-octobre-1.svg')
+        expect(wrapper.find('.doc-viewer img').attributes('src')).toContain('data:image/svg+xml')
+        await showElements(wrapper)
+        expect(wrapper.get('[data-testid="review-state"]').text()).toBe('Prédiction validée') // the demo's first element
+      })
+
+      it('has no button for a use that stored no result', async () => {
+        const { wrapper } = await open('a1')
+        await showRuns(wrapper)
+        const third = rows(wrapper)[2] // r3: a use without a stored result
+        expect(third.find('[data-testid="run-open"]').exists()).toBe(false)
+        expect(third.find('[data-testid="run-private"]').exists()).toBe(false)
+      })
+
+      it('shows a use without a capture by listing its elements, without the document', async () => {
+        const { wrapper } = await open('a1')
+        await showRuns(wrapper)
+        await rows(wrapper)[1].get('[data-testid="run-open"]').trigger('click') // r2: a result, no capture
+        expect(wrapper.find('.doc-viewer').exists()).toBe(false)
+        expect(wrapper.get('[data-testid="no-screenshot"]').exists()).toBe(true)
+        await showElements(wrapper)
+        expect(wrapper.find('[data-testid="detection"]').exists()).toBe(true)
+      })
+
+      it('is not offered for someone else\'s use, even to an administrator who can open the analysis', async () => {
+        const { wrapper } = await open('a5', 'admin') // r12 is alice.martin\'s and r13 dana\'s
+        await showRuns(wrapper)
+        const withResult = rows(wrapper).filter((r) => r.find('[data-testid="run-private"], [data-testid="run-open"]').exists())
+        expect(withResult).toHaveLength(2)
+        for (const r of withResult) {
+          expect(r.find('[data-testid="run-open"]').exists()).toBe(false)
+          expect(r.get('[data-testid="run-private"]').text()).toBe('Résultat privé')
+        }
+      })
+
+      it('shows the administrator the figures of every use, but the result of none but their own', async () => {
+        const { wrapper } = await open('a5', 'admin')
+        expect(figures(wrapper).Utilisations).toBe('5') // all of them are counted
+        await showRuns(wrapper)
+        expect(rows(wrapper)).toHaveLength(4)
+        await wrapper.findAll('[role="tab"]')[0].trigger('click')
+        await send(wrapper, png())
+        await showRuns(wrapper)
+        const mine = rows(wrapper)[0]
+        expect(mine.text()).toContain('admin')
+        expect(mine.get('[data-testid="run-open"]').exists()).toBe(true) // theirs
+        expect(wrapper.findAll('[data-testid="run-open"]')).toHaveLength(1)
+      })
+
+      it('is shared by no one: each person opens only theirs on the same public analysis', async () => {
+        const dana = await open('a5', 'dana')
+        await showRuns(dana.wrapper)
+        const danaRows = rows(dana.wrapper).filter((r) => r.find('[data-testid="run-open"], [data-testid="run-private"]').exists())
+        expect(danaRows.filter((r) => r.find('[data-testid="run-open"]').exists()).map((r) => r.text())).toEqual([expect.stringContaining('dana')])
+        expect(danaRows.filter((r) => r.find('[data-testid="run-private"]').exists()).map((r) => r.text())).toEqual([expect.stringContaining('alice.martin')])
+        const alice = await open('a5', 'alice.martin')
+        await showRuns(alice.wrapper)
+        const aliceRows = rows(alice.wrapper).filter((r) => r.find('[data-testid="run-open"], [data-testid="run-private"]').exists())
+        expect(aliceRows.filter((r) => r.find('[data-testid="run-open"]').exists()).map((r) => r.text())).toEqual([expect.stringContaining('alice.martin')])
+      })
+
+      it('does not show someone else\'s result even when asked for its identifier', async () => {
+        const { wrapper } = await open('a5', 'admin')
+        const { analyses } = useAnalyses()
+        // Nothing in the page reaches it: the use is selected only through the buttons, which are not offered. And what the
+        // page would show for a selected use is checked against who is signed in.
+        expect(analyses.value.find((a) => a.id === 'a5')!.runs.find((r) => r.id === 'r12')!.detections).toBeDefined()
+        await showRuns(wrapper)
+        expect(wrapper.findAll('[data-testid="run-open"]')).toHaveLength(0)
+        expect(wrapper.find('[data-testid="detection"]').exists()).toBe(false)
+      })
+    })
+  })
+
+  describe('the overview of the administrator', () => {
+    const values = (wrapper: ReturnType<typeof mount>) =>
+      Object.fromEntries(wrapper.findAll('[data-testid="stat"]').map((s) => [s.get('[data-testid="stat-label"]').text(), s.get('[data-testid="stat-value"]').text()]))
+
+    it('is in the sidebar for the administrator only', async () => {
+      useSession().login('admin')
+      const admin = await mountAt('/catalogue')
+      expect(admin.wrapper.findAll('.app-sidebar__link').map((l) => l.text())).toEqual(['Catalogue', 'Analyses', 'Vue d’ensemble'])
+      useSession().login('dana')
+      const other = await mountAt('/catalogue')
+      expect(other.wrapper.findAll('.app-sidebar__link').map((l) => l.text())).toEqual(['Catalogue', 'Analyses'])
+    })
+
+    it('is out of reach of anyone else, who is sent to the analyses', async () => {
+      useSession().login('dana')
+      const { router } = await mountAt('/vue-d-ensemble')
+      expect(router.currentRoute.value.name).toBe('analyses')
+    })
+
+    it('shows the figures of every analysis', async () => {
+      useSession().login('admin')
+      const { wrapper } = await mountAt('/vue-d-ensemble')
+      expect(wrapper.get('h1').text()).toBe('Vue d’ensemble')
+      expect(values(wrapper)).toEqual({ Analyses: '8', Vues: '251', Utilisations: '20', Terminées: '12', 'En cours': '3', 'En erreur': '5' })
+      expect(wrapper.get('[data-testid="visibility"]').text()).toBe('1 publique · 4 partagées · 3 privées')
+    })
+
+    it('spreads the uses over their three states', async () => {
+      useSession().login('admin')
+      const { wrapper } = await mountAt('/vue-d-ensemble')
+      expect(wrapper.get('.bar').attributes('aria-label')).toBe('Terminées : 12, En cours : 3, En erreur : 5')
+      const widths = wrapper.findAll('.bar__part').map((p) => p.attributes('style'))
+      expect(widths).toEqual(['width: 60%;', 'width: 15%;', 'width: 25%;'])
+    })
+
+    it('lists the most used analyses, each a link to its dashboard', async () => {
+      useSession().login('admin')
+      const { wrapper } = await mountAt('/vue-d-ensemble')
+      const rows = wrapper.findAll('[data-testid="most-used"]')
+      expect(rows).toHaveLength(5)
+      expect(rows[0].get('a').text()).toBe('Attestations CAF')
+      expect(rows[0].get('a').attributes('href')).toBe('/analyses/a5')
+      expect(rows[0].text()).toContain('5 utilisations · 120 vues')
+      expect(rows[1].get('a').text()).toBe('Courriers octobre') // 4 uses
+    })
+
+    it('lists what needs a look: the failures first, then what is still running', async () => {
+      useSession().login('admin')
+      const { wrapper } = await mountAt('/vue-d-ensemble')
+      const rows = wrapper.findAll('[data-testid="to-watch"]')
+      expect(rows.map((r) => r.get('a').text())).toEqual(['Formulaires CERFA', 'Demandes refusées', 'Contrats paraphés', 'Accusés de réception T3'])
+      expect(rows[0].text()).toContain('En échec')
+      expect(rows[2].text()).toContain('En cours')
+    })
+
+    it('says so when nothing is wrong', async () => {
+      useSession().login('admin')
+      for (const a of useAnalyses().analyses.value) a.status = 'done'
+      const { wrapper } = await mountAt('/vue-d-ensemble')
+      expect(wrapper.text()).toContain('Rien à signaler')
+    })
+
+    it('does not count its own visit as a view of any analysis', async () => {
+      useSession().login('admin')
+      await mountAt('/vue-d-ensemble')
+      expect(useAnalyses().analyses.value.reduce((n, a) => n + a.views, 0)).toBe(251)
+    })
+
+    it('counts the analyses made meanwhile', async () => {
+      useSession().login('admin')
+      useAnalyses().createAnalysis({ name: 'Neuve', description: '', templateIds: ['t1'], isPublic: false, shares: [] })
+      const { wrapper } = await mountAt('/vue-d-ensemble')
+      expect(values(wrapper)).toMatchObject({ Analyses: '9', Utilisations: '21', 'En cours': '4' })
+    })
+  })
+
+  it('tells the owner how many suggestions wait on the catalogue', async () => {
+    useSession().login('alice.martin')
+    const { wrapper } = await mountAt('/catalogue')
+    expect(wrapper.text()).toContain('1 suggestion')
+    expect(wrapper.text()).toContain('Par alice.martin')
+  })
+
+  it('shows a message for an unknown template', async () => {
+    useSession().login('dana')
+    const { wrapper } = await mountAt('/catalogue/nope')
+    expect(wrapper.text()).toContain('Ce modèle n’existe pas.')
+  })
+
+  const upload = async (wrapper: ReturnType<typeof mount>, file: File) => {
+    const input = wrapper.get('input[type="file"]')
+    Object.defineProperty(input.element, 'files', { value: [file], configurable: true })
+    await input.trigger('change')
+  }
+  const png = () => new File(['x'], 'scan.png', { type: 'image/png' })
+  const button = (wrapper: ReturnType<typeof mount>, text: string) =>
+    wrapper.findAll('button').find((b) => b.text() === text)!
+  const byTitle = (wrapper: ReturnType<typeof mount>, title: string) => wrapper.get(`button[title="${title}"]`)
+  // The nth field (input or textarea) whose label starts with `label`.
+  const field = (wrapper: ReturnType<typeof mount>, label: string, n = 0) => {
+    const target = wrapper.findAll('label').filter((l) => l.text().startsWith(label))[n]
+    return wrapper.get(`#${target.attributes('for')}`)
+  }
+  const entityCount = (wrapper: ReturnType<typeof mount>) => wrapper.get('[data-testid="pager-count"]').text()
+  const addEntity = async (wrapper: ReturnType<typeof mount>, name = '', definition = '') => {
+    await wrapper.get('.entities .fr-btn--icon-left').trigger('click') // « Ajouter », not the one of the categories
+    if (name) await field(wrapper, 'Nom', 1).setValue(name)
+    if (definition) await field(wrapper, 'Définition').setValue(definition)
+  }
+
+  // jsdom has no layout: give every element a size so that pointer positions turn into fractions of 200 x 100.
+  const stubStage = () =>
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue({ left: 0, top: 0, width: 200, height: 100 } as DOMRect)
+  const pointer = (wrapper: ReturnType<typeof mount>, type: string, [x, y]: [number, number]) =>
+    wrapper.get('[data-testid="document-stage"]').element.dispatchEvent(new MouseEvent(type, { clientX: x, clientY: y, bubbles: true }))
+  const click = async (wrapper: ReturnType<typeof mount>, at: [number, number]) => {
+    pointer(wrapper, 'pointerdown', at)
+    pointer(wrapper, 'pointerup', at)
+    await flushPromises()
+  }
+  const drag = async (wrapper: ReturnType<typeof mount>, from: [number, number], to: [number, number]) => {
+    pointer(wrapper, 'pointerdown', from)
+    pointer(wrapper, 'pointermove', to)
+    pointer(wrapper, 'pointerup', to)
+    await flushPromises()
+  }
+  const key = (name: string) => window.dispatchEvent(new KeyboardEvent('keydown', { key: name, bubbles: true }))
+  /** A form with an image and one entity set to a zone: the drawing is under way. */
+  async function startDrawing() {
+    useSession().login('dana')
+    const rect = stubStage()
+    const page = await mountAt('/catalogue/nouveau')
+    await upload(page.wrapper, png())
+    await addEntity(page.wrapper, 'Cachet', 'Le cachet')
+    await page.wrapper.get('[data-testid="entity"] input[id$="-zone"]').setValue(true) // starts the drawing by itself
+    return { ...page, rect }
+  }
+  const row = (wrapper: ReturnType<typeof mount>) => wrapper.get('.entity__zone')
+  const zones = (wrapper: ReturnType<typeof mount>) => wrapper.findAll('[data-testid="entity-zone"]')
+
+  it('creates a template without any document', async () => {
+    useSession().login('dana')
+    const { wrapper, router } = await mountAt('/catalogue/nouveau')
+    await field(wrapper, 'Nom').setValue('Sans document')
+    await field(wrapper, 'Description').setValue('Rien à joindre')
+    await wrapper.get('form').trigger('submit')
+    await landsOn(router, 'catalogue-detail')
+    await vi.waitFor(() => expect(wrapper.get('h1').text()).toBe('Sans document'))
+    expect(wrapper.find('[data-testid="document-name"]').exists()).toBe(false)
+  })
+
+  it('has no size field', async () => {
+    useSession().login('dana')
+    const { wrapper } = await mountAt('/catalogue/nouveau')
+    expect(wrapper.text()).not.toContain('Taille')
+  })
+
+  it('accepts an image or a PDF and refuses anything else', async () => {
+    useSession().login('dana')
+    const { wrapper } = await mountAt('/catalogue/nouveau')
+    expect(wrapper.get('input[type="file"]').attributes('accept')).toBe(
+      'image/png,image/jpeg,image/webp,image/gif,application/pdf',
+    )
+
+    await upload(wrapper, new File(['x'], 'notes.txt', { type: 'text/plain' }))
+    expect(wrapper.get('#document-error').text()).toContain('image')
+    expect(wrapper.find('[data-testid="document-name"]').exists()).toBe(false)
+
+    await upload(wrapper, png())
+    expect(wrapper.find('#document-error').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="document-name"]').text()).toBe('scan.png')
+    expect(wrapper.find('img').attributes('src')).toMatch(/^blob:test-/)
+
+    await upload(wrapper, new File(['x'], 'doc.pdf', { type: 'application/pdf' }))
+    expect(wrapper.get('[data-testid="document-name"]').text()).toBe('doc.pdf')
+    expect(URL.revokeObjectURL).toHaveBeenCalled() // the replaced image is released
+    // No PDF reader: the document is kept, without a preview.
+    expect(wrapper.find('img').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="no-preview"]').text()).toContain('Aperçu indisponible')
+  })
+
+  it('replaces or removes the document', async () => {
+    useSession().login('dana')
+    const { wrapper } = await mountAt('/catalogue/nouveau')
+    await upload(wrapper, png())
+    expect(button(wrapper, 'Remplacer')).toBeDefined()
+    await button(wrapper, 'Retirer le document').trigger('click')
+    expect(wrapper.find('[data-testid="document-name"]').exists()).toBe(false)
+    expect(wrapper.find('img').exists()).toBe(false)
+  })
+
+  describe('categories', () => {
+    const categories = (wrapper: ReturnType<typeof mount>) =>
+      wrapper.findAll('.categories .tags-input__tags button').map((b) => b.text())
+    const typeCategory = async (wrapper: ReturnType<typeof mount>, value: string) => {
+      await wrapper.get('.categories input').setValue(value)
+      await wrapper.get('.categories input').trigger('keydown.enter')
+    }
+
+    it('takes custom categories as tags, and refuses blanks and duplicates', async () => {
+      useSession().login('dana')
+      const { wrapper } = await mountAt('/catalogue/nouveau')
+      await typeCategory(wrapper, 'Sur mesure')
+      await typeCategory(wrapper, '  ')
+      await typeCategory(wrapper, 'sur mesure')
+      expect(categories(wrapper)).toEqual(['Sur mesure'])
+      expect(wrapper.get('.categories input').element.value).toBe('')
+    })
+
+    it('adds what was typed when leaving the field, and removes a tag from its button', async () => {
+      useSession().login('dana')
+      const { wrapper } = await mountAt('/catalogue/nouveau')
+      await wrapper.get('.categories input').setValue('Courrier')
+      await wrapper.get('.categories input').trigger('blur')
+      expect(categories(wrapper)).toEqual(['Courrier'])
+      await wrapper.get('.categories .tags-input__tags button').trigger('click')
+      expect(categories(wrapper)).toEqual([])
+    })
+
+    it('takes back the last tag with Backspace in an empty field, but not while there is text', async () => {
+      useSession().login('dana')
+      const { wrapper } = await mountAt('/catalogue/nouveau')
+      await typeCategory(wrapper, 'Un')
+      await typeCategory(wrapper, 'Deux')
+      await wrapper.get('.categories input').setValue('Tr')
+      await wrapper.get('.categories input').trigger('keydown.backspace')
+      expect(categories(wrapper)).toEqual(['Un', 'Deux'])
+      await wrapper.get('.categories input').setValue('')
+      await wrapper.get('.categories input').trigger('keydown.backspace')
+      expect(categories(wrapper)).toEqual(['Un'])
+    })
+
+    it('offers the usual and the existing categories, and adds one picked in the list at once', async () => {
+      useSession().login('dana')
+      const { wrapper } = await mountAt('/catalogue/nouveau')
+      const options = wrapper.findAll('datalist option').map((o) => o.attributes('value'))
+      expect(options).toContain('Tampon')
+      expect(options).toContain('Officiel') // made up on a demo model
+      await wrapper.get('.categories input').setValue('Tampon') // exactly a suggestion: a pick, not typing
+      expect(categories(wrapper)).toEqual(['Tampon'])
+      expect(wrapper.findAll('datalist option').map((o) => o.attributes('value'))).not.toContain('Tampon')
+    })
+
+    it('keeps what is being typed until Enter or leaving the field', async () => {
+      useSession().login('dana')
+      const { wrapper } = await mountAt('/catalogue/nouveau')
+      await wrapper.get('.categories input').setValue('Sur mes')
+      expect(categories(wrapper)).toEqual([])
+      expect(wrapper.get('.categories input').element.value).toBe('Sur mes')
+    })
+
+    it('saves them on the model and shows them as tags', async () => {
+      useSession().login('dana')
+      const { wrapper, router } = await mountAt('/catalogue/nouveau')
+      await field(wrapper, 'Nom').setValue('Avec catégories')
+      await field(wrapper, 'Description').setValue('Deux tags')
+      await wrapper.get('.categories input').setValue('Tampon')
+      await typeCategory(wrapper, 'Sur mesure')
+      await wrapper.get('form').trigger('submit')
+      await landsOn(router, 'catalogue-detail')
+      await vi.waitFor(() => expect(wrapper.get('h1').text()).toBe('Avec catégories'))
+      expect(wrapper.findAll('.template-view__meta .fr-tag').map((t) => t.text())).toEqual(['Tampon', 'Sur mesure'])
+    })
+  })
+
+  describe('entities, one at a time', () => {
+    it('describes an entity by name and definition, and requires both', async () => {
+      useSession().login('dana')
+      const { wrapper, router } = await mountAt('/catalogue/nouveau')
+      await field(wrapper, 'Nom').setValue('Facture')
+      await field(wrapper, 'Description').setValue('Une facture')
+      expect(entityCount(wrapper)).toBe('0')
+      expect(wrapper.text()).toContain('Aucune entité')
+      await addEntity(wrapper)
+      await wrapper.get('form').trigger('submit')
+      await flushPromises()
+      expect(router.currentRoute.value.name).toBe('catalogue-new')
+      expect(wrapper.text()).toContain('Donnez un nom à l’entité.')
+      expect(wrapper.text()).toContain('Ajoutez une définition.')
+
+      expect(wrapper.get('[data-testid="missing"]').text()).toBe('À compléter : l’entité 1.')
+      await field(wrapper, 'Nom', 1).setValue('Numéro de facture')
+      await field(wrapper, 'Définition').setValue('Le numéro en haut à droite')
+      await wrapper.get('form').trigger('submit')
+      await landsOn(router, 'catalogue-detail')
+      await vi.waitFor(() => expect(wrapper.get('[data-testid="entity"]').text()).toContain('Numéro de facture'))
+      expect(wrapper.get('[data-testid="entity"]').text()).toContain('Définition')
+    })
+
+    it('shows one entity at a time and pages through them', async () => {
+      useSession().login('dana')
+      const { wrapper } = await mountAt('/catalogue/nouveau')
+      await addEntity(wrapper, 'A', 'La première')
+      await addEntity(wrapper, 'B', 'La deuxième')
+      await addEntity(wrapper, 'C', 'La troisième')
+      expect(entityCount(wrapper)).toBe('3 / 3')
+      expect(wrapper.findAll('[data-testid="entity"]')).toHaveLength(1)
+      expect((field(wrapper, 'Nom', 1).element as HTMLInputElement).value).toBe('C')
+      expect(byTitle(wrapper, 'Entité suivante').attributes('disabled')).toBeDefined()
+
+      await byTitle(wrapper, 'Entité précédente').trigger('click')
+      expect(entityCount(wrapper)).toBe('2 / 3')
+      expect((field(wrapper, 'Nom', 1).element as HTMLInputElement).value).toBe('B')
+      await byTitle(wrapper, 'Entité précédente').trigger('click')
+      expect(byTitle(wrapper, 'Entité précédente').attributes('disabled')).toBeDefined()
+      expect((field(wrapper, 'Nom', 1).element as HTMLInputElement).value).toBe('A')
+    })
+
+    it('removes the entity on show', async () => {
+      useSession().login('dana')
+      const { wrapper } = await mountAt('/catalogue/nouveau')
+      await addEntity(wrapper, 'A', 'La première')
+      await addEntity(wrapper, 'B', 'La deuxième')
+      await button(wrapper, 'Supprimer cette entité').trigger('click')
+      expect(entityCount(wrapper)).toBe('1 / 1')
+      expect((field(wrapper, 'Nom', 1).element as HTMLInputElement).value).toBe('A')
+      await button(wrapper, 'Supprimer cette entité').trigger('click')
+      expect(entityCount(wrapper)).toBe('0')
+      expect(wrapper.text()).toContain('Aucune entité')
+    })
+
+    it('jumps to the first incomplete entity when saving', async () => {
+      useSession().login('dana')
+      const { wrapper, router } = await mountAt('/catalogue/nouveau')
+      await field(wrapper, 'Nom').setValue('Facture')
+      await field(wrapper, 'Description').setValue('Une facture')
+      await addEntity(wrapper, 'A', 'Complète')
+      await addEntity(wrapper, 'B') // no definition
+      await addEntity(wrapper, 'C', 'Complète')
+      await wrapper.get('form').trigger('submit')
+      await flushPromises()
+      expect(router.currentRoute.value.name).toBe('catalogue-new')
+      expect(entityCount(wrapper)).toBe('2 / 3')
+      expect(wrapper.text()).toContain('Ajoutez une définition.')
+      expect(wrapper.get('[data-testid="missing"]').text()).toBe('À compléter : l’entité 2.')
+    })
+  })
+
+  describe('type and examples of an entity', () => {
+    const typeSelect = (wrapper: ReturnType<typeof mount>) => wrapper.get('[data-testid="entity"] select')
+    const examples = (wrapper: ReturnType<typeof mount>) =>
+      wrapper.findAll('.entity__examples .tags-input__tags button').map((b) => b.text())
+    const typeExample = async (wrapper: ReturnType<typeof mount>, value: string) => {
+      const input = wrapper.get('.entity__examples input')
+      await input.setValue(value)
+      await input.trigger('keydown.enter')
+    }
+
+    it('offers the types, starting at text', async () => {
+      useSession().login('dana')
+      const { wrapper } = await mountAt('/catalogue/nouveau')
+      await addEntity(wrapper)
+      // The select's own « Sélectionner une option » is disabled: it is not a type.
+      const options = typeSelect(wrapper).findAll('option').filter((o) => o.attributes('disabled') === undefined)
+      expect(options.map((o) => o.text())).toEqual([
+        'Texte',
+        'Date',
+        'Entier',
+        'Nombre décimal',
+        'Montant',
+        'Pourcentage',
+        'Oui / non',
+      ])
+      expect((typeSelect(wrapper).element as HTMLSelectElement).value).toBe('text')
+    })
+
+    const info = (wrapper: ReturnType<typeof mount>) => wrapper.get('[data-testid="entity"] .info-tip__button')
+
+    it('has an « i » that gives the definition of the type, which follows the type chosen', async () => {
+      useSession().login('dana')
+      const { wrapper } = await mountAt('/catalogue/nouveau')
+      await addEntity(wrapper)
+      expect(info(wrapper).attributes('aria-label')).toBe('Définition du type Texte')
+      expect(wrapper.find('.info-tip__panel').exists()).toBe(false)
+      await info(wrapper).trigger('click')
+      expect(wrapper.get('.info-tip__panel').text()).toContain('Une suite de caractères libre')
+      await typeSelect(wrapper).setValue('amount')
+      expect(info(wrapper).attributes('aria-label')).toBe('Définition du type Montant')
+      expect(wrapper.get('.info-tip__panel').text()).toContain('Montant')
+      expect(wrapper.get('.info-tip__panel').text()).toContain('Une somme d’argent')
+    })
+
+    it('has an « i » on the page of a model too, with the definition of the type of the entity on show', async () => {
+      useSession().login('dana')
+      const { wrapper } = await mountAt('/catalogue/t2')
+      expect(wrapper.get('[data-testid="entity-type"]').text()).toBe('Date')
+      await info(wrapper).trigger('click')
+      expect(wrapper.get('.info-tip__panel').text()).toContain('AAAA-MM-JJ')
+    })
+
+    it('takes examples as tags: added with Enter, kept distinct, at most five, taken back', async () => {
+      useSession().login('dana')
+      const { wrapper } = await mountAt('/catalogue/nouveau')
+      await addEntity(wrapper)
+      await typeExample(wrapper, '12/03/2026')
+      await typeExample(wrapper, '12/03/2026') // twice
+      await typeExample(wrapper, '   ') // blank
+      await typeExample(wrapper, 'a')
+      await typeExample(wrapper, 'A') // another example: case counts here
+      expect(examples(wrapper)).toEqual(['12/03/2026', 'a', 'A'])
+      await typeExample(wrapper, 'd')
+      await typeExample(wrapper, 'e')
+      expect(examples(wrapper)).toHaveLength(5)
+      expect(wrapper.get('.entity__examples input').attributes('disabled')).toBeDefined() // no sixth
+      await wrapper.get('.entity__examples .tags-input__tags button').trigger('click')
+      expect(examples(wrapper)).toEqual(['a', 'A', 'd', 'e'])
+      expect(wrapper.get('.entity__examples input').attributes('disabled')).toBeUndefined()
+    })
+
+    it('has them of its own for each entity', async () => {
+      useSession().login('dana')
+      const { wrapper } = await mountAt('/catalogue/nouveau')
+      await addEntity(wrapper, 'A', 'Un')
+      await typeExample(wrapper, 'un exemple')
+      await typeSelect(wrapper).setValue('amount')
+      await addEntity(wrapper, 'B', 'Deux')
+      expect(examples(wrapper)).toEqual([])
+      expect((typeSelect(wrapper).element as HTMLSelectElement).value).toBe('text')
+      await byTitle(wrapper, 'Entité précédente').trigger('click')
+      expect(examples(wrapper)).toEqual(['un exemple'])
+      expect((typeSelect(wrapper).element as HTMLSelectElement).value).toBe('amount')
+    })
+
+    it('saves them on the model and shows them on its page', async () => {
+      useSession().login('dana')
+      const { wrapper, router } = await mountAt('/catalogue/nouveau')
+      await field(wrapper, 'Nom').setValue('Facture')
+      await field(wrapper, 'Description').setValue('Une facture')
+      await addEntity(wrapper, 'Total TTC', 'Le montant à payer')
+      await typeSelect(wrapper).setValue('amount')
+      await typeExample(wrapper, '1 250,00 €')
+      await typeExample(wrapper, '89,90 €')
+      await wrapper.get('form').trigger('submit')
+      await landsOn(router, 'catalogue-detail')
+      await vi.waitFor(() => expect(wrapper.get('[data-testid="entity"]').text()).toContain('Total TTC'))
+      expect(wrapper.get('[data-testid="entity-type"]').text()).toBe('Montant')
+      expect(wrapper.get('[data-testid="entity-examples"]').text()).toContain('1 250,00 €')
+      expect(wrapper.get('[data-testid="entity-examples"]').text()).toContain('89,90 €')
+    })
+
+    it('shows the type and the examples of the demo entities, and nothing for an entity without example', async () => {
+      useSession().login('dana')
+      const { wrapper } = await mountAt('/catalogue/t2')
+      expect(wrapper.get('[data-testid="entity-type"]').text()).toBe('Date')
+      expect(wrapper.get('[data-testid="entity-examples"]').text()).toContain('12/03/2026')
+      const noExample = await mountAt('/catalogue/t1')
+      await byTitle(noExample.wrapper, 'Entité suivante').trigger('click')
+      expect(noExample.wrapper.get('[data-testid="entity-type"]').text()).toBe('Texte')
+      expect(noExample.wrapper.get('[data-testid="entity-examples"]').text()).toContain('Liberté Égalité Fraternité')
+    })
+
+    it('is filled in when editing an existing model, and changed in place', async () => {
+      useSession().login('bob.durand') // owns t2
+      const { wrapper, router } = await mountAt('/catalogue/t2/modifier')
+      expect((typeSelect(wrapper).element as HTMLSelectElement).value).toBe('date')
+      expect(examples(wrapper)).toEqual(['12/03/2026', '1 novembre 2026'])
+      await typeSelect(wrapper).setValue('text')
+      await wrapper.get('.entity__examples .tags-input__tags button').trigger('click')
+      await wrapper.get('form').trigger('submit')
+      await landsOn(router, 'catalogue-detail')
+      await vi.waitFor(() => expect(wrapper.get('[data-testid="entity-type"]').text()).toBe('Texte'))
+      expect(wrapper.get('[data-testid="entity-examples"]').text()).toContain('1 novembre 2026')
+      expect(wrapper.get('[data-testid="entity-examples"]').text()).not.toContain('12/03/2026')
+    })
+  })
+
+  it('offers the zone mode only once there is a document', async () => {
+    useSession().login('dana')
+    const { wrapper } = await mountAt('/catalogue/nouveau')
+    await addEntity(wrapper)
+    const zone = () => wrapper.get('[data-testid="entity"] input[id$="-zone"]')
+    expect(zone().attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).toContain('Ajoutez un document d’exemple')
+    await upload(wrapper, png())
+    expect(zone().attributes('disabled')).toBeUndefined()
+  })
+
+  it('does not offer to draw a zone on a PDF', async () => {
+    useSession().login('dana')
+    const { wrapper } = await mountAt('/catalogue/nouveau')
+    await upload(wrapper, new File(['x'], 'doc.pdf', { type: 'application/pdf' }))
+    await addEntity(wrapper)
+    expect(wrapper.get('[data-testid="entity"] input[id$="-zone"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).toContain('Pas encore disponible pour un PDF')
+  })
+
+  describe('drawing a zone on the document', () => {
+    it('starts as soon as the zone is chosen, with a Cancel button next to the instruction', async () => {
+      const { wrapper, rect } = await startDrawing()
+      const row = wrapper.get('.entity__zone')
+      expect(row.get('[data-testid="draw-hint"]').text()).toContain('Dessin en cours')
+      expect(row.findAll('button').map((b) => b.text())).toEqual(['Annuler'])
+      expect(wrapper.find('[data-testid="zoom-level"]').exists()).toBe(true) // the document is ready: toolbar with the tools
+      expect(button(wrapper, 'Polygone').attributes('aria-pressed')).toBe('true')
+      rect.mockRestore()
+    })
+
+    it('can be cancelled and started again', async () => {
+      const { wrapper, rect } = await startDrawing()
+      await row(wrapper).get('.fr-btn--tertiary').trigger('click')
+      expect(wrapper.find('[data-testid="draw-hint"]').exists()).toBe(false)
+      expect(button(wrapper, 'Dessiner la zone')).toBeDefined()
+      await button(wrapper, 'Dessiner la zone').trigger('click')
+      expect(wrapper.find('[data-testid="draw-hint"]').exists()).toBe(true)
+      rect.mockRestore()
+    })
+
+    it('does not start for the definition mode, nor without an image', async () => {
+      useSession().login('dana')
+      const { wrapper } = await mountAt('/catalogue/nouveau')
+      await upload(wrapper, png())
+      await addEntity(wrapper, 'A', 'B')
+      expect(wrapper.find('[data-testid="draw-hint"]').exists()).toBe(false)
+      await wrapper.get('[data-testid="entity"] input[id$="-zone"]').setValue(true)
+      expect(wrapper.find('[data-testid="draw-hint"]').exists()).toBe(true)
+      await wrapper.get('[data-testid="entity"] input[id$="-definition"]').setValue(true)
+      expect(wrapper.find('[data-testid="draw-hint"]').exists()).toBe(false)
+    })
+
+    it('requires the zone once the zone mode is chosen', async () => {
+      const { wrapper, router, rect } = await startDrawing()
+      await wrapper.get('.entity__zone .fr-btn--tertiary').trigger('click') // stop drawing without a zone
+      await field(wrapper, 'Nom').setValue('Tampon rond')
+      await field(wrapper, 'Description').setValue('Un tampon')
+      await wrapper.get('form').trigger('submit')
+      await flushPromises()
+      expect(wrapper.text()).toContain('Dessinez la zone sur le document.')
+      expect(router.currentRoute.value.name).toBe('catalogue-new')
+      rect.mockRestore()
+    })
+
+    it('draws a polygon point by point, closed by clicking the first point', async () => {
+      const { wrapper, router, rect } = await startDrawing()
+      expect(wrapper.find('[data-testid="draw-hint"]').exists()).toBe(true)
+      await click(wrapper, [20, 10])
+      await click(wrapper, [120, 10])
+      await click(wrapper, [120, 60])
+      expect(wrapper.findAll('[data-testid="draft-point"]')).toHaveLength(3)
+      expect(wrapper.find('[data-testid="draw-hint"]').exists()).toBe(true) // not closed yet
+      await click(wrapper, [20, 60])
+      await click(wrapper, [22, 12]) // within a few pixels of the first point: closes
+      expect(wrapper.find('[data-testid="draw-hint"]').exists()).toBe(false)
+      expect(wrapper.findAll('[data-testid="draft-point"]')).toHaveLength(0)
+      expect(button(wrapper, 'Redessiner')).toBeDefined() // there is a zone now
+      expect(zones(wrapper)).toHaveLength(1)
+      expect(zones(wrapper)[0].attributes('points')).toBe('10,10 60,10 60,60 10,60')
+
+      await field(wrapper, 'Nom').setValue('Tampon rond')
+      await field(wrapper, 'Description').setValue('Un tampon')
+      await wrapper.get('form').trigger('submit')
+      await landsOn(router, 'catalogue-detail')
+      await vi.waitFor(() => expect(wrapper.get('[data-testid="entity"]').text()).toContain('Zone'))
+      expect(zones(wrapper)).toHaveLength(1)
+      rect.mockRestore()
+    })
+
+    it('closes with Enter, removes the last point with Backspace and gives up with Escape', async () => {
+      const { wrapper, rect } = await startDrawing()
+      await click(wrapper, [20, 10])
+      await click(wrapper, [120, 10])
+      key('Enter')
+      await flushPromises()
+      expect(wrapper.find('[data-testid="draw-hint"]').exists()).toBe(true) // two points make no zone
+
+      await click(wrapper, [120, 60])
+      key('Backspace')
+      await flushPromises()
+      expect(wrapper.findAll('[data-testid="draft-point"]')).toHaveLength(2)
+
+      await click(wrapper, [120, 60])
+      key('Enter')
+      await flushPromises()
+      expect(zones(wrapper)).toHaveLength(1)
+      expect(zones(wrapper)[0].attributes('points')).toBe('10,10 60,10 60,60')
+
+      await button(wrapper, 'Redessiner').trigger('click')
+      await click(wrapper, [50, 50])
+      key('Escape')
+      await flushPromises()
+      expect(wrapper.find('[data-testid="draw-hint"]').exists()).toBe(false)
+      expect(wrapper.findAll('[data-testid="draft-point"]')).toHaveLength(0)
+      expect(zones(wrapper)).toHaveLength(1) // the earlier zone is kept
+      rect.mockRestore()
+    })
+
+    it('leaves the keys alone while typing in a field', async () => {
+      const { wrapper, rect } = await startDrawing()
+      await click(wrapper, [20, 10])
+      const input = field(wrapper, 'Description').element
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', bubbles: true }))
+      await flushPromises()
+      expect(wrapper.findAll('[data-testid="draft-point"]')).toHaveLength(1)
+      rect.mockRestore()
+    })
+
+    it('puts the name of the entity on its zone, as it is typed', async () => {
+      const { wrapper, rect } = await startDrawing() // « Cachet »
+      await click(wrapper, [20, 10])
+      await click(wrapper, [120, 10])
+      await click(wrapper, [120, 60])
+      key('Enter')
+      await flushPromises()
+      const label = () => wrapper.get('[data-testid="entity-label"]')
+      expect(label().text()).toBe('Cachet')
+      await field(wrapper, 'Nom', 1).setValue('Cachet de la préfecture')
+      expect(label().text()).toBe('Cachet de la préfecture')
+      expect(label().attributes('title')).toBe('Cachet de la préfecture') // in full, when the label is cut
+      await field(wrapper, 'Nom', 1).setValue('   ')
+      expect(label().text()).toBe('Entité 1') // no name yet
+      rect.mockRestore()
+    })
+
+    it('labels each zone with its own entity\'s name', async () => {
+      const { wrapper, rect } = await startDrawing()
+      await click(wrapper, [20, 10])
+      await click(wrapper, [120, 10])
+      await click(wrapper, [120, 60])
+      key('Enter')
+      await flushPromises()
+      await addEntity(wrapper, 'Signature', 'La signature')
+      await wrapper.get('[data-testid="entity"] input[id$="-zone"]').setValue(true)
+      await click(wrapper, [30, 20])
+      await click(wrapper, [90, 20])
+      await click(wrapper, [90, 70])
+      key('Enter')
+      await flushPromises()
+      expect(wrapper.findAll('[data-testid="entity-label"]').map((l) => l.text())).toEqual(['Cachet', 'Signature'])
+      rect.mockRestore()
+    })
+
+    it('draws a rectangle by dragging, as four points', async () => {
+      const { wrapper, rect } = await startDrawing()
+      await button(wrapper, 'Rectangle').trigger('click')
+      await drag(wrapper, [20, 10], [120, 60])
+      expect(zones(wrapper)).toHaveLength(1)
+      expect(zones(wrapper)[0].attributes('points')).toBe('10,10 60,10 60,60 10,60')
+      rect.mockRestore()
+    })
+
+    it('ignores a stray click with the rectangle tool', async () => {
+      const { wrapper, rect } = await startDrawing()
+      await button(wrapper, 'Rectangle').trigger('click')
+      await drag(wrapper, [50, 50], [51, 51])
+      expect(zones(wrapper)).toHaveLength(0)
+      expect(wrapper.find('[data-testid="draw-hint"]').exists()).toBe(true) // still waiting for a real zone
+      rect.mockRestore()
+    })
+
+    it('stops drawing when moving to another entity', async () => {
+      const { wrapper, rect } = await startDrawing()
+      await addEntity(wrapper, 'Autre', 'Une autre')
+      expect(wrapper.find('[data-testid="draw-hint"]').exists()).toBe(false)
+      rect.mockRestore()
+    })
+  })
+
+  describe('zooming the document', () => {
+    const level = (wrapper: ReturnType<typeof mount>) => wrapper.get('[data-testid="zoom-level"]').text()
+
+    it('zooms in and out with the buttons, and back to the whole image', async () => {
+      useSession().login('dana')
+      const { wrapper } = await mountAt('/catalogue/nouveau')
+      await upload(wrapper, png())
+      expect(level(wrapper)).toBe('100 %')
+      expect(byTitle(wrapper, 'Dézoomer').attributes('disabled')).toBeDefined() // never smaller than the whole image
+      await byTitle(wrapper, 'Zoomer').trigger('click')
+      await flushPromises()
+      expect(level(wrapper)).toBe('125 %')
+      await byTitle(wrapper, 'Zoomer').trigger('click')
+      await flushPromises()
+      expect(level(wrapper)).toBe('156 %')
+      await byTitle(wrapper, 'Dézoomer').trigger('click')
+      await flushPromises()
+      expect(level(wrapper)).toBe('125 %')
+      await wrapper.get('[data-testid="zoom-level"]').trigger('click')
+      await flushPromises()
+      expect(level(wrapper)).toBe('100 %')
+    })
+
+    it('stops at 800 %', async () => {
+      useSession().login('dana')
+      const { wrapper } = await mountAt('/catalogue/nouveau')
+      await upload(wrapper, png())
+      for (let i = 0; i < 12; i++) {
+        await byTitle(wrapper, 'Zoomer').trigger('click')
+        await flushPromises()
+      }
+      expect(level(wrapper)).toBe('800 %')
+      expect(byTitle(wrapper, 'Zoomer').attributes('disabled')).toBeDefined()
+    })
+
+    it('zooms with Ctrl + wheel, and leaves a plain wheel to scroll', async () => {
+      useSession().login('dana')
+      const { wrapper } = await mountAt('/catalogue/nouveau')
+      await upload(wrapper, png())
+      const viewport = wrapper.get('[data-testid="document-viewport"]').element
+      const wheel = (init: WheelEventInit) => {
+        const event = new WheelEvent('wheel', { bubbles: true, cancelable: true, clientX: 100, clientY: 50, ...init })
+        viewport.dispatchEvent(event)
+        return event
+      }
+      expect(wheel({ deltaY: -100 }).defaultPrevented).toBe(false)
+      await flushPromises()
+      expect(level(wrapper)).toBe('100 %')
+      expect(wheel({ deltaY: -100, ctrlKey: true }).defaultPrevented).toBe(true)
+      await flushPromises()
+      expect(level(wrapper)).toBe('120 %')
+      wheel({ deltaY: 100, ctrlKey: true })
+      await flushPromises()
+      expect(level(wrapper)).toBe('100 %')
+    })
+
+    it('draws at the right place whatever the zoom', async () => {
+      const { wrapper, rect } = await startDrawing()
+      await byTitle(wrapper, 'Zoomer').trigger('click')
+      await flushPromises()
+      // The stage is still reported as 200 x 100: points are read from where the page says the image is.
+      await click(wrapper, [100, 50])
+      expect(wrapper.get('[data-testid="draft-point"]').attributes('style')).toContain('left: 50%')
+      rect.mockRestore()
+    })
+  })
+
+  it('drops the zones when the document is replaced', async () => {
+    useSession().login('alice.martin')
+    const { wrapper } = await mountAt('/catalogue/t1/modifier')
+    expect(wrapper.text()).toContain('courrier-exemple.svg')
+    expect(zones(wrapper)).toHaveLength(1)
+    await upload(wrapper, new File(['x'], 'autre.png', { type: 'image/png' }))
+    expect(wrapper.text()).toContain('Les zones dessinées ont été retirées')
+    expect(zones(wrapper)).toHaveLength(0)
+    expect(wrapper.get('[data-testid="document-name"]').text()).toBe('autre.png')
+  })
+
+  describe('the page of a model', () => {
+    const tabs = (wrapper: ReturnType<typeof mount>) => wrapper.findAll('[role="tab"]').map((t) => t.text())
+
+    it('has the layout of the form, read-only, with the document and the entities', async () => {
+      useSession().login('dana')
+      const { wrapper } = await mountAt('/catalogue/t1')
+      expect(wrapper.find('.template-page').exists()).toBe(true) // the same two halves as the form
+      expect(wrapper.get('[data-testid="document-name"]').text()).toBe('courrier-exemple.svg')
+      expect(zones(wrapper)).toHaveLength(1)
+      expect(wrapper.get('[data-testid="template-owner"]').text()).toBe('alice.martin')
+      expect(wrapper.findAll('.template-view__meta .fr-tag').map((t) => t.text())).toEqual(['Identité', 'Officiel'])
+      expect(wrapper.get('[data-testid="description"]').text()).toContain('Bloc-marque')
+      expect(wrapper.find('input[type="file"]').exists()).toBe(false) // nothing to fill in
+      expect(wrapper.find('textarea').exists()).toBe(false)
+    })
+
+    it('offers the owner to edit, and anyone else to suggest', async () => {
+      useSession().login('alice.martin')
+      const owner = await mountAt('/catalogue/t1')
+      const edit = owner.wrapper.get('a[href$="/catalogue/t1/modifier"]')
+      expect(edit.text()).toBe('Modifier')
+
+      useSession().login('dana')
+      const other = await mountAt('/catalogue/t1')
+      expect(other.wrapper.get('a[href$="/catalogue/t1/modifier"]').text()).toBe('Suggérer une modification')
+    })
+
+    it('shows the entities one at a time', async () => {
+      useSession().login('dana')
+      const { wrapper } = await mountAt('/catalogue/t1')
+      expect(tabs(wrapper)).toEqual(['Entités (2)', 'Suggestions (1)'])
+      expect(entityCount(wrapper)).toBe('1 / 2')
+      expect(wrapper.findAll('[data-testid="entity"]')).toHaveLength(1)
+      expect(wrapper.get('[data-testid="entity"]').text()).toContain('Emblème')
+      expect(wrapper.get('[data-testid="entity"]').text()).toContain('Zone')
+      await byTitle(wrapper, 'Entité suivante').trigger('click')
+      expect(entityCount(wrapper)).toBe('2 / 2')
+      expect(wrapper.get('[data-testid="entity"]').text()).toContain('Devise')
+      expect(wrapper.get('[data-testid="entity"]').text()).toContain('Définition')
+    })
+
+    it('outlines the zone of the entity on show, and only that one', async () => {
+      useSession().login('dana')
+      const { wrapper } = await mountAt('/catalogue/t1')
+      expect(wrapper.find('.doc-viewer__polygon--highlight').exists()).toBe(true) // « Emblème » has a zone
+      await byTitle(wrapper, 'Entité suivante').trigger('click')
+      expect(wrapper.find('.doc-viewer__polygon--highlight').exists()).toBe(false) // « Devise » has none
+    })
+
+    it('stars an entity, for the current user only, and takes it back', async () => {
+      useSession().login('dana')
+      const { wrapper } = await mountAt('/catalogue/t1')
+      const star = () => wrapper.get('[data-testid="entity-star"]')
+      expect(star().text()).toContain('2') // bob.durand and chloe.petit
+      expect(star().attributes('aria-pressed')).toBe('false')
+      await star().trigger('click')
+      expect(star().text()).toContain('3')
+      expect(star().attributes('aria-pressed')).toBe('true')
+      await byTitle(wrapper, 'Entité suivante').trigger('click') // the other entity is not starred
+      expect(wrapper.get('[data-testid="entity-star"]').attributes('aria-pressed')).toBe('false')
+      await byTitle(wrapper, 'Entité précédente').trigger('click')
+      await star().trigger('click')
+      expect(star().text()).toContain('2')
+    })
+
+    it('opens on the suggestions with ?onglet=suggestions, and tells the owner how many wait', async () => {
+      useSession().login('alice.martin')
+      const { wrapper } = await mountAt('/catalogue/t1?onglet=suggestions')
+      expect(wrapper.get('[role="tab"][aria-selected="true"]').text()).toContain('Suggestions (1)')
+      expect(wrapper.get('[role="tablist"]').text()).toContain('1 en attente')
+      expect(wrapper.get('[data-testid="suggestion"]').text()).toContain('bob.durand')
+      expect(wrapper.get('[data-testid="suggestion"]').text()).toContain('version couleur')
+    })
+
+    it('stars a suggestion, for the current user only, and takes it back', async () => {
+      useSession().login('dana')
+      const { wrapper } = await mountAt('/catalogue/t1?onglet=suggestions')
+      const star = () => wrapper.get('[data-testid="suggestion-star"]')
+      expect(star().text()).toContain('1') // chloe.petit
+      expect(star().attributes('aria-pressed')).toBe('false')
+      await star().trigger('click')
+      expect(star().text()).toContain('2')
+      expect(star().attributes('aria-pressed')).toBe('true')
+      await star().trigger('click')
+      expect(star().text()).toContain('1')
+      expect(star().attributes('aria-pressed')).toBe('false')
+    })
+
+    it('only lets the owner decide, but lets anyone comment', async () => {
+      useSession().login('dana')
+      const { wrapper } = await mountAt('/catalogue/t1?onglet=suggestions')
+      expect(wrapper.text()).not.toContain('Accepter')
+      expect(wrapper.get('[data-testid="comment"]').text()).toContain('alice.martin') // already one in the demo data
+      const send = () => button(wrapper, 'Commenter')
+      expect(send().attributes('disabled')).toBeDefined() // nothing to send yet
+      await wrapper.get('[data-testid="suggestion"] input').setValue('  Je suis pour.  ')
+      expect(send().attributes('disabled')).toBeUndefined()
+      await wrapper.get('[data-testid="suggestion"] form').trigger('submit')
+      await flushPromises()
+      const comments = wrapper.findAll('[data-testid="comment"]')
+      expect(comments).toHaveLength(2)
+      expect(comments[1].text()).toContain('dana')
+      expect(comments[1].text()).toContain('Je suis pour.')
+      expect(wrapper.get('[data-testid="suggestion"] input').element.value).toBe('') // ready for the next one
+      expect(wrapper.text()).toContain('Commentaires (2)')
+    })
+
+    it('says so when there is nothing to show', async () => {
+      useSession().login('dana')
+      const { wrapper } = await mountAt('/catalogue/t3')
+      expect(wrapper.text()).toContain('Aucune entité définie pour ce modèle.')
+      expect(wrapper.text()).toContain('Ce modèle n’a pas de document d’exemple.')
+      await wrapper.findAll('[role="tab"]')[1].trigger('click')
+      expect(wrapper.text()).toContain('Aucune suggestion pour ce modèle.')
+    })
+  })
+
+  it('lists the analyses as cards, with their total', async () => {
+    useSession().login('alice')
+    const { wrapper } = await mountAt('/analyses')
+    expect(wrapper.text()).toContain('Courriers octobre')
+    expect(wrapper.text()).toContain('En échec')
+    expect(wrapper.findAll('.tile')).toHaveLength(Math.min(analyses.value.length, 6)) // a page of six, with no layout to measure
+    expect(wrapper.get('[data-testid="list-total"]').text()).toBe(`${analyses.value.length} analyses au total`)
+  })
+
+  it('creates an analysis from catalogue items and lists it first', async () => {
+    useSession().login('alice')
+    const before = analyses.value.length
+    const { wrapper, router } = await mountAt('/analyses/nouvelle')
+    await field(wrapper, 'Nom de l’analyse').setValue('Courriers novembre')
+    await wrapper.get('#template-t1').setValue(true)
+    await wrapper.get('#template-t4').setValue(true)
+    await wrapper.get('form').trigger('submit')
+    await landsOn(router, 'analyses')
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Courriers novembre'))
+    expect(analyses.value).toHaveLength(before + 1)
+    expect(analyses.value[0]).toMatchObject({ name: 'Courriers novembre', templateIds: ['t1', 't4'], status: 'running' })
+    expect(wrapper.get('[data-testid="list-total"]').text()).toBe(`${before + 1} analyses au total`)
+  })
+
+  it('needs a name and at least one catalogue item', async () => {
+    useSession().login('alice')
+    const before = analyses.value.length
+    const { wrapper, router } = await mountAt('/analyses/nouvelle')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(router.currentRoute.value.name).toBe('analysis-new')
+    expect(wrapper.text()).toContain('Donnez un nom à l’analyse.')
+    expect(wrapper.get('[data-testid="missing"]').text()).toBe('À compléter : le nom, au moins un modèle.')
+    expect(analyses.value).toHaveLength(before)
+  })
+
+  describe('choosing the models of an analysis', () => {
+    const tile = (wrapper: ReturnType<typeof mount>, id: string) => wrapper.get(`#template-${id}`).element.closest('.tile') as HTMLElement
+    const box = (wrapper: ReturnType<typeof mount>, id: string) => wrapper.get(`#template-${id}`)
+    const picked = (wrapper: ReturnType<typeof mount>) =>
+      wrapper.findAll('.tile--selected').map((t) => t.get('label').text())
+    const total = (wrapper: ReturnType<typeof mount>) => wrapper.get('[data-testid="list-total"]').text()
+
+    beforeEach(() => {
+      // jsdom does not open a dialog: the browser's two methods, in their simplest form.
+      HTMLDialogElement.prototype.showModal = function (this: HTMLDialogElement) {
+        this.setAttribute('open', '')
+      }
+      HTMLDialogElement.prototype.close = function (this: HTMLDialogElement) {
+        this.removeAttribute('open')
+        this.dispatchEvent(new Event('close'))
+      }
+    })
+    afterEach(() => {
+      // @ts-expect-error: back to what jsdom has
+      delete HTMLDialogElement.prototype.showModal
+      // @ts-expect-error: ditto
+      delete HTMLDialogElement.prototype.close
+    })
+
+    it('shows the models as cards, as the catalogue does, each with its box', async () => {
+      useSession().login('dana')
+      const { wrapper } = await mountAt('/analyses/nouvelle')
+      expect(wrapper.findAll('.tile')).toHaveLength(6) // a page of six, with no layout to measure
+      const first = wrapper.get('.tile')
+      expect(first.get('label').text()).toBe('Logo Marianne')
+      expect(first.get('.tile__description').text()).toBe('Bloc-marque de la République française.')
+      expect(first.findAll('.fr-tag').map((t) => t.text())).toEqual(['Identité', 'Officiel'])
+      expect(first.text()).toContain('Par alice.martin')
+      expect(first.get('input[type="checkbox"]').exists()).toBe(true)
+      expect(total(wrapper)).toBe('11 modèles · 0 sélectionné')
+    })
+
+    it('picks a model with its box, and lets it go', async () => {
+      useSession().login('dana')
+      const { wrapper } = await mountAt('/analyses/nouvelle')
+      await box(wrapper, 't1').setValue(true)
+      expect(tile(wrapper, 't1').classList).toContain('tile--selected')
+      expect(total(wrapper)).toBe('11 modèles · 1 sélectionné')
+      await box(wrapper, 't2').setValue(true)
+      expect(total(wrapper)).toBe('11 modèles · 2 sélectionnés')
+      await box(wrapper, 't1').setValue(false)
+      expect(picked(wrapper)).toEqual(['Tampon « Reçu »'])
+    })
+
+    it('picks a model by clicking anywhere on its card, once, and lets it go the same way', async () => {
+      useSession().login('dana')
+      const { wrapper } = await mountAt('/analyses/nouvelle')
+      await tile(wrapper, 't3').querySelector('.tile__description')!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await flushPromises()
+      expect(picked(wrapper)).toEqual(['Signature type'])
+      await tile(wrapper, 't3').querySelector('.tile__description')!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await flushPromises()
+      expect(picked(wrapper)).toEqual([])
+    })
+
+    it('leaves the box, its label and the detail button to do their own job, so that a click is one choice and not two', async () => {
+      useSession().login('dana')
+      const { wrapper } = await mountAt('/analyses/nouvelle')
+      // The page is not in a document here, so a click on a label ticks nothing by itself: what is seen is that the card's
+      // own handler stays out of it. In a browser the label ticks the box, and the card must not tick it again.
+      const click = (el: Element | null) => el!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      click(tile(wrapper, 't3').querySelector('label'))
+      click(tile(wrapper, 't3').querySelector('input'))
+      click(tile(wrapper, 't3').querySelector('.new-analysis__detail'))
+      await flushPromises()
+      expect(picked(wrapper)).toEqual([])
+      click(tile(wrapper, 't3').querySelector('.tile__tags') ?? tile(wrapper, 't3').querySelector('.tile__description')) // the card itself
+      await flushPromises()
+      expect(picked(wrapper)).toEqual(['Signature type'])
+    })
+
+    it('keeps what is picked through a search, the « mine » filter and a change of page', async () => {
+      useSession().login('alice.martin')
+      const { wrapper } = await mountAt('/analyses/nouvelle')
+      await box(wrapper, 't1').setValue(true) // on the first page
+      await wrapper.get('input[type="search"]').setValue('tampon')
+      expect(wrapper.findAll('.tile').map((t) => t.get('label').text())).toEqual(['Tampon « Reçu »', 'Filigrane « Copie »', 'Cachet de la poste'])
+      await box(wrapper, 't7').setValue(true)
+      await wrapper.get('input[type="search"]').setValue('')
+      await wrapper.findAll('button').find((b) => b.text() === 'Mes modèles')!.trigger('click')
+      expect(wrapper.findAll('.tile').map((t) => t.get('label').text())).toEqual(['Logo Marianne', 'Signature type', 'Cachet de la poste', 'Logo CAF'])
+      expect(picked(wrapper)).toEqual(['Logo Marianne', 'Cachet de la poste'])
+      expect(total(wrapper)).toBe('4 modèles · 2 sélectionnés') // the picks of models not shown are counted too
+      await wrapper.findAll('button').find((b) => b.text() === 'Tous')!.trigger('click')
+      expect(total(wrapper)).toBe('11 modèles · 2 sélectionnés')
+    })
+
+    it('says so when the search, or « mine », shows nothing', async () => {
+      useSession().login('dana')
+      const { wrapper } = await mountAt('/analyses/nouvelle')
+      await wrapper.findAll('button').find((b) => b.text() === 'Mes modèles')!.trigger('click')
+      expect(wrapper.text()).toContain('Vous n’avez pas encore de modèle.')
+      await wrapper.findAll('button').find((b) => b.text() === 'Tous')!.trigger('click')
+      await wrapper.get('input[type="search"]').setValue('zzz')
+      expect(wrapper.text()).toContain('Aucun modèle ne correspond à « zzz ».')
+    })
+
+    it('creates the analysis with the picks of several searches, in the order of the catalogue', async () => {
+      useSession().login('alice')
+      const before = analyses.value.length
+      const { wrapper, router } = await mountAt('/analyses/nouvelle')
+      await field(wrapper, 'Nom de l’analyse').setValue('Mélange')
+      await wrapper.get('input[type="search"]').setValue('qr')
+      await box(wrapper, 't4').setValue(true) // picked first, but later in the catalogue
+      await wrapper.get('input[type="search"]').setValue('marianne')
+      await box(wrapper, 't1').setValue(true)
+      await wrapper.get('form').trigger('submit')
+      await landsOn(router, 'analyses')
+      expect(analyses.value).toHaveLength(before + 1)
+      expect(analyses.value[0]).toMatchObject({ name: 'Mélange', templateIds: ['t1', 't4'] })
+    })
+
+    describe('describing and sharing the analysis', () => {
+      const publicBox = (wrapper: ReturnType<typeof mount>) => wrapper.get('input.fr-toggle__input')
+      const shareField = (wrapper: ReturnType<typeof mount>) => wrapper.get('.share input')
+      const shareTags = (wrapper: ReturnType<typeof mount>) => wrapper.findAll('.share__tags button').map((b) => b.text())
+      const typeShare = async (wrapper: ReturnType<typeof mount>, text: string) => {
+        await shareField(wrapper).setValue(text)
+        await shareField(wrapper).trigger('keydown.enter')
+      }
+      /** A form with a name and one model, ready to be sent. */
+      async function ready() {
+        useSession().login('alice')
+        const page = await mountAt('/analyses/nouvelle')
+        await field(page.wrapper, 'Nom de l’analyse').setValue('Mon analyse')
+        await box(page.wrapper, 't1').setValue(true)
+        return page
+      }
+
+      it('has the form on one side and the models on the other', async () => {
+        useSession().login('dana')
+        const { wrapper } = await mountAt('/analyses/nouvelle')
+        expect(wrapper.get('section[aria-label="Informations sur l’analyse"]').find('textarea').exists()).toBe(true)
+        expect(wrapper.get('section[aria-label="Modèles à rechercher"]').findAll('.tile').length).toBeGreaterThan(0)
+        expect(wrapper.find('section[aria-label="Informations sur l’analyse"] .tile').exists()).toBe(false)
+      })
+
+      it('takes a description, which is optional and kept as typed', async () => {
+        const { wrapper, router } = await ready()
+        expect(field(wrapper, 'Description').attributes('maxlength')).toBe('300')
+        await field(wrapper, 'Description').setValue('  À quoi sert cette analyse.  ')
+        await wrapper.get('form').trigger('submit')
+        await landsOn(router, 'analyses')
+        expect(analyses.value[0]).toMatchObject({ name: 'Mon analyse', description: 'À quoi sert cette analyse.' })
+      })
+
+      it('can be made with no description and no recipient', async () => {
+        const { wrapper, router } = await ready()
+        await wrapper.get('form').trigger('submit')
+        await landsOn(router, 'analyses')
+        expect(analyses.value[0]).toMatchObject({ description: '', isPublic: false, shares: [] })
+      })
+
+      it('is shared with people by e-mail address and with groups by name', async () => {
+        const { wrapper, router } = await ready()
+        await typeShare(wrapper, 'Marie.Dupont@example.org')
+        await typeShare(wrapper, 'service contentieux')
+        expect(shareTags(wrapper)).toEqual(['marie.dupont@example.org', 'Service contentieux'])
+        await wrapper.get('form').trigger('submit')
+        await landsOn(router, 'analyses')
+        expect(analyses.value[0].isPublic).toBe(false)
+        expect(analyses.value[0].shares).toEqual([
+          { kind: 'email', value: 'marie.dupont@example.org' },
+          { kind: 'group', value: 'Service contentieux' },
+        ])
+        await vi.waitFor(() => expect(wrapper.get('[data-testid="sharing"]').text()).toBe('Partagée · 2'))
+        expect(wrapper.get('[data-testid="sharing"]').attributes('title')).toContain('1 personne et 1 groupe')
+      })
+
+      it('offers the groups the backend knows', async () => {
+        const { wrapper } = await ready()
+        expect(wrapper.findAll('.share datalist option').map((o) => o.attributes('value'))).toEqual([
+          'Équipe courriers',
+          'Préfecture de Paris',
+          'Service contentieux',
+          'Direction',
+        ])
+      })
+
+      it('takes what was typed in the field when the form is sent, without Enter', async () => {
+        const { wrapper, router } = await ready()
+        await shareField(wrapper).setValue('paul@example.org')
+        await wrapper.get('form').trigger('submit')
+        await landsOn(router, 'analyses')
+        expect(analyses.value[0].shares).toEqual([{ kind: 'email', value: 'paul@example.org' }])
+      })
+
+      it('does not send the form while what was typed is not a recipient, and says so', async () => {
+        const { wrapper, router } = await ready()
+        const before = analyses.value.length
+        await shareField(wrapper).setValue('pas-une-adresse')
+        await wrapper.get('form').trigger('submit')
+        await flushPromises()
+        expect(router.currentRoute.value.name).toBe('analysis-new')
+        expect(wrapper.get('[data-testid="missing"]').text()).toBe('À compléter : le destinataire à corriger.')
+        expect(wrapper.get('.share [role="alert"]').text()).toContain('n’est ni une adresse e-mail ni un groupe connu')
+        expect(analyses.value).toHaveLength(before)
+        await shareField(wrapper).setValue('')
+        await wrapper.get('form').trigger('submit')
+        await landsOn(router, 'analyses')
+        expect(analyses.value).toHaveLength(before + 1)
+      })
+
+      it('can be public, which leaves the recipients\' field off', async () => {
+        const { wrapper } = await ready()
+        expect(shareField(wrapper).attributes('disabled')).toBeUndefined()
+        await publicBox(wrapper).setValue(true)
+        expect(shareField(wrapper).attributes('disabled')).toBeDefined()
+        expect(shareField(wrapper).attributes('placeholder')).toBe('Visible par tous')
+        expect(wrapper.text()).toContain('Visible par tous les utilisateurs')
+      })
+
+      it('is saved as public, with no recipient, and says so in the list', async () => {
+        const { wrapper, router } = await ready()
+        await typeShare(wrapper, 'marie@example.org')
+        await publicBox(wrapper).setValue(true)
+        await wrapper.get('form').trigger('submit')
+        await landsOn(router, 'analyses')
+        expect(analyses.value[0]).toMatchObject({ isPublic: true, shares: [] })
+        await vi.waitFor(() => expect(wrapper.get('.tile [data-testid="sharing"]').text()).toBe('Publique'))
+      })
+
+      it('keeps the recipients named while it is public, for when it is not after all', async () => {
+        const { wrapper } = await ready()
+        await typeShare(wrapper, 'marie@example.org')
+        await publicBox(wrapper).setValue(true)
+        expect(shareTags(wrapper)).toEqual(['marie@example.org'])
+        await publicBox(wrapper).setValue(false)
+        expect(shareField(wrapper).attributes('disabled')).toBeUndefined()
+        expect(shareTags(wrapper)).toEqual(['marie@example.org'])
+      })
+
+      it('does not mind what is left in the recipients\' field once public', async () => {
+        const { wrapper, router } = await ready()
+        await shareField(wrapper).setValue('pas-une-adresse')
+        await publicBox(wrapper).setValue(true)
+        await wrapper.get('form').trigger('submit')
+        await landsOn(router, 'analyses')
+        expect(analyses.value[0].isPublic).toBe(true)
+      })
+    })
+
+    it('says what is missing, one thing at a time', async () => {
+      useSession().login('dana')
+      const { wrapper } = await mountAt('/analyses/nouvelle')
+      await box(wrapper, 't1').setValue(true)
+      await wrapper.get('form').trigger('submit')
+      await flushPromises()
+      expect(wrapper.get('[data-testid="missing"]').text()).toBe('À compléter : le nom.')
+      await field(wrapper, 'Nom de l’analyse').setValue('Ok')
+      await box(wrapper, 't1').setValue(false)
+      await wrapper.get('form').trigger('submit')
+      await flushPromises()
+      expect(wrapper.get('[data-testid="missing"]').text()).toBe('À compléter : au moins un modèle.')
+    })
+
+    describe('the detail of a model', () => {
+      const detailButton = (wrapper: ReturnType<typeof mount>, id: string) =>
+        tile(wrapper, id).querySelector('.new-analysis__detail') as HTMLElement
+      const open = async (wrapper: ReturnType<typeof mount>, id: string) => {
+        detailButton(wrapper, id).click()
+        await flushPromises()
+      }
+
+      it('opens over the page, with the model\'s description, document and entities', async () => {
+        useSession().login('dana')
+        const { wrapper } = await mountAt('/analyses/nouvelle')
+        expect((wrapper.get('dialog').element as HTMLDialogElement).open).toBe(false)
+        await open(wrapper, 't1')
+        expect((wrapper.get('dialog').element as HTMLDialogElement).open).toBe(true)
+        const preview = wrapper.get('[data-testid="preview"]')
+        expect(preview.get('h2').text()).toBe('Logo Marianne')
+        expect(preview.get('[data-testid="preview-description"]').text()).toContain('Bloc-marque')
+        expect(preview.find('.doc-viewer').exists()).toBe(true)
+        expect(preview.get('[data-testid="entity"]').text()).toContain('Emblème')
+      })
+
+      it('does not pick the model, nor lose what was filled in, and closes', async () => {
+        useSession().login('dana')
+        const { wrapper } = await mountAt('/analyses/nouvelle')
+        await field(wrapper, 'Nom de l’analyse').setValue('Mon analyse')
+        await box(wrapper, 't2').setValue(true)
+        await open(wrapper, 't1')
+        expect(picked(wrapper)).toEqual(['Tampon « Reçu »']) // t1 was looked at, not picked
+        await wrapper.get('[data-testid="preview-close"]').trigger('click')
+        await flushPromises()
+        expect((wrapper.get('dialog').element as HTMLDialogElement).open).toBe(false)
+        expect(wrapper.find('[data-testid="preview"]').exists()).toBe(false)
+        expect((field(wrapper, 'Nom de l’analyse').element as HTMLInputElement).value).toBe('Mon analyse')
+        expect(picked(wrapper)).toEqual(['Tampon « Reçu »'])
+      })
+
+      it('shows the model asked for, one after the other', async () => {
+        useSession().login('dana')
+        const { wrapper } = await mountAt('/analyses/nouvelle')
+        await open(wrapper, 't2')
+        expect(wrapper.get('[data-testid="preview"] h2').text()).toBe('Tampon « Reçu »')
+        await wrapper.get('[data-testid="preview-close"]').trigger('click')
+        await flushPromises()
+        await open(wrapper, 't3')
+        expect(wrapper.get('[data-testid="preview"] h2').text()).toBe('Signature type')
+      })
+
+      it('is named for a screen reader by the model it is about', async () => {
+        useSession().login('dana')
+        const { wrapper } = await mountAt('/analyses/nouvelle')
+        expect(detailButton(wrapper, 't1').textContent).toContain('Voir le détail')
+        expect(detailButton(wrapper, 't1').textContent).toContain('de Logo Marianne')
+      })
+    })
+  })
+})
