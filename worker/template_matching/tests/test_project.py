@@ -1,4 +1,5 @@
 import io
+import json
 
 import cv2
 import numpy as np
@@ -107,6 +108,7 @@ def assert_found(template, transform, canvas, noise=0.0, minimum=0.7):
 
 def test_the_same_page_gives_the_zones_where_they_are(template):
     found = assert_found(template, np.eye(3), SIZE, minimum=0.95)
+    json.dumps({"confidence": found.confidence, "zones": found.zones})  # what is sent back is plain numbers
 
     assert found.confidence > 0.7
 

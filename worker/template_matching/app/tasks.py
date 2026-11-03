@@ -1,9 +1,15 @@
+import logging
+
+from celery import Task
 from qdrant_client import QdrantClient
 
-from app import config, embeddings, storage
+from app import backend, config, embeddings, storage
 from app.celery_app import celery_app
 from app.classify import PageClassifier
 from app.index import TemplateIndex
+from app.match import match_document as match
+
+logger = logging.getLogger(__name__)
 
 _index: TemplateIndex | None = None
 _classifier: PageClassifier | None = None
@@ -56,3 +62,20 @@ def classify_pages(template_ids: list[str], page_keys: list[str]) -> list[dict]:
     """What each page of a document (its images, by key in the store) is among the given models (see
     `PageClassifier.classify`)."""
     return get_classifier().classify(template_ids, [storage.get_bytes(key) for key in page_keys])
+
+
+class _ReportsFailure(Task):
+    """A run that cannot be matched, whatever was tried, ends as failed on the backend: it is not left running."""
+
+    def on_failure(self, exc, task_id, args, kwargs, einfo):
+        try:
+            backend.report(args[0]["run_id"], {"status": "failed"})
+        except Exception:
+            logger.exception("Could not tell the backend that the run %s failed", args[0].get("run_id"))
+
+
+@celery_app.task(name="template_matching.match_document", base=_ReportsFailure, **_RETRY)
+def match_document(message: dict) -> None:
+    """Classifies the pages of a document tried on an analysis and finds the elements of its models in them (see
+    `match.match_document`), then hands the result back to the backend, which keeps the runs."""
+    backend.report(message["run_id"], match(get_classifier(), storage.get_bytes, message))
