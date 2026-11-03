@@ -22,3 +22,12 @@ AWS_BUCKET = os.environ.get("AWS_BUCKET", "croquembouche-documents")
 def collection_name() -> str:
     """The collection of the current embedding model: « croquembouche-templates--qdrant-clip-vit-b-32-vision »."""
     return f"{QDRANT_COLLECTION}--{re.sub(r'[^a-z0-9]+', '-', EMBEDDING_MODEL.lower()).strip('-')}"
+
+
+# How similarities become confidences (see `classify`). Without a set of documents to measure against these are first
+# guesses, hence settings: a page whose best look-alike scores `OTHER_SCORE` is as likely « other » as that page, and
+# the lower `TEMPERATURE` is, the more a small gap between two pages counts.
+OTHER_SCORE = float(os.environ.get("CLASSIFY_OTHER_SCORE", "0.85"))
+TEMPERATURE = float(os.environ.get("CLASSIFY_TEMPERATURE", "0.02"))
+# How many points a page asks for: all the rotations of every page of the models of an analysis.
+NEIGHBOURS = int(os.environ.get("CLASSIFY_NEIGHBOURS", "256"))
