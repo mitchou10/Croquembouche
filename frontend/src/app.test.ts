@@ -5,8 +5,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import App from './App.vue'
 import { loadAnalyses, resetAnalyses, useAnalyses } from './composables/useAnalyses'
+import { uploadDocument } from './data/api'
 import { simulatePage, simulateTest } from './test/simulate'
-import { resetCatalogue, useCatalogue } from './composables/useCatalogue'
+import { newEntity, resetCatalogue, useCatalogue } from './composables/useCatalogue'
 import { loadGroups, resetGroups } from './composables/useGroups'
 import { useSession } from './composables/useSession'
 import { requireAuth, routes } from './router'
@@ -529,6 +530,71 @@ describe('app', () => {
         expect(wrapper.get('[data-testid="save-screenshot"]').element.checked).toBe(true) // kept unless said otherwise
         expect(wrapper.find('[data-testid="detection"]').exists()).toBe(false)
         expect(wrapper.find('.doc-viewer').exists()).toBe(false)
+      })
+
+      describe('page by page', () => {
+        const pdfFile = (name: string) => new File(['x'], name, { type: 'application/pdf' })
+        /** An analysis of « Formulaire X » (a PDF of three pages, the second named) and of « Logo Marianne », by dana. */
+        const pdfAnalysis = async () => {
+          useSession().setUser('dana')
+          const { create } = useCatalogue()
+          const document = await uploadDocument(pdfFile('modele.pdf'))
+          const form = await create(
+            { name: 'Formulaire X', description: 'Un formulaire', categories: [], entities: [], pages: [{ page: 2, name: 'Pièces', description: '' }] },
+            document,
+          )
+          const analysis = await useAnalyses().createAnalysis({ name: 'Dossiers', description: '', templateIds: [form.id, 't1'], isPublic: false, shares: [] })
+          const page = await mountAt(`/analyses/${analysis.id}`)
+          await vi.waitFor(() => expect(page.wrapper.find('h1').exists()).toBe(true))
+          return { ...page, form }
+        }
+        const classNames = (wrapper: ReturnType<typeof mount>) => wrapper.findAll('[data-testid="classification"] .classes__name').map((n) => n.text())
+
+        it('classifies each page of a PDF, with the page of the model it looks like, and a pager to go through them', async () => {
+          const { wrapper } = await pdfAnalysis()
+          await send(wrapper, pdfFile('dossier.pdf'))
+          expect(wrapper.get('[data-testid="page-card"] h3').text()).toBe('Classification de la page 1')
+          expect(wrapper.get('[data-testid="page-pager"] [data-testid="pager-count"]').text()).toBe('1 / 3')
+          expect(classNames(wrapper)).toHaveLength(4) // the likeliest four of five classes
+          for (const name of classNames(wrapper)) expect(name).toMatch(/^(Formulaire X · page [13]|Formulaire X · Pièces|Logo Marianne|Autre, non reconnu)$/)
+
+          await wrapper.get('[data-testid="page-pager"] button[title="Page suivante"]').trigger('click')
+          expect(wrapper.get('[data-testid="page-card"] h3').text()).toBe('Classification de la page 2')
+          expect(wrapper.get('[data-testid="page-number"]').text()).toBe('Page 2 / 3') // the document follows
+        })
+
+        it('follows the page of the document: going to a page there shows its classification', async () => {
+          const { wrapper } = await pdfAnalysis()
+          await send(wrapper, pdfFile('dossier.pdf'))
+          await wrapper.get('.doc-viewer button[title="Page suivante"]').trigger('click')
+          await wrapper.get('.doc-viewer button[title="Page suivante"]').trigger('click')
+          expect(wrapper.get('[data-testid="page-card"] h3').text()).toBe('Classification de la page 3')
+          expect(wrapper.get('[data-testid="page-pager"] [data-testid="pager-count"]').text()).toBe('3 / 3')
+        })
+
+        it('is decided page by page, and annotated with a page of a model, named as the model names it', async () => {
+          const { wrapper, router } = await pdfAnalysis()
+          await send(wrapper, pdfFile('dossier.pdf'))
+          await wrapper.get('[data-testid="page-pager"] button[title="Page suivante"]').trigger('click')
+          const options = wrapper.findAll('[data-testid="page-card"] [data-testid="review-annotate"] option').map((o) => o.text())
+          expect(options).toEqual(['Annoter avec…', 'Formulaire X · page 1', 'Formulaire X · Pièces', 'Formulaire X · page 3', 'Logo Marianne'])
+
+          await wrapper.get('[data-testid="page-card"] [data-testid="review-annotate"]').setValue(wrapper.findAll('[data-testid="page-card"] option')[3].element.getAttribute('value'))
+          expect(wrapper.get('[data-testid="page-card"] [data-testid="review-state"]').text()).toBe('Annotée : Formulaire X · page 3')
+
+          // Only the page 2 was decided: the other pages are still to be looked at.
+          await wrapper.get('[data-testid="page-pager"] button[title="Page précédente"]').trigger('click')
+          expect(wrapper.get('[data-testid="page-card"] [data-testid="review-state"]').text()).toBe('À vérifier')
+          expect(wrapper.get('[data-testid="progress"]').text()).toMatch(/^1 \/ \d+ vérifiée$/)
+          expect(router.currentRoute.value.name).toBe('analysis-detail')
+        })
+
+        it('is one classification for an image, with no pager', async () => {
+          const { wrapper } = await pdfAnalysis()
+          await send(wrapper, image('une-page.png'))
+          expect(wrapper.get('[data-testid="page-card"] h3').text()).toBe('Classification de la page')
+          expect(wrapper.find('[data-testid="page-pager"]').exists()).toBe(false)
+        })
       })
 
       it('takes an image or a PDF', async () => {
@@ -1461,7 +1527,7 @@ describe('app', () => {
 
       expect(wrapper.find('[data-testid="suggestions"]').exists()).toBe(false) // offered once
       expect(entityCount(wrapper)).toBe('1 / 2')
-      expect(field(wrapper, 'Nom', 1).element.value).toBe('Nom du demandeur')
+      expect(field(wrapper, 'Nom', 2).element.value).toBe('Nom du demandeur') // after the form's name and the page's
       expect(field(wrapper, 'Définition').element.value).toBe('Le champ « Nom du demandeur » du document.')
       expect(wrapper.get('[data-testid="entity"] input[id$="-zone"]').element.checked).toBe(true) // found by its zone
       // Its zone is outlined on the page it is on.
@@ -1509,6 +1575,78 @@ describe('app', () => {
       await upload(wrapper, pdf())
       await upload(wrapper, png())
       expect(wrapper.find('[data-testid="suggestions"]').exists()).toBe(false)
+    })
+  })
+
+  describe('the pages of a model', () => {
+    const pdf = () => new File(['x'], 'formulaire.pdf', { type: 'application/pdf' })
+    // The field of the model, not the ones of a page that start the same way.
+    const exact = (wrapper: ReturnType<typeof mount>, label: string) =>
+      wrapper.get(`#${wrapper.findAll('label').find((l) => l.text() === label)!.attributes('for')}`)
+
+    it('can each be given a name and a description, with the model\'s name and the number as the default', async () => {
+      useSession().setUser('dana')
+      const { wrapper, router } = await mountAt('/catalogue/nouveau')
+      expect(wrapper.find('[data-testid="page-fields"]').exists()).toBe(false) // no document, no page
+      await upload(wrapper, png())
+      expect(wrapper.find('[data-testid="page-fields"]').exists()).toBe(false) // an image is one page
+
+      await upload(wrapper, pdf())
+      await exact(wrapper, 'Nom').setValue('Formulaire X')
+      expect(field(wrapper, 'Nom de la page 1').attributes('placeholder')).toBe('Formulaire X · page 1')
+
+      await wrapper.get('.doc-viewer button[title="Page suivante"]').trigger('click')
+      await field(wrapper, 'Nom de la page 2').setValue('Pièces justificatives')
+      await field(wrapper, 'Description de la page 2').setValue('Les annexes à joindre')
+      await wrapper.get('.doc-viewer button[title="Page suivante"]').trigger('click')
+      expect(field(wrapper, 'Nom de la page 3').element.value).toBe('') // the other pages are the default
+      await exact(wrapper, 'Description').setValue('Un formulaire')
+      await wrapper.get('form').trigger('submit')
+      await landsOn(router, 'catalogue-detail')
+      await vi.waitFor(() => expect(wrapper.find('[data-testid="page-note"]').exists()).toBe(true))
+
+      // The page of the model is shown with how it is called, and what is said of it.
+      expect(wrapper.get('[data-testid="page-note"]').text()).toBe('Formulaire X · page 1')
+      await wrapper.get('.doc-viewer button[title="Page suivante"]').trigger('click')
+      expect(wrapper.get('[data-testid="page-note"]').text()).toBe('Formulaire X · Pièces justificatives — Les annexes à joindre')
+    })
+
+    it('goes back to the default when the name is taken away', async () => {
+      useSession().setUser('dana')
+      const { create } = useCatalogue()
+      const document = await uploadDocument(pdf())
+      const made = await create({ name: 'Formulaire X', description: 'Un formulaire', categories: [], entities: [], pages: [{ page: 1, name: 'Couverture', description: '' }] }, document)
+      const { wrapper, router } = await mountAt(`/catalogue/${made.id}/modifier`)
+      expect(field(wrapper, 'Nom de la page 1').element.value).toBe('Couverture')
+      await field(wrapper, 'Nom de la page 1').setValue('')
+      await wrapper.get('form').trigger('submit')
+      await landsOn(router, 'catalogue-detail')
+      await vi.waitFor(() => expect(wrapper.find('[data-testid="page-note"]').exists()).toBe(true))
+      expect(wrapper.get('[data-testid="page-note"]').text()).toBe('Formulaire X · page 1')
+    })
+
+    it('has nothing said of a document the model has no more', async () => {
+      useSession().setUser('dana')
+      const { wrapper } = await mountAt('/catalogue/nouveau')
+      await upload(wrapper, pdf())
+      await field(wrapper, 'Nom de la page 1').setValue('Couverture')
+      await upload(wrapper, pdf()) // another document: what was said of the pages of the first means nothing
+      expect(field(wrapper, 'Nom de la page 1').element.value).toBe('')
+    })
+
+    it('shows the page of an entity\'s zone when the document has several', async () => {
+      useSession().setUser('dana')
+      const { create } = useCatalogue()
+      const document = await uploadDocument(pdf())
+      const zone = { page: 3, points: [{ x: 0.1, y: 0.1 }, { x: 0.4, y: 0.1 }, { x: 0.4, y: 0.3 }] }
+      const made = await create(
+        { name: 'Formulaire X', description: 'Un formulaire', categories: [], pages: [], entities: [{ ...newEntity(), name: 'Signature', definition: 'En bas', zone }] },
+        document,
+      )
+      const { wrapper } = await mountAt(`/catalogue/${made.id}`)
+      expect(wrapper.get('[data-testid="entity-kind"]').text()).toBe('Zone · page 3')
+      // The viewer goes to the page of the entity that is on show.
+      await vi.waitFor(() => expect(wrapper.get('[data-testid="page-number"]').text()).toBe('Page 3 / 3'))
     })
   })
 
@@ -2085,7 +2223,7 @@ describe('app', () => {
   describe('the page of a model', () => {
     it('is deleted by its owner, after a confirmation, and the catalogue goes on without it', async () => {
       useSession().setUser('dana')
-      const made = await useCatalogue().create({ name: 'À jeter', description: 'Pour voir.', categories: [], entities: [] })
+      const made = await useCatalogue().create({ name: 'À jeter', description: 'Pour voir.', categories: [], entities: [], pages: [] })
       const { wrapper, router } = await mountAt(`/catalogue/${made.id}`)
       await wrapper.get('[data-testid="delete"]').trigger('click')
       expect(wrapper.get('[data-testid="confirm"]').text()).toContain('Supprimer ce modèle ?')

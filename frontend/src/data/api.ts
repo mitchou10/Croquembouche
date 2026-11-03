@@ -6,6 +6,7 @@ import type {
   Group,
   Review,
   ReviewedDetection,
+  RunPage,
   Share,
   Template,
   TemplateDocument,
@@ -55,6 +56,7 @@ export interface TemplateBody {
   name: string
   description: string
   categories: string[]
+  pages: { page: number; name: string; description: string }[]
   entities: {
     id?: string
     name: string
@@ -146,12 +148,13 @@ export const deleteDocument = (id: string) => request<void>('DELETE', `/api/docu
 interface ReviewAnswer {
   status: Review['status']
   templateId: string | null
+  templatePage: number | null
 }
 
-interface RunAnswer extends Omit<AnalysisRun, 'fileName' | 'detections' | 'page' | 'screenshot' | 'fileDecision'> {
+interface RunAnswer extends Omit<AnalysisRun, 'fileName' | 'detections' | 'pages' | 'screenshot' | 'fileDecision'> {
   fileName: string | null
   detections: (Omit<ReviewedDetection, 'review'> & { review: ReviewAnswer })[] | null
-  page: { classifications: Classification[]; review: ReviewAnswer } | null
+  pages: { page: number; classifications: Classification[]; review: ReviewAnswer }[] | null
   screenshot: DocumentAnswer | null
   fileDecision: 'kept' | 'deleted' | null
 }
@@ -161,15 +164,23 @@ interface AnalysisAnswer extends Omit<Analysis, 'runs'> {
 }
 
 /** The backend says « none » with null: the page, by leaving it out. */
-const toReview = ({ status, templateId }: ReviewAnswer): Review => ({ status, ...(templateId && { templateId }) })
+const toReview = ({ status, templateId, templatePage }: ReviewAnswer): Review => ({
+  status,
+  ...(templateId && { templateId }),
+  ...(templatePage && { templatePage }),
+})
 
 function toRun(run: RunAnswer): AnalysisRun {
-  const { fileName, detections, page, screenshot, fileDecision, ...rest } = run
+  const { fileName, detections, pages, screenshot, fileDecision, ...rest } = run
   return {
     ...rest,
     ...(fileName && { fileName }),
     ...(detections && { detections: detections.map((d) => ({ ...d, review: toReview(d.review) })) }),
-    ...(page && { page: { classifications: page.classifications, review: toReview(page.review) } }),
+    ...(pages && {
+      pages: pages.map(
+        (p): RunPage => ({ page: p.page, classifications: p.classifications, review: toReview(p.review) }),
+      ),
+    }),
     screenshot: screenshot ? fromAnswer(screenshot) : null,
     ...(fileDecision && { fileDecision }),
   }
@@ -208,12 +219,17 @@ export async function postRun(id: string, file: File, keepScreenshot: boolean): 
 const runCall = async (method: string, id: string, runId: string, path: string, body?: unknown) =>
   toRun(await request<RunAnswer>(method, `${analyses}/${id}/runs/${runId}${path}`, body))
 
-const reviewBody = (review: Review) => ({ status: review.status, ...(review.templateId && { templateId: review.templateId }) })
+const reviewBody = (review: Review) => ({
+  status: review.status,
+  ...(review.templateId && { templateId: review.templateId }),
+  ...(review.templatePage && { templatePage: review.templatePage }),
+})
 
 export const putDetectionReview = (id: string, runId: string, detectionId: string, review: Review) =>
   runCall('PUT', id, runId, `/detections/${detectionId}/review`, reviewBody(review))
-export const putPageReview = (id: string, runId: string, review: Review) =>
-  runCall('PUT', id, runId, '/page/review', reviewBody(review))
+/** The decision on the classification of one page of the document tried (from 1). */
+export const putPageReview = (id: string, runId: string, page: number, review: Review) =>
+  runCall('PUT', id, runId, `/pages/${page}/review`, reviewBody(review))
 export const postElement = (id: string, runId: string, element: { zone: Zone; templateId: string }) =>
   runCall('POST', id, runId, '/elements', element)
 export const deleteElement = (id: string, runId: string, detectionId: string) =>

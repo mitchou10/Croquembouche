@@ -71,4 +71,41 @@ describe('ReviewControls', () => {
     const id = wrapper.get('[data-testid="review-annotate"]').attributes('id')
     expect(wrapper.get(`label[for="${id}"]`).text()).toBe('Annoter avec un modèle de l’analyse')
   })
+
+  describe('for the page of a document', () => {
+    const pages = [
+      { id: 'f', name: 'Formulaire X · page 1', page: 1 },
+      { id: 'f', name: 'Formulaire X · Pièces', page: 2 },
+      { id: 't1', name: 'Logo Marianne' },
+    ]
+    const label = (id: string, page?: number | null) => pages.find((m) => m.id === id && m.page === (page ?? undefined))?.name ?? id
+    const mountPages = (review: Review) =>
+      mount(ReviewControls, { props: { review, models: pages, modelName: label }, global: { plugins: [VueDsfr] } })
+
+    it('offers the pages of the models, and the model when it has one page', () => {
+      const options = mountPages({ status: 'pending' }).findAll('option')
+      expect(options.map((o) => [o.text(), o.attributes('value')])).toEqual([
+        ['Annoter avec…', ''],
+        ['Formulaire X · page 1', 'f#1'],
+        ['Formulaire X · Pièces', 'f#2'],
+        ['Logo Marianne', 't1'],
+      ])
+    })
+
+    it('annotates with a page of a model, or with a model alone', async () => {
+      const wrapper = mountPages({ status: 'pending' })
+      await wrapper.get('select').setValue('f#2')
+      await wrapper.get('select').setValue('t1')
+      expect(wrapper.emitted('review')).toEqual([
+        [{ status: 'annotated', templateId: 'f', templatePage: 2 }],
+        [{ status: 'annotated', templateId: 't1' }],
+      ])
+    })
+
+    it('says which page it was annotated with, and shows it chosen', () => {
+      const wrapper = mountPages({ status: 'annotated', templateId: 'f', templatePage: 2 })
+      expect(state(wrapper)).toBe('Annotée : Formulaire X · Pièces')
+      expect((wrapper.get('select').element as HTMLSelectElement).value).toBe('f#2')
+    })
+  })
 })

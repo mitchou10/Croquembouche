@@ -27,7 +27,12 @@ const starred = computed(() => !!entity.value && userId.value !== null && entity
     <div :key="entity.id" class="entity-card" data-testid="entity">
       <div class="entity-card__head">
         <h3 class="fr-h6 fr-mb-0">{{ entity.name }}</h3>
-        <DsfrBadge :label="entity.zone ? 'Zone' : 'Définition'" :type="entity.zone ? 'info' : 'new'" small />
+        <DsfrBadge
+          :label="entity.zone ? (template.pages.length > 1 ? `Zone · page ${entity.zone.page}` : 'Zone') : 'Définition'"
+          :type="entity.zone ? 'info' : 'new'"
+          small
+          data-testid="entity-kind"
+        />
         <DsfrTag :label="entityTypeLabel(entity.type)" small data-testid="entity-type" />
         <InfoTip :label="`Définition du type ${entityTypeLabel(entity.type)}`">
           <strong>{{ entityTypeLabel(entity.type) }}</strong>

@@ -10,7 +10,7 @@ const props = defineProps<{
   /** What it is called, when it is not « Élément n »: the page, for instance. */
   title?: string
   /** The name of a class: a model's, or « other » for null. */
-  nameOf: (templateId: string | null) => string
+  nameOf: (templateId: string | null, templatePage?: number | null) => string
 }>()
 
 /** The most classes shown: the likeliest ones, the rest being too unlikely to be worth a line. */
@@ -26,18 +26,18 @@ const hidden = computed(() => props.detection.classifications.length - shown.val
   <div class="detection" data-testid="detection">
     <div class="detection__head">
       <h3 class="fr-h6 fr-mb-0">{{ title ?? `Élément ${position}` }}</h3>
-      <DsfrBadge :label="nameOf(best.templateId)" :type="best.templateId === null ? 'warning' : 'success'" small data-testid="detection-best" />
+      <DsfrBadge :label="nameOf(best.templateId, best.templatePage)" :type="best.templateId === null ? 'warning' : 'success'" small data-testid="detection-best" />
       <span class="detection__confidence" data-testid="detection-confidence">{{ percent(best.confidence) }} %</span>
     </div>
 
     <p class="fr-text--sm fr-mb-0">Classes possibles, de la plus à la moins probable :</p>
     <ul class="classes">
-      <li v-for="(c, index) in shown" :key="c.templateId ?? 'other'" class="classes__row" :class="{ 'classes__row--best': index === 0 }" data-testid="classification">
-        <span class="classes__name" :title="nameOf(c.templateId)">{{ nameOf(c.templateId) }}</span>
+      <li v-for="(c, index) in shown" :key="`${c.templateId ?? 'other'}#${c.templatePage ?? 0}`" class="classes__row" :class="{ 'classes__row--best': index === 0 }" data-testid="classification">
+        <span class="classes__name" :title="nameOf(c.templateId, c.templatePage)">{{ nameOf(c.templateId, c.templatePage) }}</span>
         <span
           class="classes__bar"
           role="meter"
-          :aria-label="`${nameOf(c.templateId)} : ${percent(c.confidence)} %`"
+          :aria-label="`${nameOf(c.templateId, c.templatePage)} : ${percent(c.confidence)} %`"
           aria-valuemin="0"
           aria-valuemax="100"
           :aria-valuenow="percent(c.confidence)"

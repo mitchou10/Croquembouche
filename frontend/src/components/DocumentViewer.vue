@@ -50,7 +50,8 @@ function onLoad(event: Event) {
 }
 
 // A document of several pages (a PDF's screenshots) is looked at one page at a time; the zones are of a page.
-const page = ref(1)
+// The page shown (from 1): the parent can follow it, or take the viewer to a page.
+const page = defineModel<number>('page', { default: 1 })
 const pageCount = computed(() => props.document.pages ?? 1)
 const imageUrl = computed(() => (props.document.id ? pageUrl(props.document.id, page.value) : props.document.url))
 
@@ -73,13 +74,12 @@ function goToPage(next: number) {
 }
 
 // Looking at an entity brings its page up.
-watch(
-  () => props.highlightId,
-  (id) => {
-    const zone = props.entities?.find((e) => e.id === id)?.zone
-    if (zone) goToPage(zone.page)
-  },
-)
+function showPageOf(id: string | undefined) {
+  const zone = props.entities?.find((e) => e.id === id)?.zone
+  if (zone) goToPage(zone.page)
+}
+watch(() => props.highlightId, showPageOf)
+onMounted(() => showPageOf(props.highlightId)) // the one that is on show when the viewer opens too
 
 const stageStyle = computed(() => {
   const size = natural.value

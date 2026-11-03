@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import type { Review } from '../data/mock'
 
 /**
@@ -7,9 +8,9 @@ import type { Review } from '../data/mock'
  */
 const props = defineProps<{
   review: Review
-  /** The models of the analysis: what an element can be annotated with. */
-  models: { id: string; name: string }[]
-  modelName: (id: string) => string
+  /** What an element can be annotated with: the models of the analysis, or the pages of them for a page of a document. */
+  models: { id: string; name: string; page?: number }[]
+  modelName: (id: string, page?: number | null) => string
 }>()
 const emit = defineEmits<{ review: [review: Review] }>()
 
@@ -22,9 +23,17 @@ const states = {
   annotated: { label: 'Annotée', tone: 'new' },
 } as const
 
+// An option is a model, or a page of one: « id » or « id#page ».
+const optionValue = (model: { id: string; page?: number }) => (model.page ? `${model.id}#${model.page}` : model.id)
+const chosen = computed(() =>
+  props.review.status === 'annotated' && props.review.templateId
+    ? optionValue({ id: props.review.templateId, page: props.review.templatePage })
+    : '',
+)
+
 function annotate(event: Event) {
-  const templateId = (event.target as HTMLSelectElement).value
-  if (templateId) emit('review', { status: 'annotated', templateId })
+  const [templateId, page] = (event.target as HTMLSelectElement).value.split('#')
+  if (templateId) emit('review', { status: 'annotated', templateId, ...(page && { templatePage: Number(page) }) })
 }
 </script>
 
@@ -32,7 +41,7 @@ function annotate(event: Event) {
   <div class="review" data-testid="review">
     <p class="review__state fr-mb-0">
       <DsfrBadge
-        :label="review.status === 'annotated' && review.templateId ? `Annotée : ${modelName(review.templateId)}` : states[review.status].label"
+        :label="review.status === 'annotated' && review.templateId ? `Annotée : ${modelName(review.templateId, review.templatePage)}` : states[review.status].label"
         :type="states[review.status].tone"
         small
         data-testid="review-state"
@@ -49,9 +58,9 @@ function annotate(event: Event) {
         Invalider
       </button>
       <label class="fr-sr-only" :for="selectId">Annoter avec un modèle de l’analyse</label>
-      <select :id="selectId" class="fr-select review__select" :value="review.status === 'annotated' ? review.templateId : ''" data-testid="review-annotate" @change="annotate">
+      <select :id="selectId" class="fr-select review__select" :value="chosen" data-testid="review-annotate" @change="annotate">
         <option value="" disabled>Annoter avec…</option>
-        <option v-for="model in models" :key="model.id" :value="model.id">{{ model.name }}</option>
+        <option v-for="model in models" :key="optionValue(model)" :value="optionValue(model)">{{ model.name }}</option>
       </select>
     </div>
   </div>

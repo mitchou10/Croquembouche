@@ -20,31 +20,52 @@ function random(seed: number) {
   }
 }
 
+// A class something can be: a model and, for the page of a document, the page of the model (null for a model with no document).
+interface Key {
+  templateId: string
+  templatePage?: number | null
+}
+
+const same = (a: Key, b: Key) => a.templateId === b.templateId && a.templatePage === b.templatePage
+
 /**
  * Every class something could be, the likeliest first, adding up to 100 %: the analysis is 62 to 98 % sure of the best answer,
- * and the rest is shared among the other models of the analysis and « other ».
+ * and the rest is shared among the other classes and « other ».
  */
-function classesFor(best: string | null, templateIds: string[], next: () => number): Classification[] {
-  const others: (string | null)[] = [...templateIds.filter((t) => t !== best), ...(best === null ? [] : [null])]
+function classesFor(best: Key | null, keys: Key[], next: () => number): Classification[] {
+  const others: (Key | null)[] = [...keys.filter((k) => !best || !same(k, best)), ...(best === null ? [] : [null])]
   // With no other class to share the rest with, the only one is certain.
   const top = others.length ? 62 + Math.floor(next() * 37) : 100
   const weights = others.map(() => next() + 0.05)
   const total = weights.reduce((sum, w) => sum + w, 0)
   const shares = weights.map((w) => Math.floor(((100 - top) * w) / total))
   if (shares.length) shares[0] += 100 - top - shares.reduce((sum, n) => sum + n, 0) // what rounding left goes to the first
-  return [{ templateId: best, confidence: top / 100 }, ...others.map((t, k) => ({ templateId: t, confidence: shares[k] / 100 }))].sort(
-    (a, b) => b.confidence - a.confidence,
-  )
+  const make = (key: Key | null, confidence: number): Classification => ({
+    templateId: key?.templateId ?? null,
+    ...(key && key.templatePage !== undefined && { templatePage: key.templatePage }),
+    confidence,
+  })
+  return [make(best, top / 100), ...others.map((k, i) => make(k, shares[i] / 100))].sort((a, b) => b.confidence - a.confidence)
 }
 
 /**
- * Which model the page of a document corresponds to, made up: one of the models of the analysis, with every class it could
- * be. Answers the same for the same file, and differently from what is found in the page.
+ * What a page of a document corresponds to, made up: a page of one of the models of the analysis, with every class it could
+ * be (`pagesOf` says how many pages a model has, 0 for one with no document). Answers the same for the same file and page,
+ * and differently from what is found in the page.
  */
-export function simulatePage(analysis: Pick<Analysis, 'templateIds'>, file: { name: string; size: number }): Classification[] {
-  const next = random(hash(`page|${file.name}|${file.size}`))
-  const best = analysis.templateIds.length ? analysis.templateIds[Math.floor(next() * analysis.templateIds.length)] : null
-  return classesFor(best, analysis.templateIds, next)
+export function simulatePage(
+  analysis: Pick<Analysis, 'templateIds'>,
+  file: { name: string; size: number },
+  page = 1,
+  pagesOf: (templateId: string) => number = () => 0,
+): Classification[] {
+  const next = random(hash(`page|${file.name}|${file.size}|${page}`))
+  const keys: Key[] = analysis.templateIds.flatMap((templateId): Key[] => {
+    const count = pagesOf(templateId)
+    return count ? Array.from({ length: count }, (_, i) => ({ templateId, templatePage: i + 1 })) : [{ templateId, templatePage: null }]
+  })
+  const best = keys.length ? keys[Math.floor(next() * keys.length)] : null
+  return classesFor(best, keys, next)
 }
 
 /**
@@ -69,7 +90,7 @@ export function simulateTest(analysis: Pick<Analysis, 'templateIds'>, file: { na
         ? [{ x, y }, { x: x + w, y }, { x: x + w, y: y + h * 0.6 }, { x: x + w * 0.8, y: y + h }, { x, y: y + h }]
         : [{ x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h }]
 
-      const classifications = classesFor(templateId, analysis.templateIds, next)
+      const classifications = classesFor({ templateId }, analysis.templateIds.map((id) => ({ templateId: id })), next)
       found.push({ zone: { page: 1, points: points.map((p) => ({ x: round(p.x), y: round(p.y) })) }, classifications })
     }
   }
