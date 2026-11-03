@@ -21,7 +21,7 @@ Everything secret is read from Secrets created outside the chart (Vault, sealed-
 
 The backend falls back to development keys for `DATA_ENCRYPTION_KEYS` and `BLIND_INDEX_PEPPER` when they are missing: set your own before keeping any data, and keep them, as what is encrypted cannot be read without them.
 
-The migration job (`jobs.migrate`) runs `alembic upgrade head` after the install and before each upgrade. The worker downloads its embedding model (about 350 MB) at its first start into `/home/worker/.cache`: give it a volume of its own (`worker_template_matching.volumes`) to keep it between restarts.
+The migration job (`jobs.migrate`) runs `alembic upgrade head` after the install and before each upgrade. The worker's image carries its embedding model (about 350 MB, downloaded once at build time): a pod never downloads anything when it starts. Another model is another build of the image (`--build-arg EMBEDDING_MODEL=...`).
 
 ## Values
 
