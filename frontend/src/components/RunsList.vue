@@ -27,10 +27,10 @@ const visible = computed(() => props.runs.slice(page.value * PER_PAGE, (page.val
     <ul class="runs__list">
       <li v-for="run in visible" :key="run.id" class="runs__row" :class="{ 'runs__row--selected': run.id === selectedId }" data-testid="run">
         <span class="runs__date">{{ run.date }}</span>
-        <span class="runs__user">{{ run.userId }}</span>
+        <span class="runs__user">{{ run.userName }}</span>
         <DsfrBadge :label="statusLabels[run.status].label" :type="statusLabels[run.status].type" small />
         <span class="runs__matches">{{ run.matches }} correspondance{{ run.matches > 1 ? 's' : '' }}</span>
-        <template v-if="run.detections">
+        <template v-if="run.hasResult">
           <button
             v-if="canSee(run)"
             type="button"

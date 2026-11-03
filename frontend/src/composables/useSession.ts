@@ -9,15 +9,18 @@ interface Me {
   is_admin: boolean
 }
 
+// The identifier of the account (what the backend knows them by), and the name to show for it.
 const userId = ref<string | null>(null)
+const displayName = ref<string | null>(null)
 const isAdmin = ref(false)
 const email = ref<string | null>(null)
 
 let loading: Promise<void> | null = null
 
 /** Records who is signed in; `load` does it from the backend, tests do it by hand. */
-function setUser(id: string | null, details: { isAdmin?: boolean; email?: string } = {}) {
+function setUser(id: string | null, details: { isAdmin?: boolean; email?: string; name?: string } = {}) {
   userId.value = id
+  displayName.value = id === null ? null : (details.name ?? id)
   isAdmin.value = id !== null && (details.isAdmin ?? false)
   email.value = id === null ? null : (details.email ?? `${id.toLowerCase()}@example.org`)
   // Whoever sets it, the session is known: the backend need not be asked.
@@ -30,7 +33,7 @@ async function fetchMe() {
     if (!response.ok) return setUser(null)
     const me = (await response.json()) as Me
     const name = [me.first_name, me.last_name].filter(Boolean).join(' ')
-    setUser(name || me.email || me.user_id, { isAdmin: me.is_admin, email: me.email })
+    setUser(me.user_id, { isAdmin: me.is_admin, email: me.email, name: name || me.email || me.user_id })
   } catch {
     // The backend cannot be reached: nobody is signed in as far as the page can tell.
     setUser(null)
@@ -65,5 +68,5 @@ export function useSession() {
     window.location.assign(destination)
   }
 
-  return { userId, isAuthenticated, isAdmin, email, setUser, load, login, logout }
+  return { userId, displayName, isAuthenticated, isAdmin, email, setUser, load, login, logout }
 }

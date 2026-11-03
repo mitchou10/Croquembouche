@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
+import ConfirmButton from '../components/ConfirmButton.vue'
 import DocumentViewer from '../components/DocumentViewer.vue'
 import EntitiesPane from '../components/EntitiesPane.vue'
 import PagerControls from '../components/PagerControls.vue'
@@ -12,8 +13,9 @@ import type { SuggestionStatus } from '../data/mock'
 
 // The same page as the form, to look at: the owner changes the model from here, anyone else suggests a change.
 const route = useRoute()
+const router = useRouter()
 const { userId } = useSession()
-const { find, isOwner, canDecide, isStarred, toggleStar, toggleSuggestionStar, resolveSuggestion, addComment } =
+const { find, isOwner, canDecide, isStarred, toggleStar, toggleSuggestionStar, resolveSuggestion, addComment, actionError, remove } =
   useCatalogue()
 const wide = useWideScreen()
 
@@ -51,8 +53,14 @@ const statusBadges: Record<SuggestionStatus, { label: string; type: 'info' | 'su
   rejected: { label: 'Refusée', type: 'error' },
 }
 
+/** Deletes the model, once the owner has said they are sure; the catalogue says why when it cannot (an analysis uses it). */
+async function deleteTemplate() {
+  if (template.value && (await remove(template.value.id))) await router.push({ name: 'catalogue' })
+}
+
 async function comment() {
-  if (!template.value || !suggestion.value || !addComment(template.value.id, suggestion.value.id, commentText.value)) return
+  if (!template.value || !suggestion.value) return
+  if (!(await addComment(template.value.id, suggestion.value.id, commentText.value))) return
   commentText.value = ''
   // The newest comment is the last: bring it into view.
   await nextTick()
@@ -83,6 +91,13 @@ async function comment() {
         <RouterLink class="fr-btn fr-icon-edit-line fr-btn--icon-left" :to="{ name: 'catalogue-edit', params: { id: template.id } }">
           {{ owner ? 'Modifier' : 'Suggérer une modification' }}
         </RouterLink>
+        <ConfirmButton
+          v-if="owner"
+          label="Supprimer"
+          question="Supprimer ce modèle ?"
+          confirm-label="Oui, supprimer"
+          @confirm="deleteTemplate"
+        />
       </div>
     </template>
 
@@ -104,10 +119,11 @@ async function comment() {
 
     <div class="template-view__side">
       <p class="template-view__meta fr-mb-0">
-        Par <strong data-testid="template-owner">{{ template.ownerId }}</strong>
+        Par <strong data-testid="template-owner">{{ template.ownerName }}</strong>
         <DsfrTag v-for="category in template.categories" :key="category" :label="category" small />
       </p>
       <p class="template-view__description fr-mb-0" data-testid="description">{{ template.description }}</p>
+      <p v-if="actionError" class="fr-error-text fr-mb-0" role="alert" data-testid="action-error">{{ actionError }}</p>
 
       <div class="template-view__tabs" role="tablist" aria-label="Entités et suggestions">
         <button
@@ -144,7 +160,7 @@ async function comment() {
           <div :key="suggestion.id" class="card" data-testid="suggestion">
             <div class="card__head">
               <p class="fr-mb-0">
-                <strong>{{ suggestion.authorId }}</strong> · {{ suggestion.date }}
+                <strong>{{ suggestion.authorName }}</strong> · {{ suggestion.date }}
               </p>
               <DsfrBadge :label="statusBadges[suggestion.status].label" :type="statusBadges[suggestion.status].type" small />
               <button
@@ -179,7 +195,7 @@ async function comment() {
               <h4 id="comments-title" class="fr-text--sm fr-text--bold fr-mb-0">Commentaires ({{ suggestion.comments.length }})</h4>
               <ul v-if="suggestion.comments.length" ref="commentList" class="comments__list" data-testid="comments">
                 <li v-for="c in suggestion.comments" :key="c.id" data-testid="comment">
-                  <strong>{{ c.authorId }}</strong> <span class="comments__date">· {{ c.date }}</span>
+                  <strong>{{ c.authorName }}</strong> <span class="comments__date">· {{ c.date }}</span>
                   <br />{{ c.text }}
                 </li>
               </ul>

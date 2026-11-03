@@ -47,7 +47,10 @@ def complexity(src: Path) -> list[dict]:
     return [
         r
         for r in rows
-        if r["file"].endswith((".py", ".ts", ".vue")) and not r["file"].endswith((".test.ts", ".spec.ts"))
+        if r["file"].endswith((".py", ".ts", ".vue"))
+        # What only the tests use (the fake backend of the pages' tests, in a `test` directory) is not the code to judge.
+        and not r["file"].endswith((".test.ts", ".spec.ts"))
+        and "/test/" not in r["file"]
     ]
 
 

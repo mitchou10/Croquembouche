@@ -2,17 +2,16 @@ import base64
 import hashlib
 import secrets
 from dataclasses import asdict
-from typing import Annotated
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
 
 from app.config import KeycloakSettings
 from app.core.security.claims import extract_identity
-from app.core.security.factory import RequestContext, get_current_user
 from app.core.security.keycloak_client import keycloak_openid, session_store
 from app.core.security.session import PendingAuth
+from app.dependencies import CurrentUser
 
 router = APIRouter(tags=["Auth"])
 
@@ -143,6 +142,6 @@ async def logout(request: Request, response: Response) -> dict:
 
 
 @router.get("/me", summary="Return the current user's profile")
-async def me(user: Annotated[RequestContext, Depends(get_current_user)]) -> dict:
+async def me(user: CurrentUser) -> dict:
     # The tokens stay on the server: the browser only ever holds the session cookie.
     return {key: value for key, value in asdict(user).items() if key != "access_token"}

@@ -106,7 +106,7 @@ defineExpose({ commit, draft })
           v-for="group in groups.filter((g) => !shares.some((s) => s.kind === 'group' && s.value === g.name))"
           :key="group.id"
           :value="group.name"
-          :label="`Groupe · ${group.members} membres`"
+          :label="`Groupe · ${group.name}`"
         />
       </datalist>
     </div>

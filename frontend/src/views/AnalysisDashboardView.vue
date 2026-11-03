@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
+import ConfirmButton from '../components/ConfirmButton.vue'
 import DetectionCard from '../components/DetectionCard.vue'
 import DocumentViewer from '../components/DocumentViewer.vue'
 import FixedPage from '../components/FixedPage.vue'
@@ -11,9 +12,9 @@ import RunsList from '../components/RunsList.vue'
 import StatTile from '../components/StatTile.vue'
 import TabList from '../components/TabList.vue'
 import { describeShares } from '../composables/shares'
-import { statsOf, useAnalyses } from '../composables/useAnalyses'
+import { loadAnalyses, statsOf, useAnalyses } from '../composables/useAnalyses'
 import { ACCEPTED_DOCUMENT_TYPES, documentError } from '../composables/useCatalogue'
-import { loadGroups } from '../composables/useGroups'
+import { useSession } from '../composables/useSession'
 import { useWideScreen } from '../composables/useWideScreen'
 import { statusLabels, type Review, type TemplateEntity, type Zone } from '../data/mock'
 
@@ -22,6 +23,7 @@ import { statusLabels, type Review, type TemplateEntity, type Zone } from '../da
 // sure it is. Each prediction can then be confirmed, rejected, or corrected with one of the models of the analysis, and the
 // document kept or deleted. What a use found is private to the person who ran it, an administrator included.
 const route = useRoute()
+const router = useRouter()
 const {
   find,
   findRun,
@@ -37,12 +39,21 @@ const {
   reviewProgress,
   deleteScreenshot,
   keepScreenshot,
+  actionError,
+  remove: removeAnalysis,
 } = useAnalyses()
+const { userId } = useSession()
 const wide = useWideScreen()
 
 const analysis = computed(() => find(String(route.params.id)))
 const allowed = computed(() => !!analysis.value && canAccess(analysis.value))
 const stats = computed(() => statsOf(analysis.value ? [analysis.value] : []))
+// Only its owner deletes it.
+const isOwner = computed(() => !!analysis.value && userId.value !== null && analysis.value.ownerId === userId.value)
+
+async function deleteAnalysis() {
+  if (analysis.value && (await removeAnalysis(analysis.value.id))) await router.push({ name: 'analyses' })
+}
 
 // ---------------------------------------------------------------- the use being looked at
 const selectedRunId = ref<string | null>(null)
@@ -55,6 +66,8 @@ const newModel = ref('')
 const saveScreenshot = ref(true)
 const fault = ref('')
 const dragging = ref(false)
+// While the document is sent and tried.
+const uploading = ref(false)
 
 /** The use shown, if it is one whose result the person can see: never someone else's. */
 const run = computed(() => {
@@ -76,10 +89,12 @@ function open(runId: string) {
 }
 
 /** Takes the document, and tries the analysis on it at once: nothing more to press. */
-function setFile(file: File | null) {
+async function setFile(file: File | null) {
   fault.value = file ? (documentError(file) ?? '') : ''
   if (!file || fault.value || !analysis.value) return
-  const started = startRun(analysis.value.id, file, { saveScreenshot: saveScreenshot.value })
+  uploading.value = true
+  const started = await startRun(analysis.value.id, file, { saveScreenshot: saveScreenshot.value })
+  uploading.value = false
   if (started) open(started.id)
 }
 
@@ -116,14 +131,14 @@ function startAdding() {
   adding.value = true
 }
 
-function onDraw(zone: Zone) {
+async function onDraw(zone: Zone) {
   if (!analysis.value || !run.value || !adding.value) return
   adding.value = false
-  if (addElement(analysis.value.id, run.value.id, { zone, templateId: newModel.value })) current.value = detections.value.length - 1
+  if (await addElement(analysis.value.id, run.value.id, { zone, templateId: newModel.value })) current.value = detections.value.length - 1
 }
 
-function remove(elementId: string) {
-  if (!analysis.value || !run.value || !removeElement(analysis.value.id, run.value.id, elementId)) return
+async function remove(elementId: string) {
+  if (!analysis.value || !run.value || !(await removeElement(analysis.value.id, run.value.id, elementId))) return
   current.value = Math.max(0, Math.min(current.value, detections.value.length - 1))
 }
 
@@ -131,16 +146,17 @@ const removeFile = () => analysis.value && run.value && deleteScreenshot(analysi
 const keepFile = () => analysis.value && run.value && keepScreenshot(analysis.value.id, run.value.id)
 
 // ---------------------------------------------------------------- opening the page
-// Who can open it depends on the groups, which are loaded first: otherwise a group's analysis would look closed for a moment.
+// The analyses are loaded first: otherwise the page would say, for a moment, that this one does not exist.
 const ready = ref(false)
 async function load(id: string) {
   selectedRunId.value = null
   fault.value = ''
   adding.value = false
   tab.value = 'page'
-  await loadGroups()
+  await loadAnalyses()
   ready.value = true
-  registerView(id)
+  const opened = find(id)
+  if (opened?.canOpen) await registerView(id)
 }
 watch(() => String(route.params.id), load, { immediate: true })
 
@@ -208,10 +224,18 @@ const sharing = computed(() => {
       <h1 class="dashboard__title fr-h4 fr-mb-0">{{ analysis.name }}</h1>
       <DsfrBadge :label="statusLabels[analysis.status].label" :type="statusLabels[analysis.status].type" small />
       <DsfrTag v-if="sharing" :label="sharing.label" :title="sharing.title" small data-testid="sharing" />
+      <div v-if="isOwner" class="dashboard__delete">
+        <ConfirmButton
+          label="Supprimer"
+          question="Supprimer cette analyse et ses résultats ?"
+          confirm-label="Oui, supprimer"
+          @confirm="deleteAnalysis"
+        />
+      </div>
     </template>
 
     <p class="dashboard__meta fr-mb-0" data-testid="meta">
-      Par <strong>{{ analysis.ownerId }}</strong> · {{ modelNames(analysis).join(', ') }}
+      Par <strong>{{ analysis.ownerName }}</strong> · {{ modelNames(analysis).join(', ') }}
       <span v-if="analysis.description"> — {{ analysis.description }}</span>
     </p>
 
@@ -263,7 +287,9 @@ const sharing = computed(() => {
             <span class="dropzone__hint">ou cliquez pour en choisir un · image ou PDF, 20 Mo au plus</span>
           </label>
         </template>
+        <p v-if="uploading" class="fr-hint-text fr-mb-0" role="status">Analyse du document…</p>
         <p v-if="fault" class="fr-error-text fr-mb-0" role="alert">{{ fault }}</p>
+        <p v-if="actionError" class="fr-error-text fr-mb-0" role="alert" data-testid="action-error">{{ actionError }}</p>
 
         <div v-if="run?.screenshot" class="tester__viewer">
           <DocumentViewer
@@ -376,6 +402,10 @@ const sharing = computed(() => {
 </template>
 
 <style scoped>
+.dashboard__delete {
+  margin-left: auto;
+}
+
 .dashboard__title {
   margin-right: auto;
 }

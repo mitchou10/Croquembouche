@@ -2,7 +2,7 @@ import VueDsfr from '@gouvminint/vue-dsfr'
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import { resetCatalogue, useCatalogue } from '../composables/useCatalogue'
+import { loadCatalogue, resetCatalogue, useCatalogue } from '../composables/useCatalogue'
 import { loadEntityTypes } from '../composables/useEntityTypes'
 import { useSession } from '../composables/useSession'
 import TemplatePreview from './TemplatePreview.vue'
@@ -20,6 +20,7 @@ describe('TemplatePreview', () => {
     resetCatalogue()
     useSession().setUser('dana')
     await loadEntityTypes()
+    await loadCatalogue()
   })
   afterEach(() => {
     vi.restoreAllMocks()
@@ -128,6 +129,8 @@ describe('TemplatePreview', () => {
     const star = () => wrapper.get('[data-testid="entity-star"]')
     expect(star().text()).toContain('2')
     await star().trigger('click')
+    await flushPromises()
+    await wrapper.setProps({ template: useCatalogue().find('t1') }) // the page hands the new one over
     expect(star().text()).toContain('3')
     expect(useCatalogue().find('t1')!.entities[0].stars).toContain('dana')
   })

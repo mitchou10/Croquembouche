@@ -21,7 +21,8 @@ describe('useSession', () => {
     const session = await fresh()
     await session.load()
     expect(fetch).toHaveBeenCalledWith('/api/auth/me', { credentials: 'same-origin' })
-    expect(session.userId.value).toBe('Ada L')
+    expect(session.userId.value).toBe('u1') // the account
+    expect(session.displayName.value).toBe('Ada L')
     expect(session.email.value).toBe('ada@example.org')
     expect(session.isAdmin.value).toBe(true)
     expect(session.isAuthenticated.value).toBe(true)
@@ -31,7 +32,8 @@ describe('useSession', () => {
     vi.stubGlobal('fetch', respond({ user_id: 'u1', email: 'ada@example.org', first_name: '', last_name: '', is_admin: false }))
     const session = await fresh()
     await session.load()
-    expect(session.userId.value).toBe('ada@example.org')
+    expect(session.userId.value).toBe('u1')
+    expect(session.displayName.value).toBe('ada@example.org')
     expect(session.isAdmin.value).toBe(false)
   })
 

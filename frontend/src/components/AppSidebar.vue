@@ -4,7 +4,7 @@ import { useRoute } from 'vue-router'
 import { useSession } from '../composables/useSession'
 
 const route = useRoute()
-const { userId, isAdmin } = useSession()
+const { displayName, isAdmin } = useSession()
 
 const everyone = [
   { name: 'catalogue', path: '/catalogue', label: 'Catalogue', icon: 'fr-icon-folder-2-line' },
@@ -42,7 +42,7 @@ const items = computed(() => (isAdmin.value ? [...everyone, ...administrator] : 
       :to="{ name: 'settings' }"
       title="Ouvrir les paramètres"
     >
-      <span class="app-sidebar__user-id">{{ userId }}</span>
+      <span class="app-sidebar__user-id">{{ displayName }}</span>
       <DsfrBadge v-if="isAdmin" label="Admin" type="info" small data-testid="admin-badge" class="app-sidebar__role" />
     </RouterLink>
   </aside>
