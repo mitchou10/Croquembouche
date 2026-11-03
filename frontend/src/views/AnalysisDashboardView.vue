@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
+import ConfirmButton from '../components/ConfirmButton.vue'
 import DetectionCard from '../components/DetectionCard.vue'
 import DocumentViewer from '../components/DocumentViewer.vue'
 import FixedPage from '../components/FixedPage.vue'
@@ -13,6 +14,7 @@ import TabList from '../components/TabList.vue'
 import { describeShares } from '../composables/shares'
 import { loadAnalyses, statsOf, useAnalyses } from '../composables/useAnalyses'
 import { ACCEPTED_DOCUMENT_TYPES, documentError } from '../composables/useCatalogue'
+import { useSession } from '../composables/useSession'
 import { useWideScreen } from '../composables/useWideScreen'
 import { statusLabels, type Review, type TemplateEntity, type Zone } from '../data/mock'
 
@@ -21,6 +23,7 @@ import { statusLabels, type Review, type TemplateEntity, type Zone } from '../da
 // sure it is. Each prediction can then be confirmed, rejected, or corrected with one of the models of the analysis, and the
 // document kept or deleted. What a use found is private to the person who ran it, an administrator included.
 const route = useRoute()
+const router = useRouter()
 const {
   find,
   findRun,
@@ -37,12 +40,20 @@ const {
   deleteScreenshot,
   keepScreenshot,
   actionError,
+  remove: removeAnalysis,
 } = useAnalyses()
+const { userId } = useSession()
 const wide = useWideScreen()
 
 const analysis = computed(() => find(String(route.params.id)))
 const allowed = computed(() => !!analysis.value && canAccess(analysis.value))
 const stats = computed(() => statsOf(analysis.value ? [analysis.value] : []))
+// Only its owner deletes it.
+const isOwner = computed(() => !!analysis.value && userId.value !== null && analysis.value.ownerId === userId.value)
+
+async function deleteAnalysis() {
+  if (analysis.value && (await removeAnalysis(analysis.value.id))) await router.push({ name: 'analyses' })
+}
 
 // ---------------------------------------------------------------- the use being looked at
 const selectedRunId = ref<string | null>(null)
@@ -213,6 +224,14 @@ const sharing = computed(() => {
       <h1 class="dashboard__title fr-h4 fr-mb-0">{{ analysis.name }}</h1>
       <DsfrBadge :label="statusLabels[analysis.status].label" :type="statusLabels[analysis.status].type" small />
       <DsfrTag v-if="sharing" :label="sharing.label" :title="sharing.title" small data-testid="sharing" />
+      <div v-if="isOwner" class="dashboard__delete">
+        <ConfirmButton
+          label="Supprimer"
+          question="Supprimer cette analyse et ses résultats ?"
+          confirm-label="Oui, supprimer"
+          @confirm="deleteAnalysis"
+        />
+      </div>
     </template>
 
     <p class="dashboard__meta fr-mb-0" data-testid="meta">
@@ -383,6 +402,10 @@ const sharing = computed(() => {
 </template>
 
 <style scoped>
+.dashboard__delete {
+  margin-left: auto;
+}
+
 .dashboard__title {
   margin-right: auto;
 }

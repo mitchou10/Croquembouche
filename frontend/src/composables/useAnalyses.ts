@@ -124,6 +124,13 @@ export function useAnalyses() {
     return keep(await api.postAnalysis(input))
   }
 
+  /** Only the owner deletes an analysis, with its uses: `actionError` says why when it is refused. */
+  const remove = (id: string) =>
+    attempt(async () => {
+      await api.deleteAnalysis(id)
+      analyses.value = analyses.value.filter((a) => a.id !== id)
+    })
+
   /** Whether a use is one's own: what it found is for the person who ran it, whoever else can open the analysis. */
   const ownsRun = (run: AnalysisRun) => userId.value !== null && run.userId === userId.value
 
@@ -195,6 +202,7 @@ export function useAnalyses() {
     registerView,
     modelNames,
     createAnalysis,
+    remove,
     ownsRun,
     canSeeResult,
     startRun,

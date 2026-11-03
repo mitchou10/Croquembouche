@@ -201,6 +201,13 @@ export function useCatalogue() {
   const create = async (fields: TemplateFields, document?: TemplateDocument) =>
     keep(await api.postTemplate(toBody(fields, document?.id ?? undefined)))
 
+  /** Only the owner deletes a model, and not one an analysis looks for: `actionError` says why when it is refused. */
+  const remove = (id: string) =>
+    attempt(async () => {
+      await api.deleteTemplate(id)
+      templates.value = templates.value.filter((t) => t.id !== id)
+    })
+
   const toggleStar = (id: string) => attempt(async () => keep(await api.putTemplateStar(id)))
 
   /** Anyone signed in can star an entity, as a model: it says which ones are worth looking for. */
@@ -240,6 +247,7 @@ export function useCatalogue() {
     templateName,
     filter,
     create,
+    remove,
     toggleStar,
     toggleEntityStar,
     toggleSuggestionStar,

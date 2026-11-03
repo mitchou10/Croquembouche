@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
+import ConfirmButton from '../components/ConfirmButton.vue'
 import DocumentViewer from '../components/DocumentViewer.vue'
 import EntitiesPane from '../components/EntitiesPane.vue'
 import PagerControls from '../components/PagerControls.vue'
@@ -12,8 +13,9 @@ import type { SuggestionStatus } from '../data/mock'
 
 // The same page as the form, to look at: the owner changes the model from here, anyone else suggests a change.
 const route = useRoute()
+const router = useRouter()
 const { userId } = useSession()
-const { find, isOwner, canDecide, isStarred, toggleStar, toggleSuggestionStar, resolveSuggestion, addComment, actionError } =
+const { find, isOwner, canDecide, isStarred, toggleStar, toggleSuggestionStar, resolveSuggestion, addComment, actionError, remove } =
   useCatalogue()
 const wide = useWideScreen()
 
@@ -51,6 +53,11 @@ const statusBadges: Record<SuggestionStatus, { label: string; type: 'info' | 'su
   rejected: { label: 'Refusée', type: 'error' },
 }
 
+/** Deletes the model, once the owner has said they are sure; the catalogue says why when it cannot (an analysis uses it). */
+async function deleteTemplate() {
+  if (template.value && (await remove(template.value.id))) await router.push({ name: 'catalogue' })
+}
+
 async function comment() {
   if (!template.value || !suggestion.value) return
   if (!(await addComment(template.value.id, suggestion.value.id, commentText.value))) return
@@ -84,6 +91,13 @@ async function comment() {
         <RouterLink class="fr-btn fr-icon-edit-line fr-btn--icon-left" :to="{ name: 'catalogue-edit', params: { id: template.id } }">
           {{ owner ? 'Modifier' : 'Suggérer une modification' }}
         </RouterLink>
+        <ConfirmButton
+          v-if="owner"
+          label="Supprimer"
+          question="Supprimer ce modèle ?"
+          confirm-label="Oui, supprimer"
+          @confirm="deleteTemplate"
+        />
       </div>
     </template>
 
