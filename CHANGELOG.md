@@ -1,5 +1,30 @@
 # Changelog
 
+## [1.4.0](https://github.com/mitchou10/Croquembouche/compare/v1.3.0...v1.4.0) (2026-11-03)
+
+
+### Features
+
+* **backend:** add the per-page classification and the pages of a model to the data model ([8e3db09](https://github.com/mitchou10/Croquembouche/commit/8e3db09906c87517ea43a8445b4f67b766f5a18c))
+* **backend:** ask the worker to index a model when it is saved, and to forget it when it is deleted ([d8205b4](https://github.com/mitchou10/Croquembouche/commit/d8205b438b664a3d9caa45fd88bcac9cc73bee3f))
+* **backend:** ask the worker to match a document and keep what it answers (running, done, failed) ([8c7677d](https://github.com/mitchou10/Croquembouche/commit/8c7677de96d5b38cf028f9f334a1cf89186c7606))
+* **backend:** classify and review page by page, and name the pages of a model ([152d78e](https://github.com/mitchou10/Croquembouche/commit/152d78e518b3121109758d36cd7a71186bfe3379))
+* **backend:** classify each page of a document, as a page of a model, in the matcher contract ([e03d2d0](https://github.com/mitchou10/Croquembouche/commit/e03d2d0059031a315b919cc3b23ae12e8d766e63))
+* **docker:** add Qdrant and give the worker what it needs to index the catalogue ([d7bd421](https://github.com/mitchou10/Croquembouche/commit/d7bd421b2889977adb78e4cc82a482871a125549))
+* **docker:** give the backend and the worker the key the results are handed back with ([2594149](https://github.com/mitchou10/Croquembouche/commit/2594149137795c188b7bcfbd29e6daa74eea3c8b))
+* **frontend:** classify and review a document page by page, and name the pages of a model ([0d182c6](https://github.com/mitchou10/Croquembouche/commit/0d182c62240742a2343f457bb31af1f95adb79ec))
+* **frontend:** show a use as running while the worker computes it, and follow it until it ends ([f61eb24](https://github.com/mitchou10/Croquembouche/commit/f61eb242fb85c75f28204f8f3af35547afa61c90))
+* **worker:** carry the zones of a model page onto a document page with keypoints and a homography ([1f76730](https://github.com/mitchou10/Croquembouche/commit/1f76730a49ebee8e0534750f7e9073a1d51d3514))
+* **worker:** classify each page of a document from its nearest neighbours in Qdrant ([ec97e7e](https://github.com/mitchou10/Croquembouche/commit/ec97e7eb421e586420d928bd6238ec4277227339))
+* **worker:** index pages and entity crops turned by 0, 90, 180 and 270 degrees, with details ([2518f86](https://github.com/mitchou10/Croquembouche/commit/2518f8654c17aa9690faf39613a6f6408c4d5d2d))
+* **worker:** index the pages of a model and its entity zones in Qdrant with image embeddings ([43012c1](https://github.com/mitchou10/Croquembouche/commit/43012c1665273f836e23fc0fc34348d5791c3728))
+* **worker:** match a document the backend asks for and hand the result back to it ([9d51eb5](https://github.com/mitchou10/Croquembouche/commit/9d51eb58954f24f3c0982463fde89891e3065e4e))
+
+
+### Bug Fixes
+
+* **frontend:** put the name and the description of a page side by side above the document ([ade0628](https://github.com/mitchou10/Croquembouche/commit/ade0628fcac0497f18e565cc168f0d8ed3368e99))
+
 ## [1.3.0](https://github.com/mitchou10/Croquembouche/compare/v1.2.0...v1.3.0) (2026-11-03)
 
 
