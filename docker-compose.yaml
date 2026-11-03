@@ -20,8 +20,26 @@ services:
     build:
       context: backend
       target: runtime
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      KEYCLOAK_URL: http://keycloak:8080
+      # What the browser reaches Keycloak on: the host port published below.
+      KEYCLOAK_PUBLIC_URL: http://localhost:8180
+      KEYCLOAK_REALM: croquembouche
+      KEYCLOAK_CLIENT_ID: croquembouche-backend
+      KEYCLOAK_CLIENT_SECRET: dev-only-secret-not-for-prod
+      # The fixed redirect_uri registered in Keycloak is {BACKEND_PUBLIC_URL}/api/auth/callback; the browser lands on
+      # FRONTEND_URL after login, and CORS keys off it too.
+      BACKEND_PUBLIC_URL: ${BACKEND_PUBLIC_URL:-http://localhost:8000}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:8080}
+      SESSION_COOKIE_SECURE: "false"
     ports:
       - "8000:8000"
+    depends_on:
+      redis:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
 
   worker-template-matching:
     build:
@@ -40,3 +58,29 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.2
+    command: start-dev --import-realm
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_HEALTH_ENABLED: "true"
+      # The URL the browser reaches Keycloak on, scheme included: a bare host name would make it https.
+      KC_HOSTNAME: http://localhost:8180
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
+    volumes:
+      - ./docker/keycloak/realm-croquembouche.json:/opt/keycloak/data/import/realm-croquembouche.json:ro
+    # 8180 on the host: 8080 is the frontend's.
+    ports:
+      - "8180:8080"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "exec 3<>/dev/tcp/localhost/9000 && echo -e 'GET /health/ready HTTP/1.1\r\nhost: localhost\r\nConnection: close\r\n\r\n' >&3 && cat <&3 | grep -q '\"status\": \"UP\"'",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 30s
