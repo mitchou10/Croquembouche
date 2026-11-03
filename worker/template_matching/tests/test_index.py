@@ -6,7 +6,7 @@ from PIL import Image
 from qdrant_client import QdrantClient, models
 
 from app import index as index_module
-from app.index import TemplateIndex, crop_zone, point_id
+from app.index import ROTATIONS, TemplateIndex, crop_zone, point_id
 
 DIMENSION = 8
 COLLECTION = "test"
@@ -79,15 +79,29 @@ def points(client, **match):
     return [p for p in found if all(p.payload.get(k) == v for k, v in match.items())]
 
 
-def test_every_page_of_the_document_is_indexed_with_its_number(index, client):
+def test_every_page_of_the_document_is_indexed_with_its_number_turned_four_ways(index, client):
     counted = index.index(template(pages=3))
 
-    assert counted == {"pages": 3, "entities": 0}
+    assert counted == {"pages": 3, "entities": 0, "vectors": 12}
     found = points(client, kind="page")
-    assert sorted(p.payload["page"] for p in found) == [1, 2, 3]
+    assert len(found) == 12
+    assert sorted((p.payload["page"], p.payload["rotation"]) for p in found) == [
+        (page, rotation) for page in (1, 2, 3) for rotation in ROTATIONS
+    ]
     assert all(p.payload["template_id"] == "t1" and p.payload["document_id"] == "d" for p in found)
     assert all(p.payload["model"] == "fake-model" and len(p.vector) == DIMENSION for p in found)
-    assert len({tuple(p.vector) for p in found}) == 3  # each page has its own vector
+    assert len({tuple(p.vector) for p in found}) == 12  # each page, turned each way, has its own vector
+
+
+def test_a_point_says_how_the_page_was_turned_and_how_big_the_turned_image_was(index, client):
+    index.index(template(pages=1))
+
+    by_rotation = {p.payload["rotation"]: p.payload for p in points(client, kind="page")}
+
+    assert (by_rotation[0]["width"], by_rotation[0]["height"]) == (200, 300)
+    assert (by_rotation[90]["width"], by_rotation[90]["height"]) == (300, 200)  # a quarter-turn swaps the sides
+    assert (by_rotation[180]["width"], by_rotation[180]["height"]) == (200, 300)
+    assert (by_rotation[270]["width"], by_rotation[270]["height"]) == (300, 200)
 
 
 def test_the_name_and_the_description_of_a_page_are_kept_with_it(index, client):
@@ -96,18 +110,20 @@ def test_the_name_and_the_description_of_a_page_are_kept_with_it(index, client):
 
     index.index(template(pages=2) | {"pages": pages})
 
-    second = points(client, kind="page", page=2)[0].payload
-    assert (second["name"], second["description"]) == ("Pièces jointes", "La liste des pièces")
-    assert points(client, kind="page", page=1)[0].payload["name"] == ""
+    for turn in points(client, kind="page", page=2):  # whichever way it is turned
+        assert (turn.payload["name"], turn.payload["description"]) == ("Pièces jointes", "La liste des pièces")
+    assert {p.payload["name"] for p in points(client, kind="page", page=1)} == {""}
 
 
 def test_an_entity_is_indexed_by_the_crop_of_its_zone_on_its_page(index, client, embedder):
     index.index(template(pages=3, entities=[{"id": "e1", "name": "Signature", "page": 2, "points": SQUARE}]))
 
-    [entity] = points(client, kind="entity")
-    assert entity.payload["entity_id"] == "e1" and entity.payload["page"] == 2 and entity.payload["name"] == "Signature"
+    entity = points(client, kind="entity")
+    assert len(entity) == 4  # turned four ways, like a page
+    assert {(p.payload["entity_id"], p.payload["page"], p.payload["name"]) for p in entity} == {("e1", 2, "Signature")}
+    assert sorted(p.payload["rotation"] for p in entity) == [0, 90, 180, 270]
     # 0.3 of 200 x 0.2 of 300, plus the margin all round: the zone of the entity, not the page.
-    assert (round(0.34 * 200), round(0.24 * 300)) in embedder.seen[3:]
+    assert (round(0.34 * 200), round(0.24 * 300)) in embedder.seen
 
 
 def test_indexing_a_model_again_replaces_its_points_instead_of_adding_to_them(index, client):
@@ -117,7 +133,7 @@ def test_indexing_a_model_again_replaces_its_points_instead_of_adding_to_them(in
 
     index.index(template(entities=entities))
 
-    assert {p.id for p in points(client)} == first and len(first) == 4
+    assert {p.id for p in points(client)} == first and len(first) == 16  # three pages and an entity, turned four ways
 
 
 def test_what_the_model_no_longer_has_leaves_the_index(index, client):
@@ -133,19 +149,21 @@ def test_what_the_model_no_longer_has_leaves_the_index(index, client):
 
     index.index(template(pages=2, entities=[{"id": "e2", "name": "B", "page": 1, "points": SQUARE}]))
 
-    assert sorted(p.payload["page"] for p in points(client, kind="page")) == [1, 2]  # page 3 went with its document
-    assert [p.payload["entity_id"] for p in points(client, kind="entity")] == ["e2"]
+    assert sorted({p.payload["page"] for p in points(client, kind="page")}) == [1, 2]  # page 3 went with its document
+    assert len(points(client, kind="page")) == 8
+    assert {p.payload["entity_id"] for p in points(client, kind="entity")} == {"e2"}
 
 
 def test_a_changed_page_changes_its_vector_in_place(index, client, store):
     index.index(template(pages=1))
-    before = points(client, kind="page")[0]
+    before = points(client, kind="page", rotation=0)[0]
 
     store["documents/d/pages/1.png"] = page_image("green")
     index.index(template(pages=1))
-    after = points(client, kind="page")[0]
+    after = points(client, kind="page", rotation=0)[0]
 
-    assert after.id == before.id and after.vector != before.vector
+    assert after.id == before.id and after.vector != before.vector  # the same point, with its new vector
+    assert len(points(client, kind="page")) == 4
 
 
 def test_models_do_not_touch_one_another(index, client):
@@ -154,7 +172,7 @@ def test_models_do_not_touch_one_another(index, client):
 
     index.index(template(template_id="t1", pages=1))
 
-    assert len(points(client, template_id="t1")) == 1 and len(points(client, template_id="t2")) == 1
+    assert len(points(client, template_id="t1")) == 4 and len(points(client, template_id="t2")) == 4
 
 
 def test_a_model_is_removed_with_everything_it_had(index, client):
@@ -163,7 +181,7 @@ def test_a_model_is_removed_with_everything_it_had(index, client):
 
     index.remove("t1")
 
-    assert points(client, template_id="t1") == [] and len(points(client, template_id="t2")) == 1
+    assert points(client, template_id="t1") == [] and len(points(client, template_id="t2")) == 4
     index.remove("unknown")  # nothing to remove is not an error
 
 
@@ -176,8 +194,8 @@ def test_a_zone_that_cannot_be_cropped_is_left_out_but_not_the_rest(index, clien
 
     counted = index.index(template(pages=1, entities=entities))
 
-    assert counted == {"pages": 1, "entities": 1}
-    assert [p.payload["entity_id"] for p in points(client, kind="entity")] == ["ok"]
+    assert counted == {"pages": 1, "entities": 1, "vectors": 8}
+    assert {p.payload["entity_id"] for p in points(client, kind="entity")} == {"ok"}
 
 
 def test_a_page_that_cannot_be_read_fails_the_whole_indexing_and_leaves_the_index_as_it_was(index, client, store):
@@ -187,7 +205,7 @@ def test_a_page_that_cannot_be_read_fails_the_whole_indexing_and_leaves_the_inde
     with pytest.raises(KeyError):
         index.index(template(pages=3))
 
-    assert len(points(client, kind="page")) == 3  # nothing was taken away by a half-done job
+    assert len(points(client, kind="page")) == 12  # nothing was taken away by a half-done job
 
 
 def test_the_collection_is_made_once_with_the_size_of_the_vectors_and_an_index_on_the_model(
