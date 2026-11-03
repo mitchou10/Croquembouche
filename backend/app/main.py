@@ -6,6 +6,7 @@ from app.routers.analyses import router as analyses_router
 from app.routers.auth import router as auth_router
 from app.routers.documents import router as documents_router
 from app.routers.internal import router as internal_router
+from app.routers.metrics import router as metrics_router
 from app.routers.reference import router as reference_router
 from app.routers.templates import router as templates_router
 
@@ -24,6 +25,7 @@ app.include_router(auth_router, prefix="/api/auth")
 app.include_router(documents_router, prefix="/api/documents")
 app.include_router(templates_router, prefix="/api/templates")
 app.include_router(analyses_router, prefix="/api/analyses")
+app.include_router(metrics_router, prefix="/api/metrics")
 app.include_router(reference_router, prefix="/api")
 app.include_router(internal_router, prefix="/internal")
 

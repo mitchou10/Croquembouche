@@ -38,3 +38,23 @@ class TemplateMetrics(CamelModel):
     pages: PageQuality
     elements: Quality
     entities: list[EntityQuality]
+
+
+class ModelQuality(CamelModel):
+    """The quality on one model, among the decisions of a person or of everyone."""
+
+    id: str
+    name: str
+    pages: PageQuality
+    elements: Quality
+
+
+class QualityOverview(CamelModel):
+    """The quality of the analysis over every model together, and model by model: of the decisions of one person (what
+    they said of their own tests), or of everyone's (for an administrator)."""
+
+    pages: PageQuality
+    elements: Quality
+    models: list[ModelQuality]
+    # How many people decided something: only given for everyone's.
+    reviewers: int | None = None

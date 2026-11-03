@@ -44,7 +44,7 @@ Catalogue = Annotated[CatalogueService, Depends(get_catalogue)]
 
 
 def get_quality(user: CurrentUser, db: Db) -> QualityService:
-    return QualityService(CatalogueRepository(db), MetricsRepository(db))
+    return QualityService(CatalogueRepository(db), MetricsRepository(db), user)
 
 
 Quality = Annotated[QualityService, Depends(get_quality)]
