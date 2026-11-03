@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.2](https://github.com/mitchou10/Croquembouche/compare/v1.6.1...v1.6.2) (2026-11-03)
+
+
+### Bug Fixes
+
+* **helm:** set a CPU limit on the backend and the worker, as the namespace quota asks ([aa7ff1a](https://github.com/mitchou10/Croquembouche/commit/aa7ff1a35fd9e93ada70e58632e67a1cc021e5ef))
+
 ## [1.6.1](https://github.com/mitchou10/Croquembouche/compare/v1.6.0...v1.6.1) (2026-11-03)
 
 
