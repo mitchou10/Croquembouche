@@ -13,12 +13,13 @@ export default defineConfig({
   },
   test: {
     environment: 'jsdom',
+    setupFiles: ['src/test/setup.ts'],
     coverage: {
       provider: 'v8',
       // lcov is what ci/crap.py reads to compute the CRAP score.
       reporter: ['text', 'lcov'],
       include: ['src/**/*.{ts,vue}'],
-      exclude: ['src/**/*.test.ts', 'src/main.ts', 'src/vite-env.d.ts'],
+      exclude: ['src/**/*.test.ts', 'src/test/**', 'src/main.ts', 'src/vite-env.d.ts'],
     },
   },
 })
