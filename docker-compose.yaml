@@ -39,6 +39,8 @@ services:
       AWS_SECRET_ACCESS_KEY: rustfsadmin
       AWS_BUCKET: croquembouche-documents
       DATABASE_URL: postgresql+asyncpg://croquembouche:croquembouche@postgres:5432/croquembouche
+      # The key the worker hands the results back with (a dev value: set a real one elsewhere).
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-dev-only-internal-key}
     ports:
       - "8000:8000"
     depends_on:
@@ -96,6 +98,9 @@ services:
       AWS_ACCESS_KEY_ID: rustfsadmin
       AWS_SECRET_ACCESS_KEY: rustfsadmin
       AWS_BUCKET: croquembouche-documents
+      # Where a result goes back to, and the key that proves it is the worker's.
+      BACKEND_URL: http://backend:8000
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-dev-only-internal-key}
     volumes:
       - worker-models:/home/worker/.cache
     depends_on:
