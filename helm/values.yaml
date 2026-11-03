@@ -2690,14 +2690,15 @@ worker_template_matching:
 # the fields documented in the commented example below.
 # @section -- General
 jobs:
-  # Brings the database to the schema of the code: after the install (the database does not exist before), and
-  # before an upgrade (the new code finds its schema).
+  # Brings the database to the schema of the code, after the install and after each upgrade. Both are post hooks, as
+  # in Muffin: Argo CD turns pre-install and pre-upgrade into PreSync hooks, which run before the rest of the
+  # release (the ServiceAccounts included) is applied.
   migrate:
     hook:
       enabled: true
       types:
       - "post-install"
-      - "pre-upgrade"
+      - "post-upgrade"
       weight: 0
       deletePolicy: "before-hook-creation,hook-succeeded"
     image:
