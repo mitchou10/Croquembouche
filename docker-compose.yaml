@@ -1,0 +1,42 @@
+# Production-like stack: the images as they ship.
+#   docker compose -f docker-compose.yaml up --build
+#   frontend  http://localhost:8080
+#   backend   http://localhost:8000/api/health
+#
+# A plain `docker compose up` also reads docker-compose.override.yaml: the development stack, where edits to the
+# frontend and the backend show up without rebuilding.
+services:
+  frontend:
+    build:
+      context: frontend
+      target: runtime
+    ports:
+      - "8080:8080"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  backend:
+    build:
+      context: backend
+      target: runtime
+    ports:
+      - "8000:8000"
+
+  worker-template-matching:
+    build:
+      context: worker/template_matching
+      target: runtime
+    environment:
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
