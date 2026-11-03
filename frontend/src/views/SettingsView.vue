@@ -1,9 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { useRouter } from 'vue-router'
 import { useSession } from '../composables/useSession'
 
-const router = useRouter()
 const { userId, logout } = useSession()
 
 const displayName = ref(userId.value ?? '')
@@ -16,9 +14,9 @@ function save() {
   saved.value = true
 }
 
-async function signOut() {
-  logout()
-  await router.push({ name: 'landing' })
+// The backend ends the session, then Keycloak's own sign-out brings the browser back to the landing page.
+function signOut() {
+  return logout()
 }
 </script>
 

@@ -1,8 +1,9 @@
 import { createRouter, createWebHistory, type RouteLocationNormalized, type RouteLocationRaw } from 'vue-router'
 import { useSession } from '../composables/useSession'
 
-export function requireAuth(to: RouteLocationNormalized): true | RouteLocationRaw {
-  const { isAuthenticated, isAdmin } = useSession()
+export async function requireAuth(to: RouteLocationNormalized): Promise<true | RouteLocationRaw> {
+  const { isAuthenticated, isAdmin, load } = useSession()
+  await load()
   if (to.meta.requiresAuth && !isAuthenticated.value) {
     return { name: 'login', query: { redirect: to.fullPath } }
   }
