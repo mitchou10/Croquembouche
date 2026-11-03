@@ -270,14 +270,14 @@ backend:
     # @section -- Backend
     labels: {}
     hosts:
-    - # -- Name of the host record.
+    -  # -- Name of the host record.
       # @section -- Backend
       name: "domain.local"
       # -- Paths of the host record to manage routing (avoids repeating the same host for
       # multiple paths/backends).
       # @section -- Backend
       paths:
-      - # -- Path of the host record to manage routing.
+      -  # -- Path of the host record to manage routing.
         # @section -- Backend
         path: "/api/health"
         # -- Path type of the host record.
@@ -1106,14 +1106,14 @@ frontend:
     # @section -- Frontend
     labels: {}
     hosts:
-    - # -- Name of the host record.
+    -  # -- Name of the host record.
       # @section -- Frontend
       name: "domain.local"
       # -- Paths of the host record to manage routing (avoids repeating the same host for
       # multiple paths/backends).
       # @section -- Frontend
       paths:
-      - # -- Path of the host record to manage routing.
+      -  # -- Path of the host record to manage routing.
         # @section -- Frontend
         path: "/"
         # -- Path type of the host record.
@@ -1949,14 +1949,14 @@ worker_template_matching:
     # @section -- Worker template matching
     labels: {}
     hosts:
-    - # -- Name of the host record.
+    -  # -- Name of the host record.
       # @section -- Worker template matching
       name: "domain.local"
       # -- Paths of the host record to manage routing (avoids repeating the same host for
       # multiple paths/backends).
       # @section -- Worker template matching
       paths:
-      - # -- Path of the host record to manage routing.
+      -  # -- Path of the host record to manage routing.
         # @section -- Worker template matching
         path: "/"
         # -- Path type of the host record.
