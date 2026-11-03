@@ -4,6 +4,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import KeycloakSettings
 from app.routers.auth import router as auth_router
 from app.routers.documents import router as documents_router
+from app.routers.reference import router as reference_router
+from app.routers.templates import router as templates_router
 
 app = FastAPI(title="Croquembouche")
 
@@ -18,6 +20,8 @@ app.add_middleware(
 
 app.include_router(auth_router, prefix="/api/auth")
 app.include_router(documents_router, prefix="/api/documents")
+app.include_router(templates_router, prefix="/api/templates")
+app.include_router(reference_router, prefix="/api")
 
 
 @app.get("/api/health")
