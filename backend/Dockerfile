@@ -6,6 +6,8 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 COPY pyproject.toml uv.lock* ./
 RUN uv sync --frozen --no-dev --no-install-project
 COPY app ./app
+COPY alembic.ini ./
+COPY migrations ./migrations
 RUN uv sync --frozen --no-dev
 
 # Local development (docker-compose.override.yaml): uvicorn reloading on every change, with app/ mounted over the image's.
@@ -17,6 +19,8 @@ COPY pyproject.toml uv.lock* ./
 RUN uv sync --frozen --no-dev --no-install-project
 ENV PATH="/app/.venv/bin:$PATH"
 COPY app ./app
+COPY alembic.ini ./
+COPY migrations ./migrations
 EXPOSE 8000
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
 
@@ -28,6 +32,8 @@ RUN useradd --create-home --uid 1000 croquembouche
 WORKDIR /app
 COPY --from=builder --chown=croquembouche:croquembouche /app/.venv /app/.venv
 COPY --from=builder --chown=croquembouche:croquembouche /app/app /app/app
+COPY --from=builder --chown=croquembouche:croquembouche /app/alembic.ini /app/alembic.ini
+COPY --from=builder --chown=croquembouche:croquembouche /app/migrations /app/migrations
 USER croquembouche
 ENV PATH="/app/.venv/bin:$PATH"
 EXPOSE 8000
