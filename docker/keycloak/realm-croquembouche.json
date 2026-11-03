@@ -49,6 +49,7 @@
       "serviceAccountsEnabled": false,
       "secret": "dev-only-secret-not-for-prod",
       "redirectUris": [
+        "http://localhost:8080/api/auth/callback",
         "http://localhost:8000/api/auth/callback"
       ],
       "webOrigins": [
