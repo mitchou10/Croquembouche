@@ -1363,6 +1363,63 @@ describe('app', () => {
     })
   })
 
+  describe('the evaluation', () => {
+    /** alice.martin tries the analysis on a document in which t1 is found, and validates what was found. */
+    async function decide() {
+      useSession().setUser('alice.martin')
+      const name = Array.from({ length: 300 }, (_, i) => `essai-${i}.png`).find((n) =>
+        simulateTest({ templateIds: ['t1', 't6'] }, { name: n, size: 1 }).some((d) => d.classifications[0].templateId === 't1'),
+      )!
+      const { startRun, reviewDetection, findRun } = useAnalyses()
+      const run = (await startRun('a1', new File(['x'], name, { type: 'image/png' }), { saveScreenshot: false }))!
+      for (const d of findRun('a1', run.id)!.detections!) await reviewDetection('a1', run.id, d.id, { status: 'validated' })
+    }
+    const correct = (wrapper: ReturnType<typeof mount>) =>
+      Number(wrapper.get('[data-testid="quality-elements"] [data-testid="counts"]').text().match(/^(\d+) juste/)![1])
+
+    it('says what the person decided of their own tests, over every model and model by model', async () => {
+      await decide()
+      const { wrapper } = await mountAt('/evaluation')
+      await flushPromises()
+      expect(wrapper.get('h1').text()).toBe('Évaluation')
+      expect(wrapper.find('[role="tab"]').exists()).toBe(false) // only theirs: nothing to choose
+      expect(correct(wrapper)).toBeGreaterThan(0)
+      expect(wrapper.get('[data-testid="quality-pages"] h3').text()).toBe('Classification des pages')
+      const lines = wrapper.findAll('[data-testid="quality-model"]')
+      expect(lines.length).toBeGreaterThan(0)
+      expect(lines[0].get('a').attributes('href')).toMatch(/^\/catalogue\//)
+    })
+
+    it('starts empty for someone who decided nothing', async () => {
+      useSession().setUser('nouveau.venu')
+      const { wrapper } = await mountAt('/evaluation')
+      await flushPromises()
+      expect(wrapper.get('[data-testid="quality-empty"]').text()).toContain('Vous n’avez encore')
+      expect(wrapper.find('[data-testid="quality-models"]').exists()).toBe(false)
+    })
+
+    it('gives the administrator everyone’s decisions as well, with how many people took part', async () => {
+      await decide()
+      useSession().setUser('admin', { isAdmin: true })
+      const { wrapper } = await mountAt('/evaluation')
+      await flushPromises()
+      expect(wrapper.findAll('[role="tab"]').map((t) => t.text())).toEqual(['Mes décisions', 'Tous les utilisateurs'])
+      expect(wrapper.get('[data-testid="quality-empty"]').text()).toContain('Vous n’avez encore') // the admin decided nothing
+      await wrapper.findAll('[role="tab"]')[1].trigger('click')
+      await flushPromises()
+      expect(wrapper.get('[data-testid="reviewers"]').text()).toMatch(/\d+ personne/)
+      expect(correct(wrapper)).toBeGreaterThan(0)
+    })
+
+    it('says when the figures cannot be loaded', async () => {
+      useSession().setUser('dana')
+      vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline')))
+      const { wrapper } = await mountAt('/evaluation')
+      await flushPromises()
+      expect(wrapper.get('[role="alert"]').text()).toContain('n’ont pas pu être chargés')
+    })
+  })
+
   describe('the overview of the administrator', () => {
     const values = (wrapper: ReturnType<typeof mount>) =>
       Object.fromEntries(wrapper.findAll('[data-testid="stat"]').map((s) => [s.get('[data-testid="stat-label"]').text(), s.get('[data-testid="stat-value"]').text()]))
@@ -1370,10 +1427,10 @@ describe('app', () => {
     it('is in the sidebar for the administrator only', async () => {
       useSession().setUser('admin', { isAdmin: true })
       const admin = await mountAt('/catalogue')
-      expect(admin.wrapper.findAll('.app-sidebar__link').map((l) => l.text())).toEqual(['Catalogue', 'Analyses', 'Vue d’ensemble'])
+      expect(admin.wrapper.findAll('.app-sidebar__link').map((l) => l.text())).toEqual(['Catalogue', 'Analyses', 'Évaluation', 'Vue d’ensemble'])
       useSession().setUser('dana')
       const other = await mountAt('/catalogue')
-      expect(other.wrapper.findAll('.app-sidebar__link').map((l) => l.text())).toEqual(['Catalogue', 'Analyses'])
+      expect(other.wrapper.findAll('.app-sidebar__link').map((l) => l.text())).toEqual(['Catalogue', 'Analyses', 'Évaluation'])
     })
 
     it('is out of reach of anyone else, who is sent to the analyses', async () => {

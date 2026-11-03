@@ -32,6 +32,7 @@ export const routes = [
       { path: 'analyses', name: 'analyses', component: () => import('../views/AnalysesView.vue') },
       { path: 'analyses/nouvelle', name: 'analysis-new', component: () => import('../views/NewAnalysisView.vue') },
       { path: 'analyses/:id', name: 'analysis-detail', component: () => import('../views/AnalysisDashboardView.vue') },
+      { path: 'evaluation', name: 'evaluation', component: () => import('../views/EvaluationView.vue') },
       { path: 'vue-d-ensemble', name: 'overview', meta: { requiresAdmin: true }, component: () => import('../views/OverviewView.vue') },
       { path: 'parametres', name: 'settings', component: () => import('../views/SettingsView.vue') },
     ],

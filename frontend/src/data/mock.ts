@@ -525,3 +525,20 @@ export interface TemplateQuality {
   elements: Quality
   entities: (Quality & { id: string; name: string })[]
 }
+
+/** The quality on one model among the decisions of one person, or of everyone. */
+export interface ModelQuality {
+  id: string
+  name: string
+  pages: Quality & { exact: number | null }
+  elements: Quality
+}
+
+/** The quality over every model together and model by model, the models with the most decisions first. */
+export interface QualityOverview {
+  pages: Quality & { exact: number | null }
+  elements: Quality
+  models: ModelQuality[]
+  /** How many people decided something: only for everyone's decisions. */
+  reviewers?: number | null
+}

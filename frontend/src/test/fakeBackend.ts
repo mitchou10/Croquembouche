@@ -10,6 +10,7 @@ import type {
   TemplateEntity,
   TemplateFields,
   TemplateQuality,
+  QualityOverview,
 } from '../data/mock'
 import { analyses as analysisSeed, entityTypeSeed, groupSeed, sampleLetter, templates as seed } from '../data/mock'
 import { simulatePage, simulateTest } from './simulate'
@@ -188,6 +189,10 @@ export async function fakeFetch(path: string, init: RequestInit = {}): Promise<A
   }
 
   if (parts[0] === 'groups') return reply(200, groupsOf(user))
+  if (parts[0] === 'metrics') {
+    if (parts[1] === 'me') return reply(200, overviewOf(user))
+    return isAdmin.value ? reply(200, overviewOf()) : refuse(403, 'Réservé aux administrateurs.')
+  }
   if (parts[0] === 'analyses') return analysesRoute(user, isAdmin.value, method, parts, body, init)
 
   if (parts[0] !== 'templates') return refuse(404, 'Not found')
@@ -348,48 +353,93 @@ interface Row {
   entityId?: string | null
 }
 
-/** The quality of the analysis on a model, from the decisions in every use (the same rules as the backend's). */
-function qualityOf(template: Pick<Template, 'id' | 'entities'>): TemplateQuality {
+interface Collected {
+  pages: Row[]
+  elements: Row[]
+}
+
+/** The predictions of the uses (of one person, when named) and what was decided of them. */
+function collect(user?: string): Collected {
   const pages: Row[] = []
   const elements: Row[] = []
-  for (const run of analyses.flatMap((a) => a.runs)) {
+  for (const run of analyses.flatMap((a) => a.runs).filter((r) => user === undefined || r.userId === user)) {
     for (const page of run.pages ?? []) {
       const top = [...page.classifications].sort((a, b) => b.confidence - a.confidence)[0]
       pages.push({ top: top?.templateId ?? null, confidence: top?.confidence ?? 0, review: page.review })
     }
     for (const d of run.detections ?? []) {
-      const top = [...d.classifications].sort((a, b) => b.confidence - a.confidence)[0]
+      // An element found is the claim that there is one: the model it is taken for is the likeliest model, « other » or not.
+      const top = [...d.classifications].filter((c) => c.templateId).sort((a, b) => b.confidence - a.confidence)[0]
       elements.push({ top: top?.templateId ?? null, confidence: top?.confidence ?? 0, review: d.review, manual: d.source === 'manual', entityId: d.entityId })
     }
   }
-  const quality = (rows: Row[]) => {
-    const predicted = rows.filter((r) => !r.manual && r.top === template.id)
-    const decided = predicted.filter((r) => r.review.status !== 'pending')
-    const right = (r: Row) => r.review.status === 'validated' || (r.review.status === 'annotated' && r.review.templateId === template.id)
-    const correct = decided.filter(right)
-    const wrong = decided.filter((r) => !right(r))
-    const missed = rows.filter((r) => !(!r.manual && r.top === template.id) && r.review.status === 'annotated' && r.review.templateId === template.id)
-    const ratio = (a: number, b: number) => (b ? Math.round((a / b) * 10000) / 10000 : null)
-    const mean = (list: Row[]) => (list.length ? Math.round((list.reduce((s, r) => s + r.confidence, 0) / list.length) * 10000) / 10000 : null)
-    const precision = ratio(correct.length, decided.length)
-    const recall = ratio(correct.length, correct.length + missed.length)
-    return {
-      reviewed: decided.length,
-      pending: predicted.length - decided.length,
-      correct: correct.length,
-      wrong: wrong.length,
-      missed: missed.length,
-      precision,
-      recall,
-      f1: precision && recall ? Math.round(((2 * precision * recall) / (precision + recall)) * 10000) / 10000 : null,
-      meanConfidenceCorrect: mean(correct),
-      meanConfidenceWrong: mean(wrong),
-    }
+  return { pages, elements }
+}
+
+/** What was predicted as the model (as any, when none is named) and what was decided of it (the backend's rules). */
+function quality(rows: Row[], model?: string) {
+  const predictedAs = (r: Row) => !r.manual && r.top !== null && (model === undefined || r.top === model)
+  const predicted = rows.filter(predictedAs)
+  const decided = predicted.filter((r) => r.review.status !== 'pending')
+  const right = (r: Row) => r.review.status === 'validated' || (r.review.status === 'annotated' && r.review.templateId === (model ?? r.top))
+  const correct = decided.filter(right)
+  const wrong = decided.filter((r) => !right(r))
+  const missed = rows.filter(
+    (r) =>
+      r.review.status === 'annotated' &&
+      !!r.review.templateId &&
+      (model === undefined || r.review.templateId === model) &&
+      !(predictedAs(r) && r.top === r.review.templateId),
+  )
+  const ratio = (a: number, b: number) => (b ? Math.round((a / b) * 10000) / 10000 : null)
+  const mean = (list: Row[]) => (list.length ? Math.round((list.reduce((s, r) => s + r.confidence, 0) / list.length) * 10000) / 10000 : null)
+  const precision = ratio(correct.length, decided.length)
+  const recall = ratio(correct.length, correct.length + missed.length)
+  return {
+    reviewed: decided.length,
+    pending: predicted.length - decided.length,
+    correct: correct.length,
+    wrong: wrong.length,
+    missed: missed.length,
+    precision,
+    recall,
+    f1: precision && recall ? Math.round(((2 * precision * recall) / (precision + recall)) * 10000) / 10000 : null,
+    meanConfidenceCorrect: mean(correct),
+    meanConfidenceWrong: mean(wrong),
   }
+}
+
+/** The quality of the analysis on a model, from the decisions in every use. */
+function qualityOf(template: Pick<Template, 'id' | 'entities'>): TemplateQuality {
+  const { pages, elements } = collect()
+  return {
+    pages: { ...quality(pages, template.id), exact: null },
+    elements: quality(elements, template.id),
+    entities: template.entities.map((e) => ({ id: e.id, name: e.name, ...quality(elements.filter((r) => r.entityId === e.id), template.id) })),
+  }
+}
+
+/** The quality over every model, and model by model, of the decisions of one person or of everyone. */
+function overviewOf(user?: string): QualityOverview {
+  const { pages, elements } = collect(user)
+  const ids = new Set<string>()
+  for (const r of [...pages, ...elements]) for (const id of [r.top, r.review.templateId]) if (id) ids.add(id)
+  const models = [...ids]
+    .map((id) => ({
+      id,
+      name: templates.find((t) => t.id === id)?.name ?? 'Modèle supprimé',
+      pages: { ...quality(pages, id), exact: null },
+      elements: quality(elements, id),
+    }))
+    .sort((a, b) => b.pages.reviewed + b.elements.reviewed - (a.pages.reviewed + a.elements.reviewed) || a.name.localeCompare(b.name))
+  const reviewers = new Set(
+    analyses.flatMap((a) => a.runs).filter((r) => [...(r.pages ?? []).map((p) => p.review), ...(r.detections ?? []).map((d) => d.review)].some((v) => v.status !== 'pending')).map((r) => r.userId),
+  )
   return {
     pages: { ...quality(pages), exact: null },
     elements: quality(elements),
-    entities: template.entities.map((e) => ({ id: e.id, name: e.name, ...quality(elements.filter((r) => r.entityId === e.id)) })),
+    models,
+    ...(user === undefined && { reviewers: reviewers.size }),
   }
 }
 

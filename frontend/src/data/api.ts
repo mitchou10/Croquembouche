@@ -4,6 +4,7 @@ import type {
   Classification,
   EntityTypeInfo,
   Group,
+  QualityOverview,
   Review,
   ReviewedDetection,
   RunPage,
@@ -99,6 +100,10 @@ const call = async (method: string, path: string, body?: unknown) =>
 export const fetchTemplates = async () => (await request<TemplateAnswer[]>('GET', base)).map(toTemplate)
 /** How right the analysis has been on a model, from what people decided of its predictions. */
 export const fetchQuality = (id: string) => request<TemplateQuality>('GET', `${base}/${id}/metrics`)
+/** What the person decided of their own tests, over every model and model by model. */
+export const fetchMyQuality = () => request<QualityOverview>('GET', '/api/metrics/me')
+/** What everyone decided: administrators only. */
+export const fetchAllQuality = () => request<QualityOverview>('GET', '/api/metrics')
 export const postTemplate = (body: TemplateBody) => call('POST', base, body)
 export const putTemplate = (id: string, body: TemplateBody) => call('PUT', `${base}/${id}`, body)
 /** Deletes a model: its owner only, and not one an analysis looks for. */
