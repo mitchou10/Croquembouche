@@ -1,6 +1,6 @@
 import uuid
 
-from app.services.metrics import Row, count, entity_rows, exact_pages
+from app.services.metrics import Row, count, entity_rows, exact_pages, models_of
 
 MODEL = uuid.uuid4()
 OTHER = uuid.uuid4()
@@ -84,3 +84,25 @@ def test_a_page_of_the_model_is_exact_when_the_page_of_the_model_was_right_too()
 
     assert exact_pages(rows, MODEL) == 0.6667
     assert exact_pages([row("invalidated")], MODEL) is None
+
+
+def test_over_every_model_together_it_is_the_sum_of_the_models():
+    rows = [
+        row("validated", top=MODEL),
+        row("invalidated", top=OTHER),
+        row("annotated", top=MODEL, review=OTHER),  # taken for MODEL, was OTHER: wrong for MODEL, missed for OTHER
+        row("annotated", top=OTHER, review=OTHER, source="manual"),
+        row(top=None),  # taken for no model: not counted
+    ]
+
+    total = count(rows)
+    parts = [count(rows, MODEL), count(rows, OTHER)]
+
+    assert total.correct == sum(p.correct for p in parts) == 1
+    assert total.wrong == sum(p.wrong for p in parts) == 2
+    assert total.missed == sum(p.missed for p in parts) == 2
+    assert total.pending == 0 and total.precision == 0.3333 and total.recall == 0.3333
+
+
+def test_the_models_something_was_predicted_as_or_said_to_be():
+    assert models_of([row(top=MODEL, review=OTHER), row(top=None)], [row(top=None)]) == {MODEL, OTHER}

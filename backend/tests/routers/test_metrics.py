@@ -68,7 +68,7 @@ async def test_the_quality_grows_with_what_people_decide(db_client, as_user, dis
         "pages": [page(1, 1, 0.9), page(2, 2, 0.8)],
         "found": [
             element(logo, 1, 0.1, 0.7, form["id"]),
-            element(logo, 1, 0.4, 0.55, form["id"]),
+            element(logo, 1, 0.4, 0.4, form["id"]),
             element(date, 2, 0.1, 0.6, form["id"]),
         ],
     }
@@ -105,6 +105,23 @@ async def test_the_quality_grows_with_what_people_decide(db_client, as_user, dis
     assert (by_name["Logo"]["precision"], by_name["Logo"]["recall"]) == (0.5, 1.0)
     assert (by_name["Date"]["correct"], by_name["Date"]["wrong"], by_name["Date"]["missed"]) == (0, 1, 1)
     assert (by_name["Date"]["precision"], by_name["Date"]["recall"]) == (0.0, 0.0)
+
+    # Over every model together, and model by model: for the person who decided, and for an administrator.
+    mine = (await db_client.get("/api/metrics/me")).json()
+    assert (mine["pages"]["correct"], mine["pages"]["wrong"], mine["pages"]["precision"]) == (1, 1, 0.5)
+    assert (mine["elements"]["correct"], mine["elements"]["wrong"], mine["elements"]["missed"]) == (1, 2, 2)
+    assert (mine["elements"]["precision"], mine["elements"]["recall"]) == (0.3333, 0.3333)
+    assert [m["name"] for m in mine["models"]] == ["Formulaire X", "Tampon"]  # the one with the most decisions first
+    assert mine["models"][0]["pages"]["precision"] == 0.5 and mine["models"][1]["elements"]["missed"] == 1
+    assert mine["reviewers"] is None
+    as_user("bob")
+    assert (await db_client.get("/api/metrics/me")).json()["models"] == []  # nothing decided by them
+    assert (await db_client.get("/api/metrics")).status_code == 403
+    as_user("root", admin=True)
+    everyone = (await db_client.get("/api/metrics")).json()
+    assert everyone["elements"]["wrong"] == 2 and everyone["reviewers"] == 1
+    assert [m["name"] for m in everyone["models"]] == ["Formulaire X", "Tampon"]
+    as_user("alice", name="Alice")
 
     # The model an element was corrected into counts it as found by hand, not as predicted.
     stamp_metrics = (await db_client.get(f"/api/templates/{stamp['id']}/metrics")).json()
