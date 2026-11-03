@@ -18,7 +18,7 @@ const mountPreview = (template: ReturnType<ReturnType<typeof useCatalogue>['find
 describe('TemplatePreview', () => {
   beforeEach(async () => {
     resetCatalogue()
-    useSession().login('dana')
+    useSession().setUser('dana')
     await loadEntityTypes()
   })
   afterEach(() => {
