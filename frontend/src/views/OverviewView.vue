@@ -83,7 +83,7 @@ const route = (a: Analysis) => ({ name: 'analysis-detail', params: { id: a.id } 
           <li v-for="a in toWatch" :key="a.id" data-testid="to-watch">
             <RouterLink :to="route(a)">{{ a.name }}</RouterLink>
             <DsfrBadge :label="statusLabels[a.status].label" :type="statusLabels[a.status].type" small />
-            <span class="overview__count">{{ a.date }} · par {{ a.ownerId }}</span>
+            <span class="overview__count">{{ a.date }} · par {{ a.ownerName }}</span>
           </li>
         </ul>
       </section>

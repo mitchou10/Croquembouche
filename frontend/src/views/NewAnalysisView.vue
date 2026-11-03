@@ -7,6 +7,7 @@ import PagedList from '../components/PagedList.vue'
 import ShareInput from '../components/ShareInput.vue'
 import TemplatePreview from '../components/TemplatePreview.vue'
 import { useAnalyses } from '../composables/useAnalyses'
+import { ApiError } from '../data/api'
 import { useCatalogue } from '../composables/useCatalogue'
 import { useGroups } from '../composables/useGroups'
 import type { Share } from '../data/mock'
@@ -36,6 +37,8 @@ const preview = computed(() => (previewId.value === null ? null : (find(previewI
 const nameError = ref('')
 const templatesError = ref('')
 const sharesError = ref(false)
+// What the backend refused, if it did.
+const serverError = ref('')
 
 const results = computed(() => filter(query.value, mine.value))
 const toComplete = computed(() => [
@@ -56,6 +59,7 @@ function onTileClick(event: MouseEvent, id: string) {
 }
 
 async function submit() {
+  serverError.value = ''
   nameError.value = name.value.trim() ? '' : 'Donnez un nom à l’analyse.'
   templatesError.value = selected.value.length ? '' : 'Choisissez au moins un modèle du catalogue.'
   // What was typed in the recipients' field and not yet taken (a click on the button comes before the field's own blur).
@@ -63,13 +67,19 @@ async function submit() {
   if (nameError.value || templatesError.value || sharesError.value) return
   // In the order of the catalogue, not of the clicks.
   const order = filter('').map((t) => t.id)
-  createAnalysis({
-    name: name.value,
-    description: description.value,
-    templateIds: [...selected.value].sort((a, b) => order.indexOf(a) - order.indexOf(b)),
-    isPublic: isPublic.value,
-    shares: shares.value,
-  })
+  try {
+    await createAnalysis({
+      name: name.value,
+      description: description.value,
+      templateIds: [...selected.value].sort((a, b) => order.indexOf(a) - order.indexOf(b)),
+      isPublic: isPublic.value,
+      shares: shares.value,
+    })
+  } catch (error) {
+    // What the backend refuses, with its reason: a recipient it does not accept, a model that is gone.
+    serverError.value = error instanceof ApiError ? error.message : 'Le serveur est injoignable.'
+    return
+  }
   await router.push({ name: 'analyses' })
 }
 </script>
@@ -82,6 +92,9 @@ async function submit() {
         <!-- What is missing, on the title's line: it takes no height of its own. -->
         <p v-if="toComplete.length" class="new-analysis__alert fr-error-text fr-mb-0" role="alert" data-testid="missing">
           À compléter : {{ toComplete.join(', ') }}.
+        </p>
+        <p v-else-if="serverError" class="new-analysis__alert fr-error-text fr-mb-0" role="alert" data-testid="server-error">
+          {{ serverError }}
         </p>
         <div class="new-analysis__actions">
           <RouterLink class="fr-btn fr-btn--secondary" :to="{ name: 'analyses' }">Annuler</RouterLink>

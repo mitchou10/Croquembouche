@@ -8,6 +8,8 @@ const runs = (n: number): AnalysisRun[] =>
   Array.from({ length: n }, (_, i) => ({
     id: `r${i}`,
     userId: `user${i}`,
+    userName: `user${i}`,
+    hasResult: false,
     date: `2026-10-${String(30 - i).padStart(2, '0')}`,
     status: i % 3 === 0 ? 'done' : i % 3 === 1 ? 'running' : 'failed',
     matches: i,
@@ -54,7 +56,7 @@ describe('RunsList', () => {
   })
 
   describe('the result of a use', () => {
-    const withResult = (n: number): AnalysisRun[] => runs(n).map((r) => ({ ...r, detections: [] }))
+    const withResult = (n: number): AnalysisRun[] => runs(n).map((r) => ({ ...r, hasResult: true, detections: [] }))
     const mountResults = (list: AnalysisRun[], canSee: (r: AnalysisRun) => boolean, selectedId?: string) =>
       mount(RunsList, { props: { runs: list, canSee, selectedId }, global: { plugins: [VueDsfr] } })
 

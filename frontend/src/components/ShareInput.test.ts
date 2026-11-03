@@ -80,11 +80,11 @@ describe('ShareInput', () => {
     expect(tags(wrapper)).toEqual(['Direction'])
   })
 
-  it('offers the groups that are not chosen yet, with their size', async () => {
+  it('offers the groups that are not chosen yet, with their name', async () => {
     const wrapper = mountInput([{ kind: 'group', value: 'Direction' }])
     const options = wrapper.findAll('datalist option')
     expect(options.map((o) => o.attributes('value'))).toEqual(['Équipe courriers', 'Préfecture de Paris', 'Service contentieux'])
-    expect(options[0].attributes('label')).toBe('Groupe · 12 membres')
+    expect(options[0].attributes('label')).toBe('Groupe · Équipe courriers')
   })
 
   it('has no list when there is no group', () => {
