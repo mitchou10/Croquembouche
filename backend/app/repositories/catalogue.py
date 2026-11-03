@@ -1,8 +1,9 @@
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.analysis import AnalysisTemplate
 from app.models.catalogue import Category, EntityType, Template
 from app.models.document import Document
 
@@ -45,6 +46,14 @@ class CatalogueRepository:
         except ValueError:
             return None
         return await self._session.get(Template, identifier)
+
+    async def count_analyses_using(self, template_id: uuid.UUID) -> int:
+        query = select(func.count()).select_from(AnalysisTemplate).where(AnalysisTemplate.template_id == template_id)
+        return await self._session.scalar(query) or 0
+
+    async def count_templates_with(self, document_id: uuid.UUID) -> int:
+        query = select(func.count()).select_from(Template).where(Template.document_id == document_id)
+        return await self._session.scalar(query) or 0
 
     async def get_document(self, document_id: str) -> Document | None:
         try:

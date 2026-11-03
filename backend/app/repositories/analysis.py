@@ -39,6 +39,9 @@ class AnalysisRepository:
     async def document(self, document_id: uuid.UUID) -> Document | None:
         return await self._session.get(Document, document_id)
 
+    async def delete(self, analysis: Analysis) -> None:
+        await self._session.delete(analysis)
+
     def add(self, entity: object) -> None:
         self._session.add(entity)
 

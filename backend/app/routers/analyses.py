@@ -45,6 +45,11 @@ async def get(analysis_id: str, service: Analyses) -> AnalysisOut:
     return await _run(service.get(analysis_id))
 
 
+@router.delete("/{analysis_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete an analysis: its owner only")
+async def delete(analysis_id: str, service: Analyses) -> None:
+    await _run(service.delete(analysis_id))
+
+
 @router.post("/{analysis_id}/views", summary="Count one more look at the page of the analysis")
 async def register_view(analysis_id: str, service: Analyses) -> ViewsOut:
     return ViewsOut(views=await _run(service.register_view(analysis_id)))
