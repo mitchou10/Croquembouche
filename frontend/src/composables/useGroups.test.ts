@@ -1,26 +1,27 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { loadGroups, resetGroups, useGroups } from './useGroups'
+import { useSession } from './useSession'
 
 describe('the groups, as the backend gives them', () => {
+  beforeEach(() => useSession().setUser('alice.martin'))
   afterEach(() => {
     vi.restoreAllMocks()
     resetGroups()
   })
 
-  it('loads them once, with a name and a number of members each', async () => {
+  it('loads the ones of the person, with a name each', async () => {
     resetGroups()
     await loadGroups()
     const { groups } = useGroups()
-    expect(groups.value.map((g) => g.name)).toEqual(['Équipe courriers', 'Préfecture de Paris', 'Service contentieux', 'Direction'])
-    expect(groups.value.every((g) => g.members > 0)).toBe(true)
+    expect(groups.value.map((g) => g.name)).toEqual(['Équipe courriers', 'Direction']) // alice.martin's
   })
 
   it('shows whatever the backend sends', async () => {
     resetGroups()
     const api = await import('../data/api')
-    vi.spyOn(api, 'fetchGroups').mockResolvedValue([{ id: 'x', name: 'Autre', members: 3 }])
+    vi.spyOn(api, 'fetchGroups').mockResolvedValue([{ id: 'x', name: 'Autre' }])
     await loadGroups()
-    expect(useGroups().groups.value).toEqual([{ id: 'x', name: 'Autre', members: 3 }])
+    expect(useGroups().groups.value).toEqual([{ id: 'x', name: 'Autre' }])
   })
 
   it('asks the backend only once, however many ask', async () => {
