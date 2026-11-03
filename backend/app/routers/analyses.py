@@ -30,7 +30,7 @@ async def _run(call):
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(error)) from error
 
 
-@router.get("", summary="The analyses the person can open (all of them for an administrator)")
+@router.get("", summary="Every analysis: those the person cannot open are named only")
 async def list_analyses(service: Analyses) -> list[AnalysisOut]:
     return await service.search()
 

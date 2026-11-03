@@ -128,7 +128,8 @@ async def test_who_can_open_an_analysis(db_client, as_user, models):
     by_group = await create(db_client, models, name="Par groupe", shares=[{"kind": "group", "value": "team"}])
 
     def names(response):
-        return sorted(a["name"] for a in response.json())
+        # Every analysis is listed; what the person can open is what says so.
+        return sorted(a["name"] for a in response.json() if a["canOpen"])
 
     as_user("alice", email="alice@example.org", groups=["/team"])
     assert len(names(await db_client.get("/api/analyses"))) == 5  # her own, whatever they are
@@ -146,6 +147,20 @@ async def test_who_can_open_an_analysis(db_client, as_user, models):
         assert (await db_client.get(f"/api/analyses/{hidden['id']}")).status_code == 404
     assert (await db_client.get(f"/api/analyses/{public['id']}")).status_code == 200
     assert (await db_client.get("/api/analyses/not-a-uuid")).status_code == 404
+
+
+async def test_the_analyses_one_cannot_open_are_listed_by_name_only(db_client, as_user, models):
+    as_user("alice", name="Alice")
+    secret = await create(db_client, models, name="Secrète", description="Confidentiel", isPublic=False)
+    await run(db_client, secret)
+    as_user("bob")
+
+    listed = next(a for a in (await db_client.get("/api/analyses")).json() if a["id"] == secret["id"])
+
+    assert listed["canOpen"] is False and listed["name"] == "Secrète" and listed["date"] and listed["status"]
+    assert listed["description"] == "" and listed["ownerId"] == "" and listed["ownerName"] == ""
+    assert listed["runs"] == [] and listed["templateIds"] == [] and listed["shares"] == [] and listed["views"] == 0
+    assert listed["matches"] == 0 and listed["isPublic"] is False
 
 
 async def test_the_recipients_are_for_the_owner_and_an_administrator_alone(db_client, as_user, models):

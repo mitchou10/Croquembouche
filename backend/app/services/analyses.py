@@ -123,8 +123,8 @@ class AnalysisService:
     # --- reading
 
     async def search(self) -> list[AnalysisOut]:
-        found = await self._repository.accessible(self._user.user_id, self._share_hashes(), self._user.is_admin)
-        return [self._view(a) for a in found]
+        """Every analysis, the ones the person cannot open named only: they are told there are others, and which."""
+        return [self._view(a) for a in await self._repository.all()]
 
     async def get(self, analysis_id: str) -> AnalysisOut:
         return self._view(await self._analysis(analysis_id))
@@ -351,9 +351,27 @@ class AnalysisService:
         )
 
     def _view(self, analysis: Analysis) -> AnalysisOut:
+        if not self._can_open(analysis):
+            return AnalysisOut(
+                id=str(analysis.id),
+                can_open=False,
+                name=analysis.name,
+                description="",
+                owner_id="",
+                owner_name="",
+                views=0,
+                runs=[],
+                template_ids=[],
+                is_public=False,
+                shares=[],
+                date=analysis.created_at.date(),
+                status=_status(analysis),  # type: ignore[arg-type]
+                matches=0,
+            )
         see_shares = self._is_owner(analysis) or self._user.is_admin
         return AnalysisOut(
             id=str(analysis.id),
+            can_open=True,
             name=analysis.name,
             description=analysis.description,
             owner_id=analysis.owner_id,

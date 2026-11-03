@@ -1,9 +1,9 @@
 import uuid
 
-from sqlalchemy import or_, select, update
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.analysis import Analysis, AnalysisShare
+from app.models.analysis import Analysis
 from app.models.catalogue import Template
 from app.models.document import Document
 
@@ -18,16 +18,9 @@ class AnalysisRepository:
         except ValueError:
             return None
 
-    async def accessible(self, user_id: str, share_hashes: list[str], everything: bool) -> list[Analysis]:
-        """The analyses a person can open: their own, the public ones, and those shared with them by e-mail address or
-        by one of their groups (an administrator opens them all). Newest first."""
-        query = select(Analysis).order_by(Analysis.created_at.desc())
-        if not everything:
-            shared = select(AnalysisShare.analysis_id).where(AnalysisShare.value_hash.in_(share_hashes))
-            query = query.where(
-                or_(Analysis.owner_id == user_id, Analysis.is_public.is_(True), Analysis.id.in_(shared))
-            )
-        return list((await self._session.scalars(query)).all())
+    async def all(self) -> list[Analysis]:
+        """Every analysis, newest first: the ones a person cannot open are listed too, named and no more."""
+        return list((await self._session.scalars(select(Analysis).order_by(Analysis.created_at.desc()))).all())
 
     async def existing_templates(self, template_ids: list[uuid.UUID]) -> set[uuid.UUID]:
         return set((await self._session.scalars(select(Template.id).where(Template.id.in_(template_ids)))).all())
