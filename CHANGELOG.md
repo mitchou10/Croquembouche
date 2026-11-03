@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.1](https://github.com/mitchou10/Croquembouche/compare/v1.6.0...v1.6.1) (2026-11-03)
+
+
+### Bug Fixes
+
+* **helm:** run the migration after an upgrade, not before, so Argo CD applies the release first ([9397d6c](https://github.com/mitchou10/Croquembouche/commit/9397d6cad3dbf9199ea1b5853089af72d939daf5))
+
 ## [1.6.0](https://github.com/mitchou10/Croquembouche/compare/v1.5.0...v1.6.0) (2026-11-03)
 
 
