@@ -174,6 +174,19 @@ describe('useCatalogue', () => {
     expect(await resolveSuggestion('t3', 'nope', true)).toBe(false)
   })
 
+  it('deletes a model of one\'s own, and is told why when it cannot', async () => {
+    const { create, remove, find, actionError } = useCatalogue()
+    const mine = await create(fields())
+    expect(await remove(mine.id)).toBe(true)
+    expect(find(mine.id)).toBeUndefined()
+    expect(await remove('t2')).toBe(false) // bob.durand's
+    expect(actionError.value).toContain('propriétaire')
+    expect(await remove('t1')).toBe(false) // an analysis looks for it
+    expect(actionError.value).toContain('analyse')
+    expect(find('t1')).toBeDefined()
+    expect(await remove('nope')).toBe(false)
+  })
+
   it('sends the entities with the id they have, and the document by its id', () => {
     const entity = { ...newEntity(), id: 'e1', name: 'Date', examples: ['a'], zone: { page: 2, points: [] } }
     const body = toBody(fields({ entities: [entity] }), 'doc-1')

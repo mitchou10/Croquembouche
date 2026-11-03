@@ -183,6 +183,13 @@ export async function fakeFetch(path: string, init: RequestInit = {}): Promise<A
   const sub = parts[2]
 
   if (parts.length === 2 && method === 'GET') return reply(200, template)
+  if (parts.length === 2 && method === 'DELETE') {
+    if (!owner) return refuse(403, 'Seul le propriétaire supprime le modèle.')
+    const used = analyses.filter((a) => a.templateIds.includes(template.id)).length
+    if (used) return refuse(409, `Ce modèle est utilisé par ${used} analyse${used > 1 ? 's' : ''} : supprimez-la${used > 1 ? 's' : ''} d’abord.`)
+    templates = templates.filter((t) => t.id !== template.id)
+    return reply(204)
+  }
   if (parts.length === 2 && method === 'PUT') {
     if (!owner) return refuse(403, 'Seul le propriétaire modifie le modèle.')
     const fields = clean(body as Body)
@@ -343,6 +350,11 @@ function analysesRoute(user: string, admin: boolean, method: string, parts: stri
 
   const analysis = analyses.find((a) => a.id === parts[1])
   if (!analysis || !canOpen(analysis, user, admin)) return refuse(404, 'Not found')
+  if (parts.length === 2 && method === 'DELETE') {
+    if (analysis.ownerId !== user) return refuse(403, 'Seul le propriétaire supprime l’analyse.')
+    analyses = analyses.filter((a) => a.id !== analysis.id)
+    return reply(204)
+  }
   if (parts.length === 2) return reply(200, analysisView(analysis, user, admin))
   if (parts[2] === 'views') {
     analysis.views++

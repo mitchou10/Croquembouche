@@ -90,6 +90,28 @@ describe('creating an analysis', () => {
   })
 })
 
+describe('deleting an analysis', () => {
+  it('is for its owner, who then no longer has it', async () => {
+    await asUser('alice.martin')
+    const { remove, find, total } = useAnalyses()
+    const before = total.value
+    expect(await remove('a1')).toBe(true)
+    expect(find('a1')).toBeUndefined()
+    expect(total.value).toBe(before - 1)
+  })
+
+  it('is refused to anyone else, an administrator included, with the reason', async () => {
+    await asUser('admin', { isAdmin: true })
+    const { remove, find, actionError } = useAnalyses()
+    expect(await remove('a1')).toBe(false)
+    expect(actionError.value).toContain('propriétaire')
+    expect(find('a1')).toBeDefined()
+    await asUser('dana')
+    expect(await useAnalyses().remove('a3')).toBe(false) // she cannot even open it
+    expect(await useAnalyses().remove('nope')).toBe(false)
+  })
+})
+
 describe('who can open an analysis', () => {
   const openedBy = async (who: string | null, details: { isAdmin?: boolean } = {}) => {
     await asUser(who, details)
