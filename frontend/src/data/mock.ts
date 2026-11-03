@@ -62,12 +62,27 @@ export interface TemplateDocument {
   pages?: number
 }
 
+/** What is said of a page of a model's document: a name and a description, both optional. */
+export interface PageFields {
+  /** From 1. */
+  page: number
+  name: string
+  description: string
+}
+
+/** A page of a model, as the backend gives it: with how it is called (its name, else the model's name and its number). */
+export interface TemplatePage extends PageFields {
+  label: string
+}
+
 export interface TemplateFields {
   name: string
   description: string
   /** Tags: some from the usual list, others made up by whoever filled the form. */
   categories: string[]
   entities: TemplateEntity[]
+  /** The pages that were given a name or a description: the others are « name · page N ». */
+  pages: PageFields[]
 }
 
 export type SuggestionStatus = 'pending' | 'accepted' | 'rejected'
@@ -102,6 +117,8 @@ export interface Template extends TemplateFields {
   /** Who made it, as the backend knows them (the identifier of their account), and their name to show. */
   ownerId: string
   ownerName: string
+  /** One per page of its document, with the default name filled in. */
+  pages: TemplatePage[]
   /** Identifiers of the users who starred it. */
   stars: string[]
   suggestions: Suggestion[]
@@ -137,6 +154,8 @@ export interface Share {
 /** What an element could be, and how sure the analysis is of it: a model of the analysis, or « other » (no model). */
 export interface Classification {
   templateId: string | null
+  /** For the classification of a page of a document: the page of the model it looks like (« form X, page 3 »). */
+  templatePage?: number | null
   /** 0 to 1. */
   confidence: number
 }
@@ -155,6 +174,8 @@ export interface Review {
   status: ReviewStatus
   /** For an annotation: the model it is, one of the models of the analysis. */
   templateId?: string
+  /** For the annotation of a page: the page of that model, when it has several. */
+  templatePage?: number
 }
 
 export interface ReviewedDetection extends Detection {
@@ -163,8 +184,10 @@ export interface ReviewedDetection extends Detection {
   source?: 'analysis' | 'manual'
 }
 
-/** What the analysis makes of the page as a whole: which model it corresponds to, the likeliest first. */
-export interface PageClassification {
+/** What the analysis makes of one page of the document: which page of which model it corresponds to, the likeliest first. */
+export interface RunPage {
+  /** The page of the document tried, from 1. */
+  page: number
   classifications: Classification[]
   review: Review
 }
@@ -184,8 +207,8 @@ export interface AnalysisRun {
   fileName?: string
   /** What was found in it. Only the person who ran it can see this, an administrator included. */
   detections?: ReviewedDetection[]
-  /** Which model the page corresponds to. */
-  page?: PageClassification
+  /** Which page of which model each page of the document corresponds to. */
+  pages?: RunPage[]
   /** A capture of the document, when the person chose to keep one: null once deleted. */
   screenshot?: TemplateDocument | null
   /** What was decided of that capture once the predictions were looked at: kept, or deleted. */
@@ -236,8 +259,9 @@ const letterEntities = (): TemplateEntity[] => [
 ]
 
 type RawComment = Omit<Comment, 'authorName'>
-type RawSuggestion = Omit<Suggestion, 'authorName' | 'comments'> & { comments: RawComment[] }
-type RawTemplate = Omit<Template, 'ownerName' | 'suggestions'> & { suggestions: RawSuggestion[] }
+type RawFields = Omit<TemplateFields, 'pages'>
+type RawSuggestion = Omit<Suggestion, 'authorName' | 'comments' | 'fields'> & { comments: RawComment[]; fields: RawFields }
+type RawTemplate = Omit<Template, 'ownerName' | 'suggestions' | 'pages'> & { suggestions: RawSuggestion[] }
 
 const rawTemplates: RawTemplate[] = [
   {
@@ -375,9 +399,12 @@ const rawTemplates: RawTemplate[] = [
 export const templates: Template[] = rawTemplates.map((t) => ({
   ...t,
   ownerName: t.ownerId,
+  // A demo model's document is one image: one page, which is the model itself.
+  pages: t.document ? [{ page: 1, name: '', description: '', label: t.name }] : [],
   suggestions: t.suggestions.map((s) => ({
     ...s,
     authorName: s.authorId,
+    fields: { ...s.fields, pages: [] },
     comments: s.comments.map((c) => ({ ...c, authorName: c.authorId })),
   })),
 }))

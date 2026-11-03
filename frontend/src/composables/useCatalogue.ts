@@ -5,6 +5,7 @@ import {
   type Template,
   type TemplateDocument,
   type TemplateEntity,
+  type PageFields,
   type TemplateFields,
 } from '../data/mock'
 import { entityTypeLabel } from './useEntityTypes'
@@ -102,6 +103,9 @@ const describeEntities = (entities: TemplateEntity[]) =>
     }),
   )
 
+const describePages = (pages: PageFields[]) =>
+  describeList(givenPages(pages).map((p) => `page ${p.page}${p.name.trim() ? ` : ${p.name.trim()}` : ''}`))
+
 /** Trimmed, without blanks or duplicates, in the order given. Case counts as a difference unless told otherwise. */
 export function cleanList(values: string[], ignoreCase = false): string[] {
   const key = (v: string) => (ignoreCase ? v.toLowerCase() : v)
@@ -138,8 +142,19 @@ export function changedFields(template: TemplateFields, fields: TemplateFields):
       after: describeEntities(fields.entities),
     })
   }
+  const pagesOf = (pages: PageFields[]) => JSON.stringify(givenPages(pages).map((p) => [p.page, p.name.trim(), p.description.trim()]))
+  if (pagesOf(template.pages ?? []) !== pagesOf(fields.pages ?? [])) {
+    changes.push({
+      label: 'Pages',
+      before: describePages(template.pages ?? []),
+      after: describePages(fields.pages ?? []),
+    })
+  }
   return changes
 }
+
+/** The pages that were given a name or a description. */
+export const givenPages = (pages: PageFields[]) => pages.filter((p) => p.name.trim() || p.description.trim())
 
 /** What the backend takes of a model's fields. The entities keep the id they have: that is how it knows them. */
 export function toBody(fields: TemplateFields, documentId?: string | null): api.TemplateBody {
@@ -147,6 +162,8 @@ export function toBody(fields: TemplateFields, documentId?: string | null): api.
     name: fields.name,
     description: fields.description,
     categories: fields.categories,
+    // Only what was said: a page without a name or a description is the default.
+    pages: givenPages(fields.pages),
     entities: fields.entities.map((e) => ({
       id: e.id,
       name: e.name,
@@ -175,6 +192,12 @@ export function useCatalogue() {
   const isStarred = (template: Template) => userId.value !== null && template.stars.some((s) => s === userId.value)
   const pendingSuggestions = (template: Template) => template.suggestions.filter((s) => s.status === 'pending')
   const templateName = (id: string) => find(id)?.name ?? 'Modèle inconnu'
+  /** How a page of a model is called: its name, else the name of the model and its number; the model's for no page. */
+  const pageLabel = (id: string, page?: number | null) => {
+    const template = find(id)
+    if (!template) return 'Modèle inconnu'
+    return (page && template.pages.find((p) => p.page === page)?.label) || template.name
+  }
 
   /** Models matching a search, and only the signed-in user's own when `mine` is set. */
   function filter(query: string, mine = false): Template[] {
@@ -245,6 +268,7 @@ export function useCatalogue() {
     isStarred,
     pendingSuggestions,
     templateName,
+    pageLabel,
     filter,
     create,
     remove,

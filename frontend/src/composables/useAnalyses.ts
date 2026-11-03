@@ -161,9 +161,12 @@ export function useAnalyses() {
   const reviewDetection = (analysisId: string, runId: string, detectionId: string, review: Review) =>
     attempt(async () => keepRun(analysisId, await api.putDetectionReview(analysisId, runId, detectionId, review)))
 
-  /** What the person decides of the classification of the page: right, wrong, or another of the models of the analysis. */
-  const reviewPage = (analysisId: string, runId: string, review: Review) =>
-    attempt(async () => keepRun(analysisId, await api.putPageReview(analysisId, runId, review)))
+  /**
+   * What the person decides of the classification of one page of the document (from 1): right, wrong, or another page
+   * of another of the models of the analysis.
+   */
+  const reviewPage = (analysisId: string, runId: string, page: number, review: Review) =>
+    attempt(async () => keepRun(analysisId, await api.putPageReview(analysisId, runId, page, review)))
 
   /**
    * Adds by hand an element the analysis missed: a zone drawn on the document, annotated with one of the models of the
@@ -176,9 +179,9 @@ export function useAnalyses() {
   const removeElement = (analysisId: string, runId: string, detectionId: string) =>
     attempt(async () => keepRun(analysisId, await api.deleteElement(analysisId, runId, detectionId)))
 
-  /** How many of the predictions of a use (its elements, and its page) have been looked at. */
+  /** How many of the predictions of a use (its elements, and each of its pages) have been looked at. */
   const reviewProgress = (run: AnalysisRun) => {
-    const all = [...(run.detections ?? []).map((d) => d.review), ...(run.page ? [run.page.review] : [])]
+    const all = [...(run.detections ?? []).map((d) => d.review), ...(run.pages ?? []).map((p) => p.review)]
     return { total: all.length, reviewed: all.filter((r) => r.status !== 'pending').length }
   }
 

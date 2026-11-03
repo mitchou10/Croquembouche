@@ -27,6 +27,9 @@ const decides = computed(() => !!template.value && canDecide(template.value))
 type Tab = 'entities' | 'suggestions'
 const tab = ref<Tab>(route.query.onglet === 'suggestions' ? 'suggestions' : 'entities')
 const entityIndex = ref(0)
+// The page of the document shown (from 1): what is said of it is shown under the heading.
+const shownPage = ref(1)
+const pageNote = computed(() => (template.value && template.value.pages.length > 1 ? template.value.pages[shownPage.value - 1] : undefined))
 const suggestionIndex = ref(0)
 const commentText = ref('')
 const commentList = ref<HTMLElement>()
@@ -36,6 +39,7 @@ watch(
   () => {
     entityIndex.value = 0
     suggestionIndex.value = 0
+    shownPage.value = 1
   },
 )
 watch(suggestionIndex, () => (commentText.value = ''))
@@ -106,8 +110,13 @@ async function comment() {
         <h2 class="fr-h6 fr-mb-0">Document d’exemple</h2>
         <p v-if="template.document" class="template-view__doc-name" data-testid="document-name">{{ template.document.name }}</p>
       </div>
+      <p v-if="pageNote" class="template-view__page fr-mb-0" data-testid="page-note">
+        <strong>{{ pageNote.label }}</strong>
+        <span v-if="pageNote.description"> — {{ pageNote.description }}</span>
+      </p>
       <div v-if="template.document" class="template-view__viewer">
         <DocumentViewer
+          v-model:page="shownPage"
           :document="template.document"
           :entities="template.entities"
           :highlight-id="tab === 'entities' ? entity?.id : undefined"
@@ -242,6 +251,10 @@ async function comment() {
   font-size: 0.875rem;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.template-view__page {
+  font-size: 0.875rem;
 }
 
 .template-view__empty {

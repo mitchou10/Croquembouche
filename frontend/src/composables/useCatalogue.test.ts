@@ -22,6 +22,7 @@ const fields = (over: Partial<TemplateFields> = {}): TemplateFields => ({
   description: 'Un modèle',
   categories: ['Autre'],
   entities: [],
+  pages: [],
   ...over,
 })
 
@@ -215,6 +216,26 @@ describe('changedFields', () => {
   })
 })
 
+describe('changedFields on the pages of a model', () => {
+  const page = (n: number, name = '', description = '') => ({ page: n, name, description })
+
+  it('shows a name or a description given to a page, or taken away', () => {
+    const before = fields({ pages: [page(2, 'Pièces')] })
+    expect(changedFields(before, fields({ pages: [page(2, 'Annexes')] }))).toEqual([
+      { label: 'Pages', before: 'page 2 : Pièces', after: 'page 2 : Annexes' },
+    ])
+    expect(changedFields(before, fields({ pages: [] }))).toEqual([{ label: 'Pages', before: 'page 2 : Pièces', after: 'Aucune' }])
+    expect(changedFields(fields(), fields({ pages: [page(3, '', 'La suite')] }))).toEqual([
+      { label: 'Pages', before: 'Aucune', after: 'page 3' },
+    ])
+  })
+
+  it('does not count a page that has nothing said of it, or a name that only differs by its spaces', () => {
+    const before = fields({ pages: [page(2, 'Pièces')] })
+    expect(changedFields(before, fields({ pages: [page(1), page(2, ' Pièces ')] }))).toEqual([])
+  })
+})
+
 describe('cleanCategories', () => {
   it('trims, drops blanks and duplicates (case aside), keeping the first spelling and the order', () => {
     expect(cleanCategories(['  Tampon ', '', 'tampon', 'Identité', '   ', 'TAMPON', 'Autre'])).toEqual([
@@ -374,7 +395,7 @@ describe('comments on a suggestion', () => {
 
   it('lets a suggestion be commented whatever its status', async () => {
     const { find, suggest, resolveSuggestion, addComment } = useCatalogue()
-    await suggest('t3', { name: 'Autre', description: 'Autre', categories: [], entities: [] }, '')
+    await suggest('t3', { name: 'Autre', description: 'Autre', categories: [], entities: [], pages: [] }, '')
     const s = find('t3')!.suggestions[0]
     expect(s.comments).toEqual([])
     useSession().setUser('alice.martin')
@@ -398,7 +419,7 @@ describe('stars on suggestions', () => {
 
   it('is open to the owner and to the author too, and whatever the status', async () => {
     const { find, suggest, resolveSuggestion, toggleSuggestionStar } = useCatalogue()
-    await suggest('t3', { name: 'Autre', description: 'Autre', categories: [], entities: [] }, '')
+    await suggest('t3', { name: 'Autre', description: 'Autre', categories: [], entities: [], pages: [] }, '')
     const id = find('t3')!.suggestions[0].id
     expect(find('t3')!.suggestions[0].stars).toEqual([])
     expect(await toggleSuggestionStar('t3', id)).toBe(true) // its author
@@ -580,7 +601,7 @@ describe('the administrator', () => {
     const { find, update, resolveSuggestion } = useCatalogue()
     useSession().setUser('admin', { isAdmin: true })
     const t1 = find('t1')!
-    await refused(update('t1', { name: 'Piraté', description: t1.description, categories: t1.categories, entities: t1.entities }), 403)
+    await refused(update('t1', { name: 'Piraté', description: t1.description, categories: t1.categories, entities: t1.entities, pages: t1.pages }), 403)
     await resolveSuggestion('t1', 's1', true)
     expect(await resolveSuggestion('t1', 's1', false)).toBe(false)
   })
@@ -615,7 +636,7 @@ describe('filtering the models by owner', () => {
   it('counts a model just made as one of one\'s own', async () => {
     const { create, filter } = useCatalogue()
     useSession().setUser('dana')
-    const made = await create({ name: 'Mien', description: 'À moi', categories: [], entities: [] })
+    const made = await create({ name: 'Mien', description: 'À moi', categories: [], entities: [], pages: [] })
     expect(filter('', true).map((t) => t.id)).toEqual([made.id])
   })
 })

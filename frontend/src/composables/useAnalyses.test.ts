@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { backendAnalysis, fakeFetch } from '../test/fakeBackend'
+import { uploadDocument } from '../data/api'
 import { loadAnalyses, resetAnalyses, statsOf, useAnalyses } from './useAnalyses'
-import { loadCatalogue, resetCatalogue } from './useCatalogue'
+import { loadCatalogue, resetCatalogue, useCatalogue } from './useCatalogue'
 import { useSession } from './useSession'
 
 // Who asks decides what the backend answers: each describe starts again from the demo analyses as someone sees them.
@@ -208,7 +209,7 @@ describe('trying an analysis on a document', () => {
     expect(run.date).toMatch(/^\d{4}-\d{2}-\d{2}$/)
     expect(run.matches).toBe(run.detections!.length)
     for (const d of run.detections!) expect(d.review).toEqual({ status: 'pending' })
-    expect(run.page!.review).toEqual({ status: 'pending' })
+    expect(run.pages![0].review).toEqual({ status: 'pending' })
     // What the analysis counts of its uses is read again.
     expect(statsOf([analysisOf('a1')])).toMatchObject({ uses: before + 1 })
     expect(analysisOf('a1').matches).toBeGreaterThanOrEqual(128 + run.matches)
@@ -352,7 +353,7 @@ describe('looking at the predictions', () => {
     const total = run.detections!.length + 1 // its elements, and its page
     expect(reviewProgress(run)).toEqual({ total, reviewed: 0 })
     await reviewDetection('a1', run.id, run.detections![0].id, { status: 'validated' })
-    await reviewPage('a1', run.id, { status: 'validated' })
+    await reviewPage('a1', run.id, 1, { status: 'validated' })
     expect(reviewProgress(current(run.id))).toEqual({ total, reviewed: 2 })
     await reviewDetection('a1', run.id, run.detections![0].id, { status: 'pending' })
     expect(reviewProgress(current(run.id)).reviewed).toBe(1)
@@ -362,16 +363,46 @@ describe('looking at the predictions', () => {
   it('classifies the page: confirmed, rejected, annotated with a model of the analysis, or taken back', async () => {
     const { reviewPage, actionError } = useAnalyses()
     const run = await rich()
-    expect(run.page!.classifications.length).toBeGreaterThan(1)
-    expect(await reviewPage('a1', run.id, { status: 'validated' })).toBe(true)
-    expect(current(run.id).page!.review).toEqual({ status: 'validated' })
-    await reviewPage('a1', run.id, { status: 'annotated', templateId: 't6' })
-    expect(current(run.id).page!.review).toEqual({ status: 'annotated', templateId: 't6' })
-    expect(await reviewPage('a1', run.id, { status: 'annotated', templateId: 't3' })).toBe(false)
+    expect(run.pages).toHaveLength(1) // an image is a document of one page
+    expect(run.pages![0].classifications.length).toBeGreaterThan(1)
+    expect(await reviewPage('a1', run.id, 1, { status: 'validated' })).toBe(true)
+    expect(current(run.id).pages![0].review).toEqual({ status: 'validated' })
+    await reviewPage('a1', run.id, 1, { status: 'annotated', templateId: 't6' })
+    expect(current(run.id).pages![0].review).toEqual({ status: 'annotated', templateId: 't6' })
+    expect(await reviewPage('a1', run.id, 1, { status: 'annotated', templateId: 't3' })).toBe(false)
     expect(actionError.value).toContain('modèles de l’analyse')
-    await reviewPage('a1', run.id, { status: 'pending' })
-    expect(current(run.id).page!.review).toEqual({ status: 'pending' })
-    expect(await reviewPage('a1', 'r3', { status: 'validated' })).toBe(false) // a use with no result has no page
+    await reviewPage('a1', run.id, 1, { status: 'pending' })
+    expect(current(run.id).pages![0].review).toEqual({ status: 'pending' })
+    expect(await reviewPage('a1', 'r3', 1, { status: 'validated' })).toBe(false) // a use with no result has no page
+    expect(await reviewPage('a1', run.id, 2, { status: 'validated' })).toBe(false) // nor has a one-page document a page 2
+  })
+
+  it('classifies each page of a PDF as a page of a model, and decides on each of them', async () => {
+    const { create } = useCatalogue()
+    const { createAnalysis, startRun, reviewPage, findRun } = useAnalyses()
+    const document = await uploadDocument(pdf('modele.pdf'))
+    const form = await create({ name: 'Formulaire X', description: 'Un formulaire', categories: [], entities: [], pages: [] }, document)
+    const analysis = await createAnalysis({ name: 'Pages', description: '', templateIds: [form.id, 't1'], isPublic: true, shares: [] })
+
+    const run = (await startRun(analysis.id, pdf('dossier.pdf'), { saveScreenshot: true }))!
+
+    expect(run.pages!.map((p) => p.page)).toEqual([1, 2, 3])
+    for (const page of run.pages!) {
+      const classes = page.classifications.map((c) => [c.templateId, c.templatePage])
+      expect(classes).toHaveLength(5) // 3 pages of the form, the page of « Logo Marianne », and « other »
+      expect(classes).toContainEqual([form.id, 3])
+      expect(classes).toContainEqual([null, undefined])
+    }
+    // A page of the form is chosen with its number; the decision is on that page of the document alone.
+    expect(await reviewPage(analysis.id, run.id, 3, { status: 'annotated', templateId: form.id, templatePage: 2 })).toBe(true)
+    expect(findRun(analysis.id, run.id)!.pages!.map((p) => p.review)).toEqual([
+      { status: 'pending' },
+      { status: 'pending' },
+      { status: 'annotated', templateId: form.id, templatePage: 2 },
+    ])
+    expect(await reviewPage(analysis.id, run.id, 1, { status: 'annotated', templateId: form.id })).toBe(false) // which page?
+    expect(await reviewPage(analysis.id, run.id, 1, { status: 'annotated', templateId: form.id, templatePage: 4 })).toBe(false)
+    expect(useAnalyses().reviewProgress(findRun(analysis.id, run.id)!).total).toBe(run.detections!.length + 3) // one per page
   })
 })
 
@@ -432,11 +463,11 @@ describe('deleting or keeping the document', () => {
 
   it('deletes the screenshots, and keeps what was found and decided', async () => {
     const run = await withCapture()
-    await useAnalyses().reviewPage('a1', run.id, { status: 'validated' })
+    await useAnalyses().reviewPage('a1', run.id, 1, { status: 'validated' })
     expect(await useAnalyses().deleteScreenshot('a1', run.id)).toBe(true)
     expect(current(run.id).screenshot).toBeNull()
     expect(current(run.id).fileDecision).toBe('deleted')
-    expect(current(run.id).page!.review.status).toBe('validated')
+    expect(current(run.id).pages![0].review.status).toBe('validated')
     expect(current(run.id).detections!.length).toBe(run.detections!.length)
   })
 

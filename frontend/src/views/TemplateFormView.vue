@@ -8,7 +8,7 @@ import TagsInput from '../components/TagsInput.vue'
 import { useWideScreen } from '../composables/useWideScreen'
 import { ACCEPTED_DOCUMENT_TYPES, documentError, newEntity, useCatalogue } from '../composables/useCatalogue'
 import { ApiError, deleteDocument, fetchSuggestions, uploadDocument, type SuggestedEntity } from '../data/api'
-import type { TemplateDocument, TemplateEntity, Zone } from '../data/mock'
+import type { PageFields, TemplateDocument, TemplateEntity, Zone } from '../data/mock'
 
 // One form, three uses: create a template, edit one you own, or suggest a change to someone else's.
 const route = useRoute()
@@ -43,6 +43,29 @@ const wide = useWideScreen()
 
 // The model's document is optional. Only its owner (or its creator) changes it: a suggestion keeps the current one.
 const currentDocument = ref<TemplateDocument | null>(existing?.document ?? null)
+
+// What is said of the pages of the document: a name and a description, for the ones that have them.
+const pages = ref<PageFields[]>((existing?.pages ?? []).map(({ page, name, description }) => ({ page, name, description })))
+const shownPage = ref(1)
+const pageCount = computed(() => currentDocument.value?.pages ?? 1)
+// Without a name a page is the model's name and its number: shown as the hint.
+const pageHint = computed(() => `${name.value.trim() || 'Nom du modèle'} · page ${shownPage.value}`)
+
+function editPage(change: Partial<PageFields>) {
+  const current = pages.value.find((p) => p.page === shownPage.value)
+  if (current) Object.assign(current, change)
+  else pages.value = [...pages.value, { page: shownPage.value, name: '', description: '', ...change }]
+}
+
+/** The fields of the page shown: a page is made when something is typed in them. */
+const pageName = computed({
+  get: () => pages.value.find((p) => p.page === shownPage.value)?.name ?? '',
+  set: (value: string) => editPage({ name: value }),
+})
+const pageDescription = computed({
+  get: () => pages.value.find((p) => p.page === shownPage.value)?.description ?? '',
+  set: (value: string) => editPage({ description: value }),
+})
 const documentChanged = ref(false)
 const documentFault = ref('')
 const zonesDropped = ref(false)
@@ -64,6 +87,9 @@ function setDocument(next: TemplateDocument | null) {
   if (next?.id) uploadedIds.add(next.id)
   currentDocument.value = next
   suggestions.value = []
+  // What was said of the pages of another document means nothing for this one.
+  pages.value = []
+  shownPage.value = 1
   documentChanged.value = true
   // Zones are positions on a given document: they mean nothing on another one.
   zonesDropped.value = entities.value.some((e) => e.zone)
@@ -144,6 +170,7 @@ async function submit() {
     description: description.value,
     categories: categories.value,
     entities: entities.value,
+    pages: pages.value,
   }
   toComplete.value = []
   errors.value = {
@@ -261,8 +288,14 @@ async function submit() {
           description="Les zones dessinées ont été retirées : elles se rapportaient à l’ancien document."
         />
 
+        <div v-if="currentDocument && pageCount > 1" class="template-form__page" data-testid="page-fields">
+          <DsfrInput v-model="pageName" :label="`Nom de la page ${shownPage}`" label-visible :placeholder="pageHint" />
+          <DsfrInput v-model="pageDescription" :label="`Description de la page ${shownPage}`" label-visible />
+        </div>
+
         <div v-if="currentDocument" class="template-form__viewer">
           <DocumentViewer
+            v-model:page="shownPage"
             :document="currentDocument"
             :entities="entities"
             :highlight-id="drawingId ?? currentEntityId ?? undefined"
@@ -337,6 +370,12 @@ async function submit() {
   padding: 0.25rem 0.5rem;
   background: var(--background-contrast-info);
   font-size: 0.875rem;
+}
+
+.template-form__page {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0.5rem;
 }
 
 .template-form__body {

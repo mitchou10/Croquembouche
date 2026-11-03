@@ -3,6 +3,7 @@ import type {
   AnalysisRun,
   Review,
   ReviewedDetection,
+  PageFields,
   Share,
   Suggestion,
   Template,
@@ -30,6 +31,21 @@ interface Stored extends Omit<Template, 'document'> {
 }
 
 let templates: Stored[] = []
+
+/** How many pages the document of a model has: 0 when it has none. */
+const pagesOfDocument = (template: Stored) => template.document?.pages ?? 0
+const labelOf = (name: string, total: number, page: number, given = '') =>
+  given ? `${name} · ${given}` : total > 1 ? `${name} · page ${page}` : name
+
+/** The pages of a model: one per page of its document, with what was said of them and how each is called. */
+function buildPages(template: Stored, given: PageFields[]): void {
+  const total = pagesOfDocument(template)
+  template.pages = Array.from({ length: total }, (_, i) => {
+    const note = given.find((g) => g.page === i + 1)
+    const name = note?.name.trim() ?? ''
+    return { page: i + 1, name, description: note?.description.trim() ?? '', label: labelOf(template.name, total, i + 1, name) }
+  })
+}
 // The documents uploaded, by identifier.
 const uploads = new Map<string, { id: string; name: string; contentType: string; pages: number }>()
 export const uploaded = () => [...uploads.values()]
@@ -63,7 +79,7 @@ function seedAnalyses(): Analysis[] {
         review: { status: 'pending' as const },
         source: 'analysis' as const,
       }))
-      run.page = { classifications: simulatePage(analysis, { name: run.fileName, size: 1 }), review: { status: 'pending' } }
+      run.pages = [{ page: 1, classifications: simulatePage(analysis, { name: run.fileName, size: 1 }, 1, pagesOfModel), review: { status: 'pending' } }]
       run.screenshot = null
     }
   }
@@ -95,6 +111,7 @@ interface Body {
   categories: string[]
   entities: (TemplateEntity & { zone?: TemplateEntity['zone'] | null })[]
   documentId?: string | null
+  pages?: PageFields[]
 }
 
 function clean(body: Body): TemplateFields {
@@ -111,6 +128,7 @@ function clean(body: Body): TemplateFields {
       ...(e.zone && { zone: e.zone }),
       stars: [],
     })),
+    pages: (body.pages ?? []).filter((p) => p.name.trim() || p.description.trim()),
   }
 }
 
@@ -183,11 +201,13 @@ export async function fakeFetch(path: string, init: RequestInit = {}): Promise<A
       stars: [],
       suggestions: [],
       ...fields,
+      pages: [],
       entities: [],
     }
     setEntities(created, fields.entities)
     const document = documentFor((body as Body).documentId)
     if (document) created.document = uploads.get(document.id) ?? document
+    buildPages(created, fields.pages)
     templates = [created, ...templates]
     return reply(201, created)
   }
@@ -216,6 +236,7 @@ export async function fakeFetch(path: string, init: RequestInit = {}): Promise<A
       if (document) template.document = uploads.get(document.id) ?? document
       else delete template.document
     }
+    buildPages(template, fields.pages)
     return reply(200, template)
   }
   if (sub === 'star') {
@@ -280,6 +301,7 @@ export async function fakeFetch(path: string, init: RequestInit = {}): Promise<A
         categories: suggestion.fields.categories,
       })
       setEntities(template, suggestion.fields.entities)
+      buildPages(template, suggestion.fields.pages)
     }
     suggestion.status = accept ? 'accepted' : 'rejected'
     return reply(200, template)
@@ -301,13 +323,13 @@ function canOpen(analysis: Analysis, user: string, admin: boolean): boolean {
 /** What the backend sends of a use: what it found is for the person who ran it alone. */
 function runView(run: AnalysisRun, user: string) {
   const mine = run.userId === user
-  const { screenshot, detections, page, fileName, fileDecision, ...rest } = run
+  const { screenshot, detections, pages, fileName, fileDecision, ...rest } = run
   return {
     ...rest,
     hasResult: !!fileName,
     fileName: mine ? (fileName ?? null) : null,
     detections: mine ? (detections ?? null) : null,
-    page: mine ? (page ?? null) : null,
+    pages: mine ? (pages ?? null) : null,
     screenshot:
       mine && screenshot
         ? { id: screenshot.id ?? 'shot', name: screenshot.name, contentType: screenshot.type, pages: screenshot.pages ?? 1 }
@@ -322,6 +344,17 @@ function analysisView(analysis: Analysis, user: string, admin: boolean) {
   }
   const sees = analysis.ownerId === user || admin
   return { ...analysis, shares: sees ? analysis.shares : [], runs: analysis.runs.map((r) => runView(r, user)) }
+}
+
+/** How many pages a model's document has, 0 when it has none: what a page of a document can be classified as. */
+function pagesOfModel(templateId: string): number {
+  const template = templates.find((t) => t.id === templateId)
+  return template ? pagesOfDocument(template) : 0
+}
+
+/** A PDF tried has three pages here, an image one. */
+function pagesInFile(file: File): number {
+  return file.type === 'application/pdf' ? 3 : 1
 }
 
 const sameShare = (a: Share, b: Share) => a.kind === b.kind && a.value.toLowerCase() === b.value.toLowerCase()
@@ -398,7 +431,11 @@ function analysesRoute(user: string, admin: boolean, method: string, parts: stri
       matches: detections.length,
       fileName: file.name,
       detections,
-      page: { classifications: simulatePage(analysis, file), review: { status: 'pending' } },
+      pages: Array.from({ length: pagesInFile(file) }, (_, i) => ({
+        page: i + 1,
+        classifications: simulatePage(analysis, file, i + 1, pagesOfModel),
+        review: { status: 'pending' as const },
+      })),
       screenshot: keep ? { id: newId('d'), name: file.name, type: file.type, url: '', pages: file.type === 'application/pdf' ? 3 : 1 } : null,
     }
     analysis.runs = [run, ...analysis.runs]
@@ -420,12 +457,18 @@ function analysesRoute(user: string, admin: boolean, method: string, parts: stri
     detection.review = asReview(review)
     return reply(200, runView(run, user))
   }
-  if (parts[4] === 'page' && parts[5] === 'review') {
-    if (!run.page) return refuse(404, 'Not found')
+  if (parts[4] === 'pages' && parts[6] === 'review') {
+    const decided = run.pages?.find((p) => p.page === Number(parts[5]))
+    if (!decided) return refuse(404, 'Not found')
     const review = body as Review
     const fault = checkReview(analysis, review)
     if (fault) return refuse(422, fault)
-    run.page.review = asReview(review)
+    if (review.status === 'annotated') {
+      const total = pagesOfModel(review.templateId!)
+      if (total > 1 && !review.templatePage) return refuse(422, 'Choisissez la page du modèle.')
+      if (review.templatePage && review.templatePage > Math.max(total, 1)) return refuse(422, 'Ce modèle n’a pas cette page.')
+    }
+    decided.review = { ...asReview(review), ...(review.status === 'annotated' && review.templatePage && { templatePage: review.templatePage }) }
     return reply(200, runView(run, user))
   }
   if (parts[4] === 'elements' && parts.length === 5 && method === 'POST') {

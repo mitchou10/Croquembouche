@@ -13,7 +13,7 @@ import StatTile from '../components/StatTile.vue'
 import TabList from '../components/TabList.vue'
 import { describeShares } from '../composables/shares'
 import { loadAnalyses, statsOf, useAnalyses } from '../composables/useAnalyses'
-import { ACCEPTED_DOCUMENT_TYPES, documentError } from '../composables/useCatalogue'
+import { ACCEPTED_DOCUMENT_TYPES, documentError, useCatalogue } from '../composables/useCatalogue'
 import { useSession } from '../composables/useSession'
 import { useWideScreen } from '../composables/useWideScreen'
 import { statusLabels, type Review, type TemplateEntity, type Zone } from '../data/mock'
@@ -43,6 +43,7 @@ const {
   remove: removeAnalysis,
 } = useAnalyses()
 const { userId } = useSession()
+const { find: findTemplate, pageLabel } = useCatalogue()
 const wide = useWideScreen()
 
 const analysis = computed(() => find(String(route.params.id)))
@@ -66,6 +67,8 @@ const newModel = ref('')
 const saveScreenshot = ref(true)
 const fault = ref('')
 const dragging = ref(false)
+// The page of the document looked at: the viewer and the classification of the page follow each other.
+const viewerPage = ref(1)
 // While the document is sent and tried.
 const uploading = ref(false)
 
@@ -75,6 +78,13 @@ const run = computed(() => {
   return found && canSeeResult(found) ? found : undefined
 })
 const detections = computed(() => run.value?.detections ?? [])
+// What the analysis makes of the page being looked at, and how many pages the document has.
+const pageCount = computed(() => run.value?.pages?.length ?? 0)
+const pageResult = computed(() => run.value?.pages?.find((p) => p.page === viewerPage.value))
+const pageIndex = computed({
+  get: () => viewerPage.value - 1,
+  set: (index: number) => (viewerPage.value = index + 1),
+})
 const shown = computed(() => detections.value[current.value])
 const progress = computed(() => (run.value ? reviewProgress(run.value) : { total: 0, reviewed: 0 }))
 const allReviewed = computed(() => progress.value.total > 0 && progress.value.reviewed === progress.value.total)
@@ -83,6 +93,7 @@ const askAboutFile = computed(() => allReviewed.value && !!run.value?.screenshot
 
 function open(runId: string) {
   selectedRunId.value = runId
+  viewerPage.value = 1
   current.value = 0
   adding.value = false
   tab.value = 'page'
@@ -122,7 +133,7 @@ function review(detectionId: string, decision: Review) {
 }
 
 function reviewPageDecision(decision: Review) {
-  if (analysis.value && run.value) reviewPage(analysis.value.id, run.value.id, decision)
+  if (analysis.value && run.value) reviewPage(analysis.value.id, run.value.id, viewerPage.value, decision)
 }
 
 // A zone drawn on the document becomes an element, annotated with the model chosen.
@@ -162,9 +173,17 @@ watch(() => String(route.params.id), load, { immediate: true })
 
 // ---------------------------------------------------------------- what is shown
 const NO_MODEL = 'Autre, non reconnu'
-const nameOf = (templateId: string | null) =>
-  templateId === null ? NO_MODEL : (modelNames({ templateIds: [templateId] } as never)[0] ?? 'Modèle inconnu')
+/** What a class is called: a model, a page of a model (« Formulaire X · page 3 »), or « other ». */
+const nameOf = (templateId: string | null, templatePage?: number | null) =>
+  templateId === null ? NO_MODEL : pageLabel(templateId, templatePage)
 const models = computed(() => (analysis.value?.templateIds ?? []).map((id) => ({ id, name: nameOf(id) })))
+// What a page of the document can be annotated with: the pages of the models that have several, else the model.
+const pageModels = computed(() =>
+  (analysis.value?.templateIds ?? []).flatMap((id) => {
+    const pages = findTemplate(id)?.pages ?? []
+    return pages.length > 1 ? pages.map((p) => ({ id, name: p.label, page: p.page })) : [{ id, name: nameOf(id) }]
+  }),
+)
 const percent = (confidence: number) => Math.round(confidence * 100)
 
 // What is said on the document of each element: what it is, and what has been decided of it.
@@ -293,6 +312,7 @@ const sharing = computed(() => {
 
         <div v-if="run?.screenshot" class="tester__viewer">
           <DocumentViewer
+            v-model:page="viewerPage"
             :document="run.screenshot"
             :entities="outlined"
             :highlight-id="shown?.id"
@@ -357,9 +377,17 @@ const sharing = computed(() => {
           </p>
 
           <!-- The page: which model it corresponds to. -->
-          <DetectionCard v-if="tab === 'page' && run.page" :detection="{ id: 'page', zone: { page: 1, points: [] }, classifications: run.page.classifications }" title="Classification de la page" :name-of="nameOf" data-testid="page-card">
-            <ReviewControls :review="run.page.review" :models="models" :model-name="nameOf" @review="reviewPageDecision" />
-          </DetectionCard>
+          <template v-if="tab === 'page' && pageResult">
+            <PagerControls v-if="pageCount > 1" v-model="pageIndex" :count="pageCount" noun="Page" data-testid="page-pager" />
+            <DetectionCard
+              :detection="{ id: 'page', zone: { page: pageResult.page, points: [] }, classifications: pageResult.classifications }"
+              :title="pageCount > 1 ? `Classification de la page ${pageResult.page}` : 'Classification de la page'"
+              :name-of="nameOf"
+              data-testid="page-card"
+            >
+              <ReviewControls :review="pageResult.review" :models="pageModels" :model-name="nameOf" @review="reviewPageDecision" />
+            </DetectionCard>
+          </template>
 
           <!-- The elements: found by the analysis, or drawn by hand. -->
           <template v-if="tab === 'elements'">
