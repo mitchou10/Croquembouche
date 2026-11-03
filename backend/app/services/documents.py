@@ -1,4 +1,5 @@
 import uuid
+from dataclasses import dataclass
 
 import pymupdf
 from starlette.concurrency import run_in_threadpool
@@ -67,7 +68,19 @@ def _key(document: Document, name: str) -> str:
     return f"{document.storage_prefix}{name}"
 
 
-def _prepare(data: bytes) -> tuple[str, list[bytes]]:
+@dataclass
+class Prepared:
+    """A file looked at: what it is, and the screenshots of its pages if it is a PDF."""
+
+    content_type: str
+    screenshots: list[bytes]
+
+    def pages(self, data: bytes) -> list[bytes]:
+        """The image of each page: the screenshots of a PDF, or the image itself."""
+        return self.screenshots or [data]
+
+
+def _prepare(data: bytes) -> Prepared:
     """What a file is, and the screenshots of its pages if it is a PDF; refuses what cannot be kept."""
     if not data:
         raise InvalidDocumentError("Ce fichier est vide.")
@@ -76,7 +89,7 @@ def _prepare(data: bytes) -> tuple[str, list[bytes]]:
     content_type = sniff_type(data)
     if content_type is None:
         raise InvalidDocumentError("Seuls les images (PNG, JPEG, WebP, GIF) et les PDF sont acceptés.")
-    return content_type, _render_pdf(data) if content_type == "application/pdf" else []
+    return Prepared(content_type, _render_pdf(data) if content_type == "application/pdf" else [])
 
 
 def _store(document: Document, data: bytes, screenshots: list[bytes]) -> None:
@@ -85,10 +98,18 @@ def _store(document: Document, data: bytes, screenshots: list[bytes]) -> None:
         storage.put_object(_key(document, f"pages/{number}.png"), screenshot, "image/png")
 
 
-async def save(repository: DocumentRepository, owner_id: str, name: str, data: bytes) -> Document:
+async def prepare(data: bytes) -> Prepared:
+    """Looks at a file without keeping it; refuses what cannot be kept. Reading a PDF blocks: off the event loop."""
+    return await run_in_threadpool(_prepare, data)
+
+
+async def save(
+    repository: DocumentRepository, owner_id: str, name: str, data: bytes, prepared: Prepared | None = None
+) -> Document:
     """Keeps a document with, for a PDF, a screenshot of each of its pages: the pages are what the model is drawn on.
-    Reading a PDF and talking to the store block: they run off the event loop."""
-    content_type, screenshots = await run_in_threadpool(_prepare, data)
+    Reading a PDF and talking to the store block: they run off the event loop. `prepared` spares looking at it twice."""
+    prepared = prepared or await prepare(data)
+    content_type, screenshots = prepared.content_type, prepared.screenshots
     identifier = uuid.uuid4()
     document = Document(
         id=identifier,

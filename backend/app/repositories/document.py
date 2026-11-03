@@ -1,7 +1,9 @@
 import uuid
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.analysis import Run
 from app.models.document import Document
 
 
@@ -14,6 +16,12 @@ class DocumentRepository:
             return await self._session.get(Document, uuid.UUID(document_id))
         except ValueError:
             return None
+
+    async def is_kept_with_a_use(self, document: Document) -> bool:
+        return (
+            await self._session.scalar(select(Run.id).where(Run.screenshot_document_id == document.id).limit(1))
+            is not None
+        )
 
     async def add(self, document: Document) -> None:
         self._session.add(document)
