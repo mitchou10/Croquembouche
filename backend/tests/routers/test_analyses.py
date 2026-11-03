@@ -58,6 +58,7 @@ async def test_an_analysis_starts_with_its_first_use_running(db_client, as_user,
     assert analysis["status"] == "running" and analysis["matches"] == 0
     [first] = analysis["runs"]
     assert first["status"] == "running" and first["userId"] == "alice" and first["detections"] is None
+    assert first["hasResult"] is False
     assert (await db_client.get(f"/api/analyses/{analysis['id']}")).json() == analysis
 
 
@@ -230,6 +231,7 @@ async def test_the_result_of_a_use_is_private_to_the_person_who_ran_it(db_client
         r for r in (await db_client.get(f"/api/analyses/{analysis['id']}")).json()["runs"] if r["id"] == made["id"]
     )
     assert seen["userName"] == "Alice" and seen["status"] == "done" and seen["matches"] == made["matches"]
+    assert seen["hasResult"] is True  # it has one, which is not for Bob to see
     assert seen["fileName"] is None and seen["detections"] is None and seen["page"] is None
     assert (await db_client.get(url)).status_code == 404
     as_user("root", admin=True)  # an administrator included

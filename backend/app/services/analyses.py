@@ -320,6 +320,7 @@ class AnalysisService:
             date=run.created_at.date(),
             status=run.status,  # type: ignore[arg-type]
             matches=run.matches,
+            has_result=run.file_name is not None,
             file_name=run.file_name if mine else None,
             detections=[
                 DetectionOut(
