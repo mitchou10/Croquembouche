@@ -30,20 +30,43 @@ Les clés ci-dessous sont **exactement** les noms des variables d'environnement 
 
 ## Le détail, secret par secret
 
-### `s3` : le stockage des documents
+### `s3` : le stockage des documents (externe)
+
+Le S3 est **externe** au cluster (`rustfs.enabled: false` dans les valeurs communes) : Vault ne garde que les identifiants du compte, l'adresse est dans les valeurs de l'environnement.
 
 | Clé | Valeur |
 | --- | ------ |
 | `AWS_ACCESS_KEY_ID` | la clé d'accès du compte S3 |
 | `AWS_SECRET_ACCESS_KEY` | sa clé secrète |
 
-Le compte doit pouvoir lire, écrire et supprimer dans le bucket `croquembouche-documents` et le créer s'il n'existe pas (le backend le crée au premier usage). L'adresse du S3 n'est pas un secret : `AWS_ENDPOINT_URL` dans les valeurs de l'environnement.
+Le compte doit pouvoir lire, écrire et supprimer dans le bucket `croquembouche-documents` et le créer s'il n'existe pas (le backend le crée au premier usage). Le backend **et le worker** lisent dans ce bucket : les deux pods doivent pouvoir joindre le S3 depuis le cluster (sortie réseau autorisée, certificat reconnu).
 
-### `keycloak` : la connexion
+Dans le fichier de valeurs de l'environnement (`backend.envCm` **et** `worker_template_matching.envCm`, la même adresse aux deux endroits) :
+
+```yaml
+AWS_ENDPOINT_URL: "https://s3.exemple.org"
+AWS_BUCKET: "croquembouche-documents"   # facultatif, c'est la valeur par défaut
+AWS_REGION: "us-east-1"                  # facultatif, à adapter au fournisseur
+```
+
+### `keycloak` : la connexion (externe)
+
+Keycloak est **externe** au cluster : Vault ne garde que le secret du client, les adresses sont dans les valeurs de l'environnement.
 
 | Clé | Valeur |
 | --- | ------ |
 | `KEYCLOAK_CLIENT_SECRET` | le secret du client Keycloak du backend |
+
+Dans le fichier de valeurs de l'environnement (`backend.envCm`) :
+
+```yaml
+KEYCLOAK_URL: "https://keycloak.exemple.org"   # par où le backend joint Keycloak, depuis le cluster
+KEYCLOAK_PUBLIC_URL: "https://keycloak.exemple.org"   # par où le navigateur le joint, seulement si différente
+BACKEND_PUBLIC_URL: "https://croquembouche.exemple.org"
+FRONTEND_URL: "https://croquembouche.exemple.org"
+```
+
+Le backend appelle Keycloak depuis le cluster (jeton, clés de signature, déconnexion) : la sortie réseau doit être autorisée et le certificat reconnu. `KEYCLOAK_PUBLIC_URL` n'est utile que si l'adresse vue par le navigateur n'est pas celle vue par le backend.
 
 À faire d'abord dans Keycloak, dans le realm de l'environnement (`KEYCLOAK_REALM`, `mirai` dans les valeurs communes) : un client **confidentiel** dont l'identifiant est `KEYCLOAK_CLIENT_ID` (`croquembouche`), avec le flux « Standard flow » et PKCE, et pour adresse de redirection :
 
@@ -119,7 +142,7 @@ Un environnement de plus, c'est le même jeu de commandes avec un autre `<env>` 
 
 ## Ce qui n'est pas un secret
 
-Ces valeurs sont dans le fichier de valeurs de l'environnement, pas dans Vault : l'adresse de l'application (`BACKEND_PUBLIC_URL`, `FRONTEND_URL`, l'hôte de l'ingress), celle de Keycloak (`KEYCLOAK_URL`, et `KEYCLOAK_PUBLIC_URL` s'il est derrière un proxy), celle du S3 (`AWS_ENDPOINT_URL`), le realm et le client Keycloak, et la liste blanche d'adresses.
+Ces valeurs sont dans le fichier de valeurs de l'environnement, pas dans Vault : l'adresse de l'application (`BACKEND_PUBLIC_URL`, `FRONTEND_URL`, l'hôte de l'ingress), **les adresses externes de Keycloak (`KEYCLOAK_URL`, `KEYCLOAK_PUBLIC_URL`) et du S3 (`AWS_ENDPOINT_URL`)**, le realm et le client Keycloak, et la liste blanche d'adresses.
 
 ## Vérifier
 

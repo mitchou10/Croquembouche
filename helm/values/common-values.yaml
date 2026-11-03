@@ -60,6 +60,9 @@ backend:
   - secretRef:
       name: "croquembouche-db-infos"
   envCm:
+    # Keycloak is external: its address (and KEYCLOAK_PUBLIC_URL, if the browser reaches it another way) is the
+    # environment's, like the S3's below.
+    KEYCLOAK_URL: "https://keycloak.example.org"
     KEYCLOAK_REALM: "mirai"
     KEYCLOAK_CLIENT_ID: "croquembouche"
     SESSION_COOKIE_SECURE: "true"
