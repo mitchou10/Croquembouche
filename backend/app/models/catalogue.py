@@ -45,6 +45,9 @@ class Template(UUIDMixin, TimestampMixin, Base):
         order_by="TemplateEntity.position", cascade="all, delete-orphan", lazy="selectin"
     )
     stars: Mapped[list["TemplateStar"]] = relationship(cascade="all, delete-orphan", lazy="selectin")
+    page_notes: Mapped[list["TemplatePage"]] = relationship(
+        order_by="TemplatePage.page", cascade="all, delete-orphan", lazy="selectin"
+    )
     suggestions: Mapped[list["Suggestion"]] = relationship(
         order_by="Suggestion.created_at.desc()", cascade="all, delete-orphan", lazy="selectin"
     )
@@ -71,6 +74,18 @@ class TemplateEntity(UUIDMixin, Base):
     position: Mapped[int] = mapped_column(Integer, default=0)
 
     stars: Mapped[list["EntityStar"]] = relationship(cascade="all, delete-orphan", lazy="selectin")
+
+
+class TemplatePage(Base):
+    """A name and a description of a page of a model's document: only for a page that was given something. Without one
+    a page is the name of the model and its number."""
+
+    __tablename__ = "template_pages"
+
+    template_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("templates.id", ondelete="CASCADE"), primary_key=True)
+    page: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str | None] = mapped_column(String(200))
+    description: Mapped[str | None] = mapped_column(Text)
 
 
 class TemplateStar(Base):
