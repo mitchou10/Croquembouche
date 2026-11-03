@@ -1,10 +1,11 @@
-import json
-import secrets
-from dataclasses import asdict, dataclass
+import uuid
 
 import pymupdf
+from starlette.concurrency import run_in_threadpool
 
 from app.core import storage
+from app.models.document import Document
+from app.repositories.document import DocumentRepository
 
 MAX_BYTES = 20 * 1024 * 1024
 # A page is rendered whole as an image: more pages than this is a book, not an example of a model.
@@ -37,15 +38,6 @@ class DocumentNotFoundError(Exception):
     pass
 
 
-@dataclass
-class Document:
-    id: str
-    owner_id: str
-    name: str
-    content_type: str
-    pages: int
-
-
 def sniff_type(data: bytes) -> str | None:
     for signature, content_type in _SIGNATURES:
         if data.startswith(signature):
@@ -71,12 +63,12 @@ def _render_pdf(data: bytes) -> list[bytes]:
         return [page.get_pixmap(matrix=matrix, alpha=False).tobytes("png") for page in pdf]
 
 
-def _key(document_id: str, name: str) -> str:
-    return f"documents/{document_id}/{name}"
+def _key(document: Document, name: str) -> str:
+    return f"{document.storage_prefix}{name}"
 
 
-def save(owner_id: str, name: str, data: bytes) -> Document:
-    """Keeps a document with, for a PDF, a screenshot of each of its pages: the pages are what the model is drawn on."""
+def _prepare(data: bytes) -> tuple[str, list[bytes]]:
+    """What a file is, and the screenshots of its pages if it is a PDF; refuses what cannot be kept."""
     if not data:
         raise InvalidDocumentError("Ce fichier est vide.")
     if len(data) > MAX_BYTES:
@@ -84,39 +76,43 @@ def save(owner_id: str, name: str, data: bytes) -> Document:
     content_type = sniff_type(data)
     if content_type is None:
         raise InvalidDocumentError("Seuls les images (PNG, JPEG, WebP, GIF) et les PDF sont acceptés.")
+    return content_type, _render_pdf(data) if content_type == "application/pdf" else []
 
-    screenshots = _render_pdf(data) if content_type == "application/pdf" else []
+
+def _store(document: Document, data: bytes, screenshots: list[bytes]) -> None:
+    storage.put_object(_key(document, f"original.{_EXTENSIONS[document.content_type]}"), data, document.content_type)
+    for number, screenshot in enumerate(screenshots, start=1):
+        storage.put_object(_key(document, f"pages/{number}.png"), screenshot, "image/png")
+
+
+async def save(repository: DocumentRepository, owner_id: str, name: str, data: bytes) -> Document:
+    """Keeps a document with, for a PDF, a screenshot of each of its pages: the pages are what the model is drawn on.
+    Reading a PDF and talking to the store block: they run off the event loop."""
+    content_type, screenshots = await run_in_threadpool(_prepare, data)
+    identifier = uuid.uuid4()
     document = Document(
-        id=secrets.token_urlsafe(16),
+        id=identifier,
         owner_id=owner_id,
-        name=name,
+        name=name[:255],
         content_type=content_type,
         pages=len(screenshots) or 1,
+        storage_prefix=f"documents/{identifier}/",
     )
-    storage.put_object(_key(document.id, f"original.{_EXTENSIONS[content_type]}"), data, content_type)
-    for number, screenshot in enumerate(screenshots, start=1):
-        storage.put_object(_key(document.id, f"pages/{number}.png"), screenshot, "image/png")
-    # Written last: a document without its description is one that was never completed.
-    storage.put_object(_key(document.id, "meta.json"), json.dumps(asdict(document)).encode(), "application/json")
+    await run_in_threadpool(_store, document, data, screenshots)
+    # Recorded last: a document the database does not know is one that was never completed.
+    await repository.add(document)
     return document
 
 
-def find(document_id: str) -> Document:
-    try:
-        raw, _ = storage.get_object(_key(document_id, "meta.json"))
-    except storage.ObjectNotFoundError as error:
-        raise DocumentNotFoundError(document_id) from error
-    return Document(**json.loads(raw))
-
-
-def page(document: Document, number: int) -> tuple[bytes, str]:
+async def page(document: Document, number: int) -> tuple[bytes, str]:
     """The image of a page (from 1): the screenshot of a PDF's page, or the image itself."""
     if not 1 <= number <= document.pages:
         raise DocumentNotFoundError(f"{document.id}/{number}")
     if document.content_type == "application/pdf":
-        return storage.get_object(_key(document.id, f"pages/{number}.png"))
-    return storage.get_object(_key(document.id, f"original.{_EXTENSIONS[document.content_type]}"))
+        return await run_in_threadpool(storage.get_object, _key(document, f"pages/{number}.png"))
+    return await run_in_threadpool(storage.get_object, _key(document, f"original.{_EXTENSIONS[document.content_type]}"))
 
 
-def delete(document: Document) -> None:
-    storage.delete_prefix(_key(document.id, ""))
+async def delete(repository: DocumentRepository, document: Document) -> None:
+    await run_in_threadpool(storage.delete_prefix, document.storage_prefix)
+    await repository.delete(document)
