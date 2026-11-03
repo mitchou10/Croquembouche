@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.3.0](https://github.com/mitchou10/Croquembouche/compare/v1.2.0...v1.3.0) (2026-11-03)
+
+
+### Features
+
+* **backend:** suggest the entities and zones of a PDF from its form fields, boxes and blanks ([31da4ab](https://github.com/mitchou10/Croquembouche/commit/31da4abdfa3f9c7ad69850168c438627567d0053))
+* **frontend:** offer the entities a PDF suggests, with their zones, in the model form ([68bf611](https://github.com/mitchou10/Croquembouche/commit/68bf611e4debdaf0bda4983c82c33df477879f2a))
+
 ## [1.2.0](https://github.com/mitchou10/Croquembouche/compare/v1.1.0...v1.2.0) (2026-11-03)
 
 
