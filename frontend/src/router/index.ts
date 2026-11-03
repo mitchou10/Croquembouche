@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory, type RouteLocationNormalized, type RouteLocationRaw } from 'vue-router'
+import { loadCatalogue } from '../composables/useCatalogue'
 import { useSession } from '../composables/useSession'
 
 export async function requireAuth(to: RouteLocationNormalized): Promise<true | RouteLocationRaw> {
@@ -20,6 +21,8 @@ export const routes = [
     path: '/',
     component: () => import('../components/AppLayout.vue'),
     meta: { requiresAuth: true },
+    // The pages of the app start from the catalogue as the backend has it.
+    beforeEnter: loadCatalogue,
     children: [
       { path: 'catalogue', name: 'catalogue', component: () => import('../views/CatalogueView.vue') },
       { path: 'catalogue/nouveau', name: 'catalogue-new', component: () => import('../views/TemplateFormView.vue') },

@@ -49,11 +49,17 @@ export interface TemplateEntity {
   stars: string[]
 }
 
-/** The model's example document: an image or a PDF. Held in memory only (the url is a blob: URL). */
+/**
+ * An image or a PDF. Once uploaded it has an `id` and the backend serves an image of each of its `pages` (a PDF's
+ * pages are screenshots); `url` is then the first one. Without an `id` it is a single image at `url`.
+ */
 export interface TemplateDocument {
+  id?: string
   name: string
   type: string
   url: string
+  /** 1 for an image. */
+  pages?: number
 }
 
 export interface TemplateFields {
@@ -70,6 +76,8 @@ export type SuggestionStatus = 'pending' | 'accepted' | 'rejected'
 export interface Comment {
   id: string
   authorId: string
+  /** What to show of the author: their name. */
+  authorName: string
   text: string
   date: string
 }
@@ -78,6 +86,7 @@ export interface Comment {
 export interface Suggestion {
   id: string
   authorId: string
+  authorName: string
   fields: TemplateFields
   message: string
   date: string
@@ -90,7 +99,9 @@ export interface Suggestion {
 export interface Template extends TemplateFields {
   id: string
   document?: TemplateDocument
+  /** Who made it, as the backend knows them (the identifier of their account), and their name to show. */
   ownerId: string
+  ownerName: string
   /** Identifiers of the users who starred it. */
   stars: string[]
   suggestions: Suggestion[]
@@ -215,7 +226,11 @@ const letterEntities = (): TemplateEntity[] => [
   { id: 'e2', stars: [], type: 'text', examples: ['Liberté Égalité Fraternité'], name: 'Devise', definition: 'La devise « Liberté, Égalité, Fraternité » sous le bloc-marque.' },
 ]
 
-export const templates: Template[] = [
+type RawComment = Omit<Comment, 'authorName'>
+type RawSuggestion = Omit<Suggestion, 'authorName' | 'comments'> & { comments: RawComment[] }
+type RawTemplate = Omit<Template, 'ownerName' | 'suggestions'> & { suggestions: RawSuggestion[] }
+
+const rawTemplates: RawTemplate[] = [
   {
     id: 't1',
     name: 'Logo Marianne',
@@ -346,6 +361,17 @@ export const templates: Template[] = [
     entities: [],
   },
 ]
+
+// In the demo the name of everyone is their identifier.
+export const templates: Template[] = rawTemplates.map((t) => ({
+  ...t,
+  ownerName: t.ownerId,
+  suggestions: t.suggestions.map((s) => ({
+    ...s,
+    authorName: s.authorId,
+    comments: s.comments.map((c) => ({ ...c, authorName: c.authorId })),
+  })),
+}))
 
 export const analyses: Analysis[] = [
   {

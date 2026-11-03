@@ -2,9 +2,9 @@
 import { ref } from 'vue'
 import { useSession } from '../composables/useSession'
 
-const { userId, logout } = useSession()
+const { displayName: accountName, logout } = useSession()
 
-const displayName = ref(userId.value ?? '')
+const displayName = ref(accountName.value ?? '')
 const language = ref('fr')
 const notifications = ref(true)
 const saved = ref(false)

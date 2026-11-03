@@ -1,9 +1,7 @@
 import { computed, ref } from 'vue'
+import * as api from '../data/api'
 import {
   defaultCategories,
-  type Comment,
-  templates as seed,
-  type Suggestion,
   type Template,
   type TemplateDocument,
   type TemplateEntity,
@@ -12,17 +10,51 @@ import {
 import { entityTypeLabel } from './useEntityTypes'
 import { useSession } from './useSession'
 
-// In memory only, like the analyses: reloading the page restores the seed until the backend exists.
-const templates = ref<Template[]>(structuredClone(seed))
+// The catalogue as the backend has it, loaded once and then kept up to date with what its answers say.
+const templates = ref<Template[]>([])
+const failed = ref(false)
+let loading: Promise<void> | null = null
 
-/** Back to the demo data. For the tests, which would otherwise see what the previous one left behind. */
+export function loadCatalogue(): Promise<void> {
+  loading ??= api
+    .fetchTemplates()
+    .then((list) => {
+      templates.value = list
+      failed.value = false
+    })
+    .catch(() => {
+      // The page still works, empty: and the next use tries again.
+      failed.value = true
+      loading = null
+    })
+  return loading
+}
+
+/** Forgets what was loaded. For the tests, which would otherwise see what the previous one left behind. */
 export function resetCatalogue() {
-  templates.value = structuredClone(seed)
+  templates.value = []
+  failed.value = false
+  actionError.value = ''
+  loading = null
+}
+
+// What the last small action (a star, a comment, a decision) was refused for, to show on the page; cleared by the next.
+const actionError = ref('')
+
+/** Runs an action whose refusal is shown on the page rather than in a form; says whether it went through. */
+async function attempt(run: () => Promise<unknown>): Promise<boolean> {
+  actionError.value = ''
+  try {
+    await run()
+    return true
+  } catch (error) {
+    actionError.value = error instanceof api.ApiError ? error.message : 'Le serveur est injoignable.'
+    return false
+  }
 }
 
 let sequence = 0
 const newId = (prefix: string) => `${prefix}${Date.now()}-${++sequence}`
-const today = () => new Date().toISOString().slice(0, 10)
 
 export const newEntity = (): TemplateEntity => ({
   id: newId('e'),
@@ -49,20 +81,16 @@ export function documentError(file: { type: string; size: number }): string | nu
   return null
 }
 
-/** Zones are drawn on images. A PDF has no preview here: it will be shown through screenshots of its pages. */
+/** Zones are drawn on images; a PDF is shown through the screenshots of its pages that the backend makes. */
 export const isImage = (document: { type: string } | null | undefined) => !!document?.type.startsWith('image/')
 
-export function toDocument(file: File): TemplateDocument {
-  return { name: file.name, type: file.type, url: URL.createObjectURL(file) }
-}
+/** What the viewer can show and draw on: an image, or an uploaded document, whose pages the backend gives as images. */
+export const canPreview = (document: { id?: string; type: string } | null | undefined) =>
+  !!document && (!!document.id || isImage(document))
 
 const textFieldLabels = { name: 'Nom', description: 'Description' } as const
 
 const withoutStars = ({ stars: _stars, ...rest }: TemplateEntity) => rest
-
-/** Replaces the entities, keeping the stars they have now: stars are not something an edit or a suggestion carries. */
-const keepStars = (current: TemplateEntity[], incoming: TemplateEntity[]): TemplateEntity[] =>
-  incoming.map((e) => ({ ...e, stars: current.find((c) => c.id === e.id)?.stars ?? [] }))
 
 const describeList = (items: string[]) => (items.length ? items.join(', ') : 'Aucune')
 // Name, then what else sets one entity apart from another: its type, a zone, its examples.
@@ -113,24 +141,27 @@ export function changedFields(template: TemplateFields, fields: TemplateFields):
   return changes
 }
 
-function clean(fields: TemplateFields): TemplateFields {
+/** What the backend takes of a model's fields. The entities keep the id they have: that is how it knows them. */
+export function toBody(fields: TemplateFields, documentId?: string | null): api.TemplateBody {
   return {
-    name: fields.name.trim(),
-    description: fields.description.trim(),
-    categories: cleanCategories(fields.categories),
+    name: fields.name,
+    description: fields.description,
+    categories: fields.categories,
     entities: fields.entities.map((e) => ({
-      ...e,
-      name: e.name.trim(),
-      definition: e.definition.trim(),
-      examples: cleanList(e.examples).slice(0, MAX_EXAMPLES),
+      id: e.id,
+      name: e.name,
+      definition: e.definition,
+      type: e.type,
+      examples: e.examples,
+      ...(e.zone && { zone: e.zone }),
     })),
+    ...(documentId !== undefined && { documentId }),
   }
 }
 
-const revoke = (document?: TemplateDocument) => document?.url.startsWith('blob:') && URL.revokeObjectURL(document.url)
-
 export function useCatalogue() {
   const { userId, isAdmin } = useSession()
+  void loadCatalogue()
 
   /** What can be suggested as a category: the usual ones, then whatever others have already made up. */
   const knownCategories = computed(() =>
@@ -141,7 +172,7 @@ export function useCatalogue() {
   const isOwner = (template: Template) => userId.value !== null && template.ownerId === userId.value
   /** Who accepts or refuses the suggestions made on a model: its owner, and an administrator on any model. */
   const canDecide = (template: Template) => isOwner(template) || isAdmin.value
-  const isStarred = (template: Template) => userId.value !== null && template.stars.includes(userId.value)
+  const isStarred = (template: Template) => userId.value !== null && template.stars.some((s) => s === userId.value)
   const pendingSuggestions = (template: Template) => template.suggestions.filter((s) => s.status === 'pending')
   const templateName = (id: string) => find(id)?.name ?? 'Modèle inconnu'
 
@@ -155,109 +186,51 @@ export function useCatalogue() {
     )
   }
 
-  /** The signed-in user becomes the owner. Newest first. */
-  function create(fields: TemplateFields, document?: TemplateDocument): Template | null {
-    if (userId.value === null) return null
-    const template: Template = {
-      id: newId('t'),
-      ownerId: userId.value,
-      stars: [],
-      suggestions: [],
-      ...(document && { document }),
-      ...clean(fields),
-    }
-    templates.value = [template, ...templates.value]
-    return find(template.id)!
+  /** Puts what the backend answered in the catalogue, where the model was or at the top when it is new. */
+  function keep(template: Template): Template {
+    const index = templates.value.findIndex((t) => t.id === template.id)
+    if (index === -1) templates.value = [template, ...templates.value]
+    else templates.value = templates.value.map((t, i) => (i === index ? template : t))
+    return template
   }
 
-  function toggleStar(id: string): boolean {
-    const template = find(id)
-    if (!template || userId.value === null) return false
-    template.stars = isStarred(template)
-      ? template.stars.filter((u) => u !== userId.value)
-      : [...template.stars, userId.value]
-    return true
-  }
+  // Every change is the backend's to accept or refuse (who may do it, what is valid). The forms' (create, update,
+  // suggest) throw an `ApiError` saying why; the small actions say whether they went through, and `actionError` why not.
+
+  /** The signed-in user becomes the owner. Newest first. */
+  const create = async (fields: TemplateFields, document?: TemplateDocument) =>
+    keep(await api.postTemplate(toBody(fields, document?.id ?? undefined)))
+
+  const toggleStar = (id: string) => attempt(async () => keep(await api.putTemplateStar(id)))
 
   /** Anyone signed in can star an entity, as a model: it says which ones are worth looking for. */
-  function toggleEntityStar(id: string, entityId: string): boolean {
-    const entity = find(id)?.entities.find((e) => e.id === entityId)
-    if (!entity || userId.value === null) return false
-    entity.stars = entity.stars.includes(userId.value)
-      ? entity.stars.filter((u) => u !== userId.value)
-      : [...entity.stars, userId.value]
-    return true
-  }
+  const toggleEntityStar = (id: string, entityId: string) =>
+    attempt(async () => keep(await api.putEntityStar(id, entityId)))
 
   /** Anyone signed in can star a suggestion, whatever its status, its author and the owner included. */
-  function toggleSuggestionStar(id: string, suggestionId: string): boolean {
-    const suggestion = find(id)?.suggestions.find((s) => s.id === suggestionId)
-    if (!suggestion || userId.value === null) return false
-    suggestion.stars = suggestion.stars.includes(userId.value)
-      ? suggestion.stars.filter((u) => u !== userId.value)
-      : [...suggestion.stars, userId.value]
-    return true
-  }
+  const toggleSuggestionStar = (id: string, suggestionId: string) =>
+    attempt(async () => keep(await api.putSuggestionStar(id, suggestionId)))
 
   /** Only the owner edits a template directly. `document`: undefined keeps it, null removes it. */
-  function update(id: string, fields: TemplateFields, document?: TemplateDocument | null): boolean {
-    const template = find(id)
-    if (!template || !isOwner(template)) return false
-    const cleaned = clean(fields)
-    Object.assign(template, cleaned, { entities: keepStars(template.entities, cleaned.entities) })
-    if (document !== undefined) {
-      revoke(template.document)
-      template.document = document ?? undefined
-    }
-    return true
-  }
+  const update = async (id: string, fields: TemplateFields, document?: TemplateDocument | null) =>
+    keep(await api.putTemplate(id, toBody(fields, document === undefined ? undefined : (document?.id ?? null))))
 
   /** Anyone but the owner can propose a change; it waits for the owner's decision. */
-  function suggest(id: string, fields: TemplateFields, message: string): Suggestion | null {
-    const template = find(id)
-    if (!template || userId.value === null || isOwner(template)) return null
-    const proposed = clean(fields)
-    if (changedFields(template, proposed).length === 0) return null
-    const suggestion: Suggestion = {
-      id: newId('s'),
-      authorId: userId.value,
-      fields: proposed,
-      message: message.trim(),
-      date: today(),
-      status: 'pending',
-      comments: [],
-      stars: [],
-    }
-    template.suggestions = [suggestion, ...template.suggestions]
-    return template.suggestions[0]
-  }
+  const suggest = async (id: string, fields: TemplateFields, message: string) =>
+    keep(await api.postSuggestion(id, toBody(fields), message))
 
-  /** Anyone signed in can comment a suggestion, whatever its status; a blank comment is not one. */
-  function addComment(id: string, suggestionId: string, text: string): Comment | null {
-    const suggestion = find(id)?.suggestions.find((s) => s.id === suggestionId)
-    const trimmed = text.trim()
-    if (!suggestion || !trimmed || userId.value === null) return null
-    suggestion.comments = [
-      ...suggestion.comments,
-      { id: newId('c'), authorId: userId.value, text: trimmed.slice(0, MAX_COMMENT_LENGTH), date: today() },
-    ]
-    return suggestion.comments[suggestion.comments.length - 1]
-  }
+  /** Anyone signed in can comment a suggestion, whatever its status. */
+  const addComment = (id: string, suggestionId: string, text: string) =>
+    attempt(async () => keep(await api.postComment(id, suggestionId, text)))
 
-  /** Only whoever can decide does (see canDecide); accepting applies the proposed fields. */
-  function resolveSuggestion(id: string, suggestionId: string, accept: boolean): boolean {
-    const template = find(id)
-    const suggestion = template?.suggestions.find((s) => s.id === suggestionId)
-    if (!template || !suggestion || !canDecide(template) || suggestion.status !== 'pending') return false
-    if (accept) {
-      Object.assign(template, suggestion.fields, { entities: keepStars(template.entities, suggestion.fields.entities) })
-    }
-    suggestion.status = accept ? 'accepted' : 'rejected'
-    return true
-  }
+  /** The owner or an administrator decides; accepting applies the proposed fields. */
+  const resolveSuggestion = (id: string, suggestionId: string, accept: boolean) =>
+    attempt(async () => keep(await api.putDecision(id, suggestionId, accept)))
 
   return {
     templates,
+    failed,
+    actionError,
     knownCategories,
     find,
     isOwner,
