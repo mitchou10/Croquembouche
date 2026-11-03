@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.2.0](https://github.com/mitchou10/Croquembouche/compare/v1.1.0...v1.2.0) (2026-11-03)
+
+
+### Features
+
+* backend with Keycloak, Postgres and RustFS, connected to the frontend ([#8](https://github.com/mitchou10/Croquembouche/issues/8)) ([ae73030](https://github.com/mitchou10/Croquembouche/commit/ae73030fd61f53fc25ce7a5c869704c8f9f67758))
+* **backend:** add the BFF login, callback, logout and me endpoints ([e17ceee](https://github.com/mitchou10/Croquembouche/commit/e17ceee518057b8aae3fa79647e8a02f0ec7e4dc))
+* **backend:** add the Keycloak settings, the session store and the security factory ([c409f9f](https://github.com/mitchou10/Croquembouche/commit/c409f9fe9589557a2b03f9a08a61f6153b035d75))
+* **docker:** add Keycloak with the Croquembouche realm and wire the backend to it ([92241d6](https://github.com/mitchou10/Croquembouche/commit/92241d6b04e3c6915de84edb10fef062aa11ea14))
+* **frontend:** sign in through the backend and Keycloak instead of the mocked session ([e20692e](https://github.com/mitchou10/Croquembouche/commit/e20692ee178f196a60e330aa91af59bc66e541b7))
+* serve the backend under /api of the frontend's origin ([f6fa1ae](https://github.com/mitchou10/Croquembouche/commit/f6fa1aef2110732502f5ad77e7b6de16c1c5dddd))
+
+
+### Dependencies
+
+* **backend:** add the Keycloak, Redis and settings dependencies and the pytest setup ([bc4c7a5](https://github.com/mitchou10/Croquembouche/commit/bc4c7a5c0f34533a0690c1b0bf0fcc75ccc0e303))
+
 ## [1.1.0](https://github.com/mitchou10/Croquembouche/compare/v1.0.0...v1.1.0) (2026-11-03)
 
 
