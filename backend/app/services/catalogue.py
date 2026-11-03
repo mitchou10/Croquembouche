@@ -8,6 +8,7 @@ from app.models.catalogue import (
     SuggestionStar,
     Template,
     TemplateEntity,
+    TemplatePage,
     TemplateStar,
 )
 from app.repositories.catalogue import CatalogueRepository
@@ -19,6 +20,7 @@ from app.schemas.catalogue import (
     SuggestionOut,
     TemplateFields,
     TemplateOut,
+    TemplatePageOut,
 )
 from app.services import documents
 
@@ -62,7 +64,22 @@ def _fields_dict(fields: TemplateFields) -> dict:
         "description": dumped["description"],
         "categories": clean_list(dumped["categories"], ignore_case=True),
         "entities": [{**e, "examples": clean_list(e["examples"])[:MAX_EXAMPLES]} for e in dumped["entities"]],
+        "pages": _given_pages(dumped["pages"]),
     }
+
+
+def _given_pages(pages: list[dict]) -> list[dict]:
+    """The pages that were given a name or a description, one per page, in order: the others are the default."""
+    given = {p["page"]: p for p in pages if p["name"] or p["description"]}
+    return [given[number] for number in sorted(given)]
+
+
+def page_label(template_name: str, document_pages: int, page: int, name: str = "") -> str:
+    """How a page of a model is called: by its name, after the model's, or else the model's name and the page number
+    (a document of one page is the model itself)."""
+    if name:
+        return f"{template_name} · {name}"
+    return f"{template_name} · page {page}" if document_pages > 1 else template_name
 
 
 def _template_fields_dict(template: Template) -> dict:
@@ -81,6 +98,11 @@ def _template_fields_dict(template: Template) -> dict:
                 "zone": None if e.zone_page is None else {"page": e.zone_page, "points": e.zone_points},
             }
             for e in template.entities
+        ],
+        "pages": [
+            {"page": p.page, "name": p.name or "", "description": p.description or ""}
+            for p in template.page_notes
+            if p.name or p.description
         ],
     }
 
@@ -164,6 +186,24 @@ class CatalogueService:
         template.description = cleaned["description"]
         template.categories = await self._repository.categories(cleaned["categories"])
         self._set_entities(template, cleaned["entities"])
+        document = (
+            await self._repository.get_document(str(template.document_id)) if template.document_id is not None else None
+        )
+        self._set_pages(template, cleaned["pages"], document.pages if document is not None else 0)
+
+    @staticmethod
+    def _set_pages(template: Template, pages: list[dict], limit: int) -> None:
+        """Keeps what was said of the pages the document has, and nothing of those it has not (or has no more)."""
+        current = {note.page: note for note in template.page_notes}
+        kept = []
+        for given in pages:
+            if given["page"] > limit:
+                continue
+            note = current.get(given["page"]) or TemplatePage(page=given["page"])
+            note.name = given["name"] or None
+            note.description = given["description"] or None
+            kept.append(note)
+        template.page_notes = kept
 
     def _set_entities(self, template: Template, entities: list[dict]) -> None:
         """Keeps the entities the model has (with their stars), makes the new ones, drops the others."""
@@ -289,6 +329,23 @@ class CatalogueService:
             raise NotFoundError(suggestion_id)
         return suggestion
 
+    @staticmethod
+    def _pages_view(template: Template) -> list[TemplatePageOut]:
+        """One entry per page of the document, with what was said of it and how it is called."""
+        if template.document is None:
+            return []
+        total = template.document.pages
+        notes = {note.page: note for note in template.page_notes}
+        return [
+            TemplatePageOut(
+                page=number,
+                name=(notes[number].name or "") if number in notes else "",
+                description=(notes[number].description or "") if number in notes else "",
+                label=page_label(template.name, total, number, (notes[number].name or "") if number in notes else ""),
+            )
+            for number in range(1, total + 1)
+        ]
+
     def _view(self, template: Template) -> TemplateOut:
         document = template.document
         return TemplateOut(
@@ -310,6 +367,7 @@ class CatalogueService:
                 )
                 for e in template.entities
             ],
+            pages=self._pages_view(template),
             stars=[s.user_id for s in template.stars],
             suggestions=[
                 SuggestionOut(

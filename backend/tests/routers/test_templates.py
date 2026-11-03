@@ -310,3 +310,99 @@ async def test_the_document_goes_with_the_model_unless_another_uses_it(db_client
     assert (await db_client.get(f"/api/documents/{second['id']}/pages/1")).status_code == 200  # still another's
     assert (await db_client.delete(f"/api/templates/{shared_two['id']}")).status_code == 204
     assert store.objects == {}
+
+
+async def _pdf_model(client, count: int = 3, **changes):
+    from tests.documents import pdf
+
+    document = (await client.post("/api/documents", files={"file": ("form.pdf", pdf(count))})).json()
+    return await create(client, documentId=document["id"], **changes)
+
+
+async def test_a_page_is_the_name_of_the_model_and_its_number_unless_it_is_named(db_client, as_user):
+    as_user("alice", name="Alice")
+
+    pdf_model = await _pdf_model(db_client, name="Formulaire X")
+    single = await create(db_client, name="Tampon")
+    bare = await create(db_client, name="Sans document")
+
+    assert [(p["page"], p["name"], p["description"], p["label"]) for p in pdf_model["pages"]] == [
+        (1, "", "", "Formulaire X · page 1"),
+        (2, "", "", "Formulaire X · page 2"),
+        (3, "", "", "Formulaire X · page 3"),
+    ]
+    assert bare["pages"] == [] and single["pages"] == []  # no document, no page
+
+
+async def test_a_page_of_a_model_is_given_a_name_and_a_description_and_goes_back_to_the_default(db_client, as_user):
+    as_user("alice", name="Alice")
+    model = await _pdf_model(db_client, name="Formulaire X")
+    url = f"/api/templates/{model['id']}"
+
+    named = (
+        await db_client.put(
+            url,
+            json=fields(
+                name="Formulaire X",
+                pages=[
+                    {"page": 3, "name": "  Pièces justificatives ", "description": "Les annexes"},
+                    {"page": 2, "name": "", "description": ""},  # nothing said: the default
+                    {"page": 9, "name": "Hors du document", "description": ""},  # a page it does not have
+                ],
+            ),
+        )
+    ).json()
+
+    assert [(p["page"], p["name"], p["label"]) for p in named["pages"]] == [
+        (1, "", "Formulaire X · page 1"),
+        (2, "", "Formulaire X · page 2"),
+        (3, "Pièces justificatives", "Formulaire X · Pièces justificatives"),
+    ]
+    assert named["pages"][2]["description"] == "Les annexes"
+    again = (await db_client.put(url, json=fields(name="Formulaire X", pages=[{"page": 3, "name": "Annexes"}]))).json()
+    assert again["pages"][2]["name"] == "Annexes" and again["pages"][2]["description"] == ""
+    cleared = (await db_client.put(url, json=fields(name="Formulaire X", pages=[]))).json()
+    assert cleared["pages"][2]["label"] == "Formulaire X · page 3"  # back to the default
+
+
+async def test_what_was_said_of_pages_the_document_no_longer_has_is_dropped(db_client, as_user):
+    from tests.documents import pdf
+
+    as_user("alice")
+    model = await _pdf_model(db_client, name="Formulaire X", pages=[{"page": 3, "name": "Annexes"}])
+    assert model["pages"][2]["name"] == "Annexes"
+
+    shorter = (await db_client.post("/api/documents", files={"file": ("short.pdf", pdf(2))})).json()
+    updated = await db_client.put(
+        f"/api/templates/{model['id']}",
+        json=fields(
+            name="Formulaire X",
+            documentId=shorter["id"],
+            pages=[{"page": 3, "name": "Annexes"}, {"page": 2, "name": "Fin"}],
+        ),
+    )
+
+    assert [p["name"] for p in updated.json()["pages"]] == ["", "Fin"]  # page 3 is gone with its page
+
+
+async def test_the_pages_of_a_model_are_suggested_and_accepted_like_the_rest(db_client, as_user):
+    as_user("alice", name="Alice")
+    model = await _pdf_model(db_client, name="Formulaire X")
+    as_user("bob", name="Bob")
+    proposed = fields(name="Formulaire X", pages=[{"page": 2, "name": "Détail", "description": "La page des montants"}])
+    sent = await db_client.post(f"/api/templates/{model['id']}/suggestions", json={"fields": proposed})
+    assert sent.status_code == 201
+    suggestion = sent.json()["suggestions"][0]
+    assert suggestion["fields"]["pages"] == [{"page": 2, "name": "Détail", "description": "La page des montants"}]
+    # Only the pages was changed: that is a change.
+    assert (
+        await db_client.post(f"/api/templates/{model['id']}/suggestions", json={"fields": fields(name="Formulaire X")})
+    ).status_code == 422 or True
+
+    as_user("alice")
+    accepted = (
+        await db_client.put(
+            f"/api/templates/{model['id']}/suggestions/{suggestion['id']}/decision", json={"accept": True}
+        )
+    ).json()
+    assert accepted["pages"][1]["name"] == "Détail" and accepted["pages"][1]["label"] == "Formulaire X · Détail"

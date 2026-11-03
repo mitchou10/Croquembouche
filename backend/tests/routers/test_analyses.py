@@ -204,8 +204,10 @@ async def test_trying_an_analysis_on_an_image(db_client, as_user, models):
 
     assert made["status"] == "done" and made["fileName"] == "courrier.png" and made["userName"] == "Alice"
     assert made["matches"] == len(made["detections"]) and made["fileDecision"] is None and made["screenshot"] is None
-    assert made["page"]["review"] == {"status": "pending", "templateId": None}
-    assert round(sum(c["confidence"] for c in made["page"]["classifications"]), 2) == 1.0
+    [page] = made["pages"]  # an image is a document of one page
+    assert page["page"] == 1 and page["review"] == {"status": "pending", "templateId": None, "templatePage": None}
+    assert round(sum(c["confidence"] for c in page["classifications"]), 2) == 1.0
+    assert {c["templateId"] for c in page["classifications"]} == {*models, None}
     for detection in made["detections"]:
         assert detection["source"] == "analysis" and detection["review"]["status"] == "pending"
         assert detection["zone"]["page"] == 1
@@ -232,7 +234,7 @@ async def test_the_result_of_a_use_is_private_to_the_person_who_ran_it(db_client
     )
     assert seen["userName"] == "Alice" and seen["status"] == "done" and seen["matches"] == made["matches"]
     assert seen["hasResult"] is True  # it has one, which is not for Bob to see
-    assert seen["fileName"] is None and seen["detections"] is None and seen["page"] is None
+    assert seen["fileName"] is None and seen["detections"] is None and seen["pages"] is None
     assert (await db_client.get(url)).status_code == 404
     as_user("root", admin=True)  # an administrator included
     assert (await db_client.get(url)).status_code == 404
@@ -297,10 +299,10 @@ async def test_a_prediction_is_validated_invalidated_annotated_or_taken_back(db_
     review = lambda **body: db_client.put(url, json=body)  # noqa: E731
     first = lambda response: response.json()["detections"][0]["review"]  # noqa: E731
 
-    assert first(await review(status="validated")) == {"status": "validated", "templateId": None}
+    assert first(await review(status="validated")) == {"status": "validated", "templateId": None, "templatePage": None}
     assert first(await review(status="invalidated"))["status"] == "invalidated"
     annotated = await review(status="annotated", templateId=models[1])
-    assert first(annotated) == {"status": "annotated", "templateId": models[1]}
+    assert first(annotated) == {"status": "annotated", "templateId": models[1], "templatePage": None}
     assert first(await review(status="pending"))["status"] == "pending"  # the decision is taken back
 
     # An annotation is one of the models of the analysis, and no other.
@@ -319,15 +321,63 @@ async def test_the_page_is_classified_validated_or_annotated(db_client, as_user,
     as_user("alice")
     analysis = await create(db_client, models)
     made = await run(db_client, analysis)
-    url = f"/api/analyses/{analysis['id']}/runs/{made['id']}/page/review"
+    url = f"/api/analyses/{analysis['id']}/runs/{made['id']}/pages/1/review"
+    review = lambda **body: db_client.put(url, json=body)  # noqa: E731
 
-    assert (await db_client.put(url, json={"status": "validated"})).json()["page"]["review"]["status"] == "validated"
-    annotated = (await db_client.put(url, json={"status": "annotated", "templateId": models[0]})).json()
-    assert annotated["page"]["review"] == {"status": "annotated", "templateId": models[0]}
-    assert (await db_client.put(url, json={"status": "annotated"})).status_code == 422
+    assert (await review(status="validated")).json()["pages"][0]["review"]["status"] == "validated"
+    annotated = (await review(status="annotated", templateId=models[0])).json()
+    assert annotated["pages"][0]["review"] == {"status": "annotated", "templateId": models[0], "templatePage": None}
+    assert (await review(status="annotated")).status_code == 422
+    other = (await db_client.post("/api/templates", json={"name": "Autre", "entities": []})).json()["id"]
+    assert (await review(status="annotated", templateId=other)).status_code == 422
+    assert (await review(status="annotated", templateId=models[0], templatePage=2)).status_code == 422  # one page only
     first_use = (await db_client.get(f"/api/analyses/{analysis['id']}")).json()["runs"][-1]  # no document, no page
-    nothing = f"/api/analyses/{analysis['id']}/runs/{first_use['id']}/page/review"
+    nothing = f"/api/analyses/{analysis['id']}/runs/{first_use['id']}/pages/1/review"
     assert (await db_client.put(nothing, json={"status": "validated"})).status_code == 404
+    assert (await db_client.put(url.replace("/pages/1/", "/pages/2/"), json={"status": "validated"})).status_code == 404
+
+
+async def test_each_page_of_a_pdf_is_classified_as_a_page_of_a_model_and_decided_on_its_own(db_client, as_user):
+    as_user("alice")
+    document = (await db_client.post("/api/documents", files={"file": ("form.pdf", pdf(3))})).json()
+    form = (
+        await db_client.post(
+            "/api/templates", json={"name": "Formulaire X", "entities": [], "documentId": document["id"]}
+        )
+    ).json()
+    single = (await db_client.post("/api/templates", json={"name": "Tampon", "entities": []})).json()
+    analysis = await create(db_client, [form["id"], single["id"]])
+
+    made = await run(db_client, analysis, pdf(3), "scan.pdf")
+
+    assert [p["page"] for p in made["pages"]] == [1, 2, 3]  # one classification per page of the document
+    for page in made["pages"]:
+        pairs = {(c["templateId"], c["templatePage"]) for c in page["classifications"]}
+        assert pairs == {(form["id"], 1), (form["id"], 2), (form["id"], 3), (single["id"], 1), (None, None)}
+        assert round(sum(c["confidence"] for c in page["classifications"]), 2) == 1.0
+    base = f"/api/analyses/{analysis['id']}/runs/{made['id']}/pages"
+
+    third = (
+        await db_client.put(
+            f"{base}/3/review", json={"status": "annotated", "templateId": form["id"], "templatePage": 3}
+        )
+    ).json()
+    assert [p["review"]["status"] for p in third["pages"]] == ["pending", "pending", "annotated"]  # page 3 alone
+    assert third["pages"][2]["review"]["templatePage"] == 3
+    # A model of several pages is annotated with one of its pages.
+    assert (
+        await db_client.put(f"{base}/1/review", json={"status": "annotated", "templateId": form["id"]})
+    ).status_code == 422
+    over = await db_client.put(
+        f"{base}/1/review", json={"status": "annotated", "templateId": form["id"], "templatePage": 4}
+    )
+    assert over.status_code == 422
+    assert (
+        await db_client.put(f"{base}/1/review", json={"status": "annotated", "templateId": single["id"]})
+    ).status_code == 200
+    assert (await db_client.get(f"/api/analyses/{analysis['id']}/runs/{made['id']}")).json()["pages"][2]["review"][
+        "status"
+    ] == "annotated"
 
 
 async def test_an_element_the_analysis_missed_is_added_by_hand_and_taken_away(db_client, as_user, models):
@@ -340,8 +390,12 @@ async def test_an_element_the_analysis_missed_is_added_by_hand_and_taken_away(db
 
     element = added["detections"][-1]  # after what the analysis found
     assert element["source"] == "manual" and element["zone"] == SQUARE
-    assert element["review"] == {"status": "annotated", "templateId": models[0]}  # a decision from the start
-    assert element["classifications"] == [{"templateId": models[0], "confidence": 1.0}]
+    assert element["review"] == {
+        "status": "annotated",
+        "templateId": models[0],
+        "templatePage": None,
+    }  # a decision from the start
+    assert element["classifications"] == [{"templateId": models[0], "templatePage": None, "confidence": 1.0}]
     again = (await db_client.post(f"{base}/elements", json={"zone": SQUARE, "templateId": models[1]})).json()
     assert len(again["detections"]) == len(made["detections"]) + 2
 

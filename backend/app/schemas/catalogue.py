@@ -37,6 +37,15 @@ class EntityFields(CamelModel):
     zone: Zone | None = None
 
 
+class PageFields(CamelModel):
+    """A name and a description of a page of a model's document; both are optional (without a name a page is the name
+    of the model and its number)."""
+
+    page: Annotated[int, Field(ge=1)]
+    name: Annotated[str, StringConstraints(strip_whitespace=True, max_length=200)] = ""
+    description: Annotated[str, StringConstraints(strip_whitespace=True, max_length=1000)] = ""
+
+
 class TemplateFields(CamelModel):
     name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
     description: Annotated[str, StringConstraints(strip_whitespace=True, max_length=5000)] = ""
@@ -44,6 +53,7 @@ class TemplateFields(CamelModel):
         list[Annotated[str, StringConstraints(strip_whitespace=True, max_length=64)]], Field(max_length=30)
     ] = []
     entities: Annotated[list[EntityFields], Field(max_length=200)] = []
+    pages: Annotated[list[PageFields], Field(max_length=200)] = []
 
 
 class TemplateCreate(TemplateFields):
@@ -101,6 +111,11 @@ class SuggestionOut(CamelModel):
     stars: list[str]
 
 
+class TemplatePageOut(PageFields):
+    # How the page is called: its name when it has one, else the name of the model and its number.
+    label: str
+
+
 class TemplateOut(CamelModel):
     id: str
     owner_id: str
@@ -109,6 +124,8 @@ class TemplateOut(CamelModel):
     description: str
     categories: list[str]
     entities: list[EntityOut]
+    # One per page of the document, with the default name filled in.
+    pages: list[TemplatePageOut]
     stars: list[str]
     suggestions: list[SuggestionOut]
     document: DocumentOut | None = None

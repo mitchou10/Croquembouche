@@ -77,9 +77,11 @@ async def review_detection(analysis_id: str, run_id: str, detection_id: str, bod
     return await _run(service.review_detection(analysis_id, run_id, detection_id, body))
 
 
-@router.put("/{analysis_id}/runs/{run_id}/page/review", summary="Decide of the classification of the page")
-async def review_page(analysis_id: str, run_id: str, body: Review, service: Analyses) -> RunOut:
-    return await _run(service.review_page(analysis_id, run_id, body))
+@router.put(
+    "/{analysis_id}/runs/{run_id}/pages/{page}/review", summary="Decide of the classification of a page of the document"
+)
+async def review_page(analysis_id: str, run_id: str, page: int, body: Review, service: Analyses) -> RunOut:
+    return await _run(service.review_page(analysis_id, run_id, page, body))
 
 
 @router.post("/{analysis_id}/runs/{run_id}/elements", status_code=status.HTTP_201_CREATED, summary="Add an element")

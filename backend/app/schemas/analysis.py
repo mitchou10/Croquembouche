@@ -30,10 +30,12 @@ class AnalysisCreate(CamelModel):
 
 
 class Review(CamelModel):
-    """What the person decides of a prediction. `annotated` names the model it is, one of the analysis."""
+    """What the person decides of a prediction. `annotated` names the model it is, one of the analysis, and for the
+    classification of a page the page of that model (when it has several)."""
 
     status: ReviewStatus
     template_id: str | None = None
+    template_page: int | None = None
 
 
 class ElementCreate(CamelModel):
@@ -46,15 +48,18 @@ class FileDecision(CamelModel):
 
 
 class ClassificationOut(CamelModel):
-    """What something could be, and how sure the analysis is (0 to 1); no model is « other »."""
+    """What something could be, and how sure the analysis is (0 to 1); no model is « other ». For a page of the
+    document, the page of the model it looks like (« form X, page 3 »)."""
 
     template_id: str | None
+    template_page: int | None = None
     confidence: float
 
 
 class ReviewOut(CamelModel):
     status: ReviewStatus
     template_id: str | None = None
+    template_page: int | None = None
 
 
 class DetectionOut(CamelModel):
@@ -66,6 +71,9 @@ class DetectionOut(CamelModel):
 
 
 class PageOut(CamelModel):
+    """What one page of the document tried could be, and what was decided of it."""
+
+    page: int
     classifications: list[ClassificationOut]
     review: ReviewOut
 
@@ -84,7 +92,7 @@ class RunOut(CamelModel):
     has_result: bool
     file_name: str | None = None
     detections: list[DetectionOut] | None = None
-    page: PageOut | None = None
+    pages: list[PageOut] | None = None
     screenshot: DocumentOut | None = None
     file_decision: Literal["kept", "deleted"] | None = None
 
