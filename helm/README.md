@@ -1,6 +1,6 @@
 # croquembouche
 
-![Version: 0.3.1](https://img.shields.io/badge/Version-0.3.1-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 1.6.1](https://img.shields.io/badge/AppVersion-1.6.1-informational?style=flat-square)
+![Version: 0.3.2](https://img.shields.io/badge/Version-0.3.2-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 1.6.2](https://img.shields.io/badge/AppVersion-1.6.2-informational?style=flat-square)
 
 A Helm chart to deploy Croquembouche.
 
@@ -253,6 +253,7 @@ The migration job (`jobs.migrate`) runs `alembic upgrade head` after the install
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
+| backend.resources.limits.cpu | string | `"1"` |  |
 | backend.resources.limits.memory | string | `"1Gi"` |  |
 | backend.resources.requests.cpu | string | `"100m"` |  |
 | backend.resources.requests.memory | string | `"256Mi"` |  |
@@ -783,6 +784,7 @@ The migration job (`jobs.migrate`) runs `alembic upgrade head` after the install
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
+| worker_template_matching.resources.limits.cpu | string | `"2"` |  |
 | worker_template_matching.resources.limits.memory | string | `"3Gi"` |  |
 | worker_template_matching.resources.requests.cpu | string | `"500m"` |  |
 | worker_template_matching.resources.requests.memory | string | `"1Gi"` |  |
