@@ -96,6 +96,8 @@ const call = async (method: string, path: string, body?: unknown) =>
 export const fetchTemplates = async () => (await request<TemplateAnswer[]>('GET', base)).map(toTemplate)
 export const postTemplate = (body: TemplateBody) => call('POST', base, body)
 export const putTemplate = (id: string, body: TemplateBody) => call('PUT', `${base}/${id}`, body)
+/** Deletes a model: its owner only, and not one an analysis looks for. */
+export const deleteTemplate = (id: string) => request<void>('DELETE', `${base}/${id}`)
 export const putTemplateStar = (id: string) => call('PUT', `${base}/${id}/star`)
 export const putEntityStar = (id: string, entityId: string) => call('PUT', `${base}/${id}/entities/${entityId}/star`)
 export const postSuggestion = (id: string, fields: TemplateBody, message: string) =>
@@ -177,6 +179,9 @@ export interface AnalysisBody {
   shares: Share[]
 }
 export const postAnalysis = async (body: AnalysisBody) => toAnalysis(await request<AnalysisAnswer>('POST', analyses, body))
+
+/** Deletes an analysis with its uses and the screenshots kept with them: its owner only. */
+export const deleteAnalysis = (id: string) => request<void>('DELETE', `${analyses}/${id}`)
 
 /** One more look at the page of an analysis; says how many there are now. */
 export const postView = async (id: string) => (await request<{ views: number }>('POST', `${analyses}/${id}/views`)).views
