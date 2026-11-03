@@ -2,6 +2,7 @@ import pytest
 from sqlalchemy import text
 
 from tests.documents import image, pdf, png
+from tests.worker import hand_back
 
 SQUARE = {"page": 1, "points": [{"x": 0.1, "y": 0.1}, {"x": 0.4, "y": 0.1}, {"x": 0.4, "y": 0.3}]}
 
@@ -36,7 +37,8 @@ async def create(client, models, **changes):
     return response.json()
 
 
-async def run(client, analysis, data=None, name="courrier.png", keep=False):
+async def start(client, analysis, data=None, name="courrier.png", keep=False):
+    """Tries the analysis on a document: the use is running, the worker has been asked."""
     response = await client.post(
         f"/api/analyses/{analysis['id']}/runs",
         files={"file": (name, data or png())},
@@ -44,6 +46,19 @@ async def run(client, analysis, data=None, name="courrier.png", keep=False):
     )
     assert response.status_code == 201, response.text
     return response.json()
+
+
+@pytest.fixture
+def run(dispatcher):
+    """Tries the analysis on a document and lets the worker answer, so that the use is done."""
+
+    async def go(client, analysis, data=None, name="courrier.png", keep=False):
+        started = await start(client, analysis, data, name, keep)
+        answered = await hand_back(client, dispatcher.messages[-1])
+        assert answered.status_code == 204, answered.text
+        return (await client.get(f"/api/analyses/{analysis['id']}/runs/{started['id']}")).json()
+
+    return go
 
 
 async def test_an_analysis_starts_with_its_first_use_running(db_client, as_user, models):
@@ -150,7 +165,7 @@ async def test_who_can_open_an_analysis(db_client, as_user, models):
     assert (await db_client.get("/api/analyses/not-a-uuid")).status_code == 404
 
 
-async def test_the_analyses_one_cannot_open_are_listed_by_name_only(db_client, as_user, models):
+async def test_the_analyses_one_cannot_open_are_listed_by_name_only(db_client, as_user, models, run):
     as_user("alice", name="Alice")
     secret = await create(db_client, models, name="Secrète", description="Confidentiel", isPublic=False)
     await run(db_client, secret)
@@ -196,7 +211,7 @@ async def test_a_look_is_counted_for_whoever_can_open_the_analysis(db_client, as
     assert (await db_client.get(f"/api/analyses/{analysis['id']}")).json()["views"] == 2
 
 
-async def test_trying_an_analysis_on_an_image(db_client, as_user, models):
+async def test_trying_an_analysis_on_an_image(db_client, as_user, models, run):
     as_user("alice", name="Alice")
     analysis = await create(db_client, models, isPublic=True)
 
@@ -221,7 +236,7 @@ async def test_trying_an_analysis_on_an_image(db_client, as_user, models):
     assert detail["status"] == "running"  # its first use still is
 
 
-async def test_the_result_of_a_use_is_private_to_the_person_who_ran_it(db_client, as_user, models):
+async def test_the_result_of_a_use_is_private_to_the_person_who_ran_it(db_client, as_user, models, run):
     as_user("alice", name="Alice")
     analysis = await create(db_client, models, isPublic=True)
     made = await run(db_client, analysis)
@@ -254,7 +269,7 @@ async def test_a_file_that_is_not_an_image_or_a_pdf_is_refused(db_client, as_use
     assert (await db_client.post(url, files={"file": ("x.png", png())})).status_code == 404  # cannot open it
 
 
-async def test_a_pdf_is_tried_page_by_page_and_its_screenshots_can_be_kept(db_client, as_user, models, store):
+async def test_a_pdf_is_tried_page_by_page_and_its_screenshots_can_be_kept(db_client, as_user, models, store, run):
     as_user("alice")
     analysis = await create(db_client, models)
 
@@ -269,7 +284,7 @@ async def test_a_pdf_is_tried_page_by_page_and_its_screenshots_can_be_kept(db_cl
     assert (await db_client.get(f"/api/documents/{screenshot['id']}/pages/2")).status_code == 404
 
 
-async def test_the_screenshots_are_kept_or_deleted_as_decided(db_client, as_user, models, store):
+async def test_the_screenshots_are_kept_or_deleted_as_decided(db_client, as_user, models, store, run):
     as_user("alice")
     analysis = await create(db_client, models)
     made = await run(db_client, analysis, keep=True)
@@ -289,7 +304,7 @@ async def test_the_screenshots_are_kept_or_deleted_as_decided(db_client, as_user
     ).status_code == 404
 
 
-async def test_a_prediction_is_validated_invalidated_annotated_or_taken_back(db_client, as_user, models):
+async def test_a_prediction_is_validated_invalidated_annotated_or_taken_back(db_client, as_user, models, run):
     as_user("alice")
     analysis = await create(db_client, models)
     made = await run(db_client, analysis, image("JPEG"), "a.jpg")
@@ -317,7 +332,7 @@ async def test_a_prediction_is_validated_invalidated_annotated_or_taken_back(db_
     assert (await review(status="validated")).status_code == 404  # not one's own result
 
 
-async def test_the_page_is_classified_validated_or_annotated(db_client, as_user, models):
+async def test_the_page_is_classified_validated_or_annotated(db_client, as_user, models, run):
     as_user("alice")
     analysis = await create(db_client, models)
     made = await run(db_client, analysis)
@@ -337,7 +352,7 @@ async def test_the_page_is_classified_validated_or_annotated(db_client, as_user,
     assert (await db_client.put(url.replace("/pages/1/", "/pages/2/"), json={"status": "validated"})).status_code == 404
 
 
-async def test_each_page_of_a_pdf_is_classified_as_a_page_of_a_model_and_decided_on_its_own(db_client, as_user):
+async def test_each_page_of_a_pdf_is_classified_as_a_page_of_a_model_and_decided_on_its_own(db_client, as_user, run):
     as_user("alice")
     document = (await db_client.post("/api/documents", files={"file": ("form.pdf", pdf(3))})).json()
     form = (
@@ -380,7 +395,7 @@ async def test_each_page_of_a_pdf_is_classified_as_a_page_of_a_model_and_decided
     ] == "annotated"
 
 
-async def test_an_element_the_analysis_missed_is_added_by_hand_and_taken_away(db_client, as_user, models):
+async def test_an_element_the_analysis_missed_is_added_by_hand_and_taken_away(db_client, as_user, models, run):
     as_user("alice")
     analysis = await create(db_client, models)
     made = await run(db_client, analysis)
@@ -414,7 +429,7 @@ async def test_an_element_the_analysis_missed_is_added_by_hand_and_taken_away(db
     assert (await db_client.post(nothing, json={"zone": SQUARE, "templateId": models[0]})).status_code == 404
 
 
-async def test_only_the_owner_deletes_an_analysis_with_what_it_holds(db_client, as_user, models, store):
+async def test_only_the_owner_deletes_an_analysis_with_what_it_holds(db_client, as_user, models, store, run):
     as_user("alice", name="Alice")
     analysis = await create(db_client, models, isPublic=True)
     await run(db_client, analysis, keep=True)

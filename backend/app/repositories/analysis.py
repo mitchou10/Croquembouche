@@ -1,9 +1,11 @@
 import uuid
+from datetime import timedelta
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.analysis import Analysis
+from app.models.analysis import Analysis, Run
+from app.models.base import utcnow
 from app.models.catalogue import Template
 from app.models.document import Document
 
@@ -35,6 +37,27 @@ class AnalysisRepository:
         )
         await self._session.commit()
         return views or 0
+
+    async def get_run(self, run_id: str) -> Run | None:
+        try:
+            return await self._session.get(Run, uuid.UUID(run_id))
+        except ValueError:
+            return None
+
+    async def stale_runs(self, seconds: int) -> list[Run]:
+        """The uses of a document that have been running for longer than the worker is given. (The first use, made with
+        the analysis, has no document: it waits for the person to try one.)"""
+        return list(
+            (
+                await self._session.scalars(
+                    select(Run).where(
+                        Run.status == "running",
+                        Run.matching_document_id.is_not(None),
+                        Run.created_at < utcnow() - timedelta(seconds=seconds),
+                    )
+                )
+            ).all()
+        )
 
     async def document(self, document_id: uuid.UUID) -> Document | None:
         return await self._session.get(Document, document_id)

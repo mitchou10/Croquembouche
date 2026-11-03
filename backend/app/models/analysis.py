@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, false, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -60,11 +60,16 @@ class Run(UUIDMixin, Base):
     matches: Mapped[int] = mapped_column(Integer, default=0)
     file_name: Mapped[str | None] = mapped_column("file_name_encrypted", EncryptedText)
     screenshot_document_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("documents.id", ondelete="SET NULL"))
+    # The document while the worker reads its pages: kept as the screenshot of the use if asked to, else deleted as soon
+    # as the worker has answered.
+    matching_document_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("documents.id", ondelete="SET NULL"))
+    keep_screenshot: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     file_decision: Mapped[str | None] = mapped_column(String(8))  # kept, deleted
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), default=utcnow)
 
     user: Mapped[UserProfile] = relationship(lazy="selectin")
-    screenshot: Mapped[Document | None] = relationship(lazy="selectin")
+    screenshot: Mapped[Document | None] = relationship(foreign_keys=[screenshot_document_id], lazy="selectin")
+    matching_document: Mapped[Document | None] = relationship(foreign_keys=[matching_document_id], lazy="selectin")
     page_classifications: Mapped[list["PageClassification"]] = relationship(
         order_by="PageClassification.page, PageClassification.confidence.desc()",
         cascade="all, delete-orphan",
