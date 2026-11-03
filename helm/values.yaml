@@ -808,7 +808,9 @@ backend:
     requests:
       cpu: "100m"
       memory: "256Mi"
+    # The namespace quota (dso-quota) refuses a container with no CPU limit.
     limits:
+      cpu: "1"
       memory: "1Gi"
   autoscaling:
     # -- Enable Horizontal Pod Autoscaler for the app.
@@ -2433,7 +2435,9 @@ worker_template_matching:
     requests:
       cpu: "500m"
       memory: "1Gi"
+    # The namespace quota (dso-quota) refuses a container with no CPU limit.
     limits:
+      cpu: "2"
       memory: "3Gi"
   autoscaling:
     # -- Enable Horizontal Pod Autoscaler for the app.
