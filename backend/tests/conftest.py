@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import NullPool
 
 from app.config import DatabaseSettings
+from app.core.indexing import get_indexer
 from app.core.security.factory import RequestContext, get_current_user
 from app.db import get_db
 from app.dependencies import get_user
@@ -97,3 +98,25 @@ def store(monkeypatch):
     for name in ("put_object", "get_object", "delete_prefix"):
         monkeypatch.setattr(storage, name, getattr(fake, name))
     return fake
+
+
+class RecordingIndexer:
+    """What the worker would have been asked to index or to remove, in order."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, object]] = []
+
+    def index(self, message: dict) -> None:
+        self.calls.append(("index", message))
+
+    def remove(self, template_id: str) -> None:
+        self.calls.append(("remove", template_id))
+
+
+@pytest.fixture(autouse=True)
+def indexer():
+    """No test reaches a real broker: the asks to the worker are recorded."""
+    recorder = RecordingIndexer()
+    app.dependency_overrides[get_indexer] = lambda: recorder
+    yield recorder
+    app.dependency_overrides.pop(get_indexer, None)
