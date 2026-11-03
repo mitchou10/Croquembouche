@@ -7,6 +7,7 @@ from starlette.concurrency import run_in_threadpool
 from app.core import storage
 from app.models.document import Document
 from app.repositories.document import DocumentRepository
+from app.services import pdf_zones
 
 MAX_BYTES = 20 * 1024 * 1024
 # A page is rendered whole as an image: more pages than this is a book, not an example of a model.
@@ -137,3 +138,13 @@ async def page(document: Document, number: int) -> tuple[bytes, str]:
 async def delete(repository: DocumentRepository, document: Document) -> None:
     await run_in_threadpool(storage.delete_prefix, document.storage_prefix)
     await repository.delete(document)
+
+
+async def suggest_zones(document: Document) -> list[pdf_zones.Suggestion]:
+    """The entities a PDF suggests by itself (see `pdf_zones`); none for an image, which has no fields and no text."""
+    if document.content_type != "application/pdf":
+        return []
+    data, _ = await run_in_threadpool(
+        storage.get_object, _key(document, f"original.{_EXTENSIONS[document.content_type]}")
+    )
+    return await run_in_threadpool(pdf_zones.suggest, data)
