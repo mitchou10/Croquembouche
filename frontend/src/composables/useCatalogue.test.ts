@@ -27,7 +27,7 @@ describe('useCatalogue', () => {
   beforeEach(() => {
     localStorage.clear()
     resetCatalogue()
-    useSession().login('alice.martin')
+    useSession().setUser('alice.martin')
   })
 
   it('filters by name, description and category, ignoring case', () => {
@@ -67,7 +67,7 @@ describe('useCatalogue', () => {
   })
 
   it('needs a signed-in user to create or star', () => {
-    useSession().logout()
+    useSession().setUser(null)
     const { create, toggleStar } = useCatalogue()
     expect(create(fields())).toBeNull()
     expect(toggleStar('t1')).toBe(false)
@@ -111,10 +111,10 @@ describe('useCatalogue', () => {
 
   it('applies an accepted suggestion and keeps a rejected one out', () => {
     const { find, suggest, resolveSuggestion } = useCatalogue()
-    useSession().login('bob.durand')
+    useSession().setUser('bob.durand')
     const a = suggest('t3', fields({ name: 'Signature acceptée' }), '')!
     const b = suggest('t3', fields({ name: 'Signature refusée' }), '')!
-    useSession().login('alice.martin')
+    useSession().setUser('alice.martin')
     expect(resolveSuggestion('t3', a.id, true)).toBe(true)
     expect(find('t3')!.name).toBe('Signature acceptée')
     expect(a.status).toBe('accepted')
@@ -126,7 +126,7 @@ describe('useCatalogue', () => {
 
   it('lets only the owner decide on a suggestion', () => {
     const { find, suggest, resolveSuggestion, pendingSuggestions } = useCatalogue()
-    useSession().login('bob.durand')
+    useSession().setUser('bob.durand')
     const s = suggest('t3', fields({ name: 'Autre nom' }), '')!
     expect(resolveSuggestion('t3', s.id, true)).toBe(false)
     expect(find('t3')!.name).not.toBe('Autre nom')
@@ -196,7 +196,7 @@ describe('documents and entities of a template', () => {
   beforeEach(() => {
     localStorage.clear()
     resetCatalogue()
-    useSession().login('alice.martin')
+    useSession().setUser('alice.martin')
   })
 
   it('creates a template with entities and an optional document', () => {
@@ -237,10 +237,10 @@ describe('documents and entities of a template', () => {
 
   it('applies the entities of an accepted suggestion', () => {
     const { suggest, resolveSuggestion, find } = useCatalogue()
-    useSession().login('bob.durand')
+    useSession().setUser('bob.durand')
     const entity = { ...newEntity(), name: 'Cachet', definition: 'Le cachet' }
     const s = suggest('t3', fields({ name: 'Signature type', description: 'Signature manuscrite de référence.', categories: ['Signature'], entities: [entity] }), '')!
-    useSession().login('alice.martin')
+    useSession().setUser('alice.martin')
     resolveSuggestion('t3', s.id, true)
     expect(find('t3')!.entities.map((e) => e.name)).toEqual(['Cachet'])
   })
@@ -250,7 +250,7 @@ describe('stars on entities', () => {
   beforeEach(() => {
     localStorage.clear()
     resetCatalogue()
-    useSession().login('alice.martin')
+    useSession().setUser('alice.martin')
   })
 
   it('stars and unstars an entity for the current user only', () => {
@@ -259,7 +259,7 @@ describe('stars on entities', () => {
     expect(entity.stars).toEqual([])
     expect(toggleEntityStar('t4', entity.id)).toBe(true)
     expect(entity.stars).toEqual(['alice.martin'])
-    useSession().login('bob.durand')
+    useSession().setUser('bob.durand')
     toggleEntityStar('t4', entity.id)
     expect(entity.stars).toEqual(['alice.martin', 'bob.durand'])
     toggleEntityStar('t4', entity.id)
@@ -270,7 +270,7 @@ describe('stars on entities', () => {
     const { toggleEntityStar } = useCatalogue()
     expect(toggleEntityStar('t4', 'nope')).toBe(false)
     expect(toggleEntityStar('nope', 'e4')).toBe(false)
-    useSession().logout()
+    useSession().setUser(null)
     expect(toggleEntityStar('t4', 'e4')).toBe(false)
   })
 
@@ -281,7 +281,7 @@ describe('stars on entities', () => {
 
   it('keeps the stars an entity has now when its owner edits the model', () => {
     const { find, toggleEntityStar, update } = useCatalogue()
-    useSession().login('chloe.petit') // owns t4
+    useSession().setUser('chloe.petit') // owns t4
     const t = find('t4')!
     const copy = JSON.parse(JSON.stringify(t.entities)) // what the form holds while it is open
     toggleEntityStar('t4', copy[0].id) // someone stars it meanwhile
@@ -292,11 +292,11 @@ describe('stars on entities', () => {
 
   it('keeps them too when a suggestion is accepted, and starts a new entity without any', () => {
     const { find, suggest, resolveSuggestion, toggleEntityStar } = useCatalogue()
-    useSession().login('dana')
+    useSession().setUser('dana')
     const t = find('t4')!
     const proposed = [{ ...t.entities[0], name: 'Autre nom' }, { ...newEntity(), name: 'Nouvelle', definition: 'Une de plus' }]
     const s = suggest('t4', { ...fields(), name: t.name, description: t.description, categories: t.categories, entities: proposed }, '')!
-    useSession().login('chloe.petit') // owner of t4
+    useSession().setUser('chloe.petit') // owner of t4
     toggleEntityStar('t4', t.entities[0].id)
     resolveSuggestion('t4', s.id, true)
     expect(find('t4')!.entities.map((e) => [e.name, e.stars])).toEqual([
@@ -310,7 +310,7 @@ describe('comments on a suggestion', () => {
   beforeEach(() => {
     localStorage.clear()
     resetCatalogue()
-    useSession().login('dana')
+    useSession().setUser('dana')
   })
 
   it('lets anyone signed in comment, trimming the text and dating it', () => {
@@ -327,7 +327,7 @@ describe('comments on a suggestion', () => {
     expect(addComment('t1', 's1', '   ')).toBeNull()
     expect(addComment('t1', 'nope', 'Bonjour')).toBeNull()
     expect(addComment('nope', 's1', 'Bonjour')).toBeNull()
-    useSession().logout()
+    useSession().setUser(null)
     expect(addComment('t1', 's1', 'Bonjour')).toBeNull()
     expect(find('t1')!.suggestions[0].comments).toHaveLength(before)
   })
@@ -341,7 +341,7 @@ describe('comments on a suggestion', () => {
     const { find, suggest, resolveSuggestion, addComment } = useCatalogue()
     const s = suggest('t3', { name: 'Autre', description: 'Autre', categories: [], entities: [] }, '')!
     expect(s.comments).toEqual([])
-    useSession().login('alice.martin')
+    useSession().setUser('alice.martin')
     resolveSuggestion('t3', s.id, false)
     expect(addComment('t3', s.id, 'Désolé, non.')).not.toBeNull()
     expect(find('t3')!.suggestions[0].comments).toHaveLength(1)
@@ -352,7 +352,7 @@ describe('stars on suggestions', () => {
   beforeEach(() => {
     localStorage.clear()
     resetCatalogue()
-    useSession().login('dana')
+    useSession().setUser('dana')
   })
 
   it('stars and unstars a suggestion for the current user only', () => {
@@ -370,7 +370,7 @@ describe('stars on suggestions', () => {
     const s = suggest('t3', { name: 'Autre', description: 'Autre', categories: [], entities: [] }, '')!
     expect(s.stars).toEqual([])
     expect(toggleSuggestionStar('t3', s.id)).toBe(true) // its author
-    useSession().login('alice.martin') // the owner
+    useSession().setUser('alice.martin') // the owner
     resolveSuggestion('t3', s.id, false)
     expect(toggleSuggestionStar('t3', s.id)).toBe(true)
     expect(find('t3')!.suggestions[0].stars).toEqual(['dana', 'alice.martin'])
@@ -380,7 +380,7 @@ describe('stars on suggestions', () => {
     const { toggleSuggestionStar } = useCatalogue()
     expect(toggleSuggestionStar('t1', 'nope')).toBe(false)
     expect(toggleSuggestionStar('nope', 's1')).toBe(false)
-    useSession().logout()
+    useSession().setUser(null)
     expect(toggleSuggestionStar('t1', 's1')).toBe(false)
   })
 
@@ -399,7 +399,7 @@ describe('type and examples of an entity', () => {
   beforeEach(() => {
     localStorage.clear()
     resetCatalogue()
-    useSession().login('alice.martin')
+    useSession().setUser('alice.martin')
   })
 
   it('starts a new entity as text, with no example', () => {
@@ -508,37 +508,35 @@ describe('the administrator', () => {
     resetCatalogue()
   })
 
-  it('is whoever signs in as « admin », in any case, and nobody else', () => {
+  it('is whoever the backend says is one, and nobody else', () => {
     const session = useSession()
-    session.login('admin')
+    session.setUser('admin', { isAdmin: true })
     expect(session.isAdmin.value).toBe(true)
-    session.login('Admin')
-    expect(session.isAdmin.value).toBe(true)
-    session.login('administrateur')
+    session.setUser('administrateur')
     expect(session.isAdmin.value).toBe(false)
-    session.login('alice.martin')
+    session.setUser('alice.martin')
     expect(session.isAdmin.value).toBe(false)
-    session.logout()
+    session.setUser(null)
     expect(session.isAdmin.value).toBe(false)
   })
 
   it('can decide on the suggestions of any model, as can its owner, and nobody else', () => {
     const { find, canDecide } = useCatalogue()
     const t1 = find('t1')! // owned by alice.martin
-    useSession().login('alice.martin')
+    useSession().setUser('alice.martin')
     expect(canDecide(t1)).toBe(true)
-    useSession().login('admin')
+    useSession().setUser('admin', { isAdmin: true })
     expect(canDecide(t1)).toBe(true)
     expect(canDecide(find('t2')!)).toBe(true)
-    useSession().login('dana')
+    useSession().setUser('dana')
     expect(canDecide(t1)).toBe(false)
-    useSession().logout()
+    useSession().setUser(null)
     expect(canDecide(t1)).toBe(false)
   })
 
   it('accepts a suggestion on a model it does not own, which then changes', () => {
     const { find, resolveSuggestion } = useCatalogue()
-    useSession().login('admin')
+    useSession().setUser('admin', { isAdmin: true })
     expect(resolveSuggestion('t1', 's1', true)).toBe(true)
     expect(find('t1')!.suggestions[0].status).toBe('accepted')
     expect(find('t1')!.description).toBe('Bloc-marque de la République française, version couleur.')
@@ -546,7 +544,7 @@ describe('the administrator', () => {
 
   it('refuses a suggestion too, which then changes nothing', () => {
     const { find, resolveSuggestion } = useCatalogue()
-    useSession().login('admin')
+    useSession().setUser('admin', { isAdmin: true })
     expect(resolveSuggestion('t1', 's1', false)).toBe(true)
     expect(find('t1')!.suggestions[0].status).toBe('rejected')
     expect(find('t1')!.description).toBe('Bloc-marque de la République française.')
@@ -554,7 +552,7 @@ describe('the administrator', () => {
 
   it('still cannot edit a model it does not own, nor decide twice', () => {
     const { find, update, resolveSuggestion } = useCatalogue()
-    useSession().login('admin')
+    useSession().setUser('admin', { isAdmin: true })
     const t1 = find('t1')!
     expect(update('t1', { name: 'Piraté', description: t1.description, categories: t1.categories, entities: t1.entities })).toBe(false)
     resolveSuggestion('t1', 's1', true)
@@ -566,7 +564,7 @@ describe('filtering the models by owner', () => {
   beforeEach(() => {
     localStorage.clear()
     resetCatalogue()
-    useSession().login('alice.martin')
+    useSession().setUser('alice.martin')
   })
 
   it('keeps only the signed-in user\'s own models', () => {
@@ -584,17 +582,17 @@ describe('filtering the models by owner', () => {
 
   it('changes with who is signed in, and shows nothing to nobody', () => {
     const { filter } = useCatalogue()
-    useSession().login('bob.durand')
+    useSession().setUser('bob.durand')
     expect(filter('', true).map((t) => t.id)).toEqual(['t2', 't5', 't8'])
-    useSession().login('dana')
+    useSession().setUser('dana')
     expect(filter('', true)).toEqual([])
-    useSession().logout()
+    useSession().setUser(null)
     expect(filter('', true)).toEqual([])
   })
 
   it('counts a model just made as one of one\'s own', () => {
     const { create, filter } = useCatalogue()
-    useSession().login('dana')
+    useSession().setUser('dana')
     const made = create({ name: 'Mien', description: 'À moi', categories: [], entities: [] })!
     expect(filter('', true).map((t) => t.id)).toEqual([made.id])
   })

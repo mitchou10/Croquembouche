@@ -7,7 +7,7 @@ describe('useAnalyses', () => {
   beforeAll(loadGroups)
   beforeEach(() => {
     resetAnalyses()
-    useSession().login('alice.martin')
+    useSession().setUser('alice.martin')
   })
 
   const input = {
@@ -66,8 +66,8 @@ describe('who can open an analysis', () => {
   beforeEach(() => resetAnalyses())
 
   const accessibleBy = (who: string | null) => {
-    if (who === null) useSession().logout()
-    else useSession().login(who)
+    if (who === null) useSession().setUser(null)
+    else useSession().setUser(who, { isAdmin: who === 'admin' })
     return useAnalyses().accessible.value.map((a) => a.id)
   }
 
@@ -107,16 +107,16 @@ describe('who can open an analysis', () => {
 
   it('does not depend on the case of the address', () => {
     const { analyses, canAccess } = useAnalyses()
-    useSession().login('Dana')
+    useSession().setUser('Dana')
     const a7 = analyses.value.find((a) => a.id === 'a7')!
     a7.shares = [{ kind: 'email', value: 'DANA@Example.org' }]
     expect(canAccess(a7)).toBe(true)
   })
 
   it('knows the groups of the user', () => {
-    useSession().login('bob.durand')
+    useSession().setUser('bob.durand')
     expect(useAnalyses().myGroups.value).toEqual(['Équipe courriers', 'Préfecture de Paris'])
-    useSession().logout()
+    useSession().setUser(null)
     expect(useAnalyses().myGroups.value).toEqual([])
   })
 })
@@ -126,7 +126,7 @@ describe('the views of an analysis', () => {
   beforeEach(() => resetAnalyses())
 
   it('counts one more each time someone who can open it looks at it', () => {
-    useSession().login('alice.martin')
+    useSession().setUser('alice.martin')
     const { find, registerView } = useAnalyses()
     expect(find('a1')!.views).toBe(42)
     expect(registerView('a1')).toBe(true)
@@ -135,7 +135,7 @@ describe('the views of an analysis', () => {
   })
 
   it('counts nothing for someone who cannot open it, or for an analysis that does not exist', () => {
-    useSession().login('dana')
+    useSession().setUser('dana')
     const { find, registerView } = useAnalyses()
     expect(registerView('a1')).toBe(false)
     expect(find('a1')!.views).toBe(42)
@@ -249,7 +249,7 @@ describe('an analysis just made', () => {
   beforeEach(() => resetAnalyses())
 
   it('belongs to whoever made it, with no view and its first use, running', () => {
-    useSession().login('dana')
+    useSession().setUser('dana')
     const created = useAnalyses().createAnalysis({ name: 'À moi', description: '', templateIds: ['t1'], isPublic: false, shares: [] })
     expect(created).toMatchObject({ ownerId: 'dana', views: 0, status: 'running' })
     expect(created.runs).toHaveLength(1)
@@ -259,16 +259,16 @@ describe('an analysis just made', () => {
 
   it('can be opened by its owner and by no one else, when it is not shared', async () => {
     await loadGroups()
-    useSession().login('dana')
+    useSession().setUser('dana')
     const { createAnalysis, canAccess } = useAnalyses()
     const created = createAnalysis({ name: 'À moi', description: '', templateIds: ['t1'], isPublic: false, shares: [] })
     expect(canAccess(created)).toBe(true)
-    useSession().login('bob.durand')
+    useSession().setUser('bob.durand')
     expect(canAccess(created)).toBe(false)
   })
 
   it('goes back to the demo data on reset', () => {
-    useSession().login('dana')
+    useSession().setUser('dana')
     const { analyses, createAnalysis } = useAnalyses()
     const before = analyses.value.length
     createAnalysis({ name: 'x', description: '', templateIds: ['t1'], isPublic: false, shares: [] })
@@ -288,7 +288,7 @@ describe('trying an analysis on a document', () => {
     resetAnalyses()
     URL.createObjectURL = vi.fn(() => 'blob:capture')
     URL.revokeObjectURL = vi.fn()
-    useSession().login('alice.martin')
+    useSession().setUser('alice.martin')
   })
   afterEach(() => vi.restoreAllMocks())
 
@@ -337,20 +337,20 @@ describe('trying an analysis on a document', () => {
     })
 
     it('is for whoever can open the analysis: by a group, public, or all of them for an administrator', () => {
-      useSession().login('dana')
+      useSession().setUser('dana')
       expect(useAnalyses().startRun('a5', png(), { saveScreenshot: false })).not.toBeNull() // public
       expect(useAnalyses().startRun('a6', png(), { saveScreenshot: false })).not.toBeNull() // her group
-      useSession().login('admin')
+      useSession().setUser('admin', { isAdmin: true })
       expect(useAnalyses().startRun('a3', png(), { saveScreenshot: false })).not.toBeNull()
     })
 
     it('is refused to anyone who cannot open the analysis, or no one, or for an analysis that does not exist', () => {
       const before = analysisOf('a3').runs.length
-      useSession().login('dana')
+      useSession().setUser('dana')
       expect(useAnalyses().startRun('a3', png(), { saveScreenshot: true })).toBeNull()
       expect(analysisOf('a3').runs).toHaveLength(before)
       expect(useAnalyses().startRun('nope', png(), { saveScreenshot: true })).toBeNull()
-      useSession().logout()
+      useSession().setUser(null)
       expect(useAnalyses().startRun('a5', png(), { saveScreenshot: true })).toBeNull()
     })
 
@@ -372,12 +372,12 @@ describe('trying an analysis on a document', () => {
     })
 
     it('is not someone else, who can open the analysis', () => {
-      useSession().login('dana')
+      useSession().setUser('dana')
       expect(useAnalyses().canSeeResult(analysisOf('a5').runs.find((r) => r.id === 'r12')!)).toBe(false) // alice's, public analysis
     })
 
     it('is not an administrator either, though they can open the analysis', () => {
-      useSession().login('admin')
+      useSession().setUser('admin', { isAdmin: true })
       const { canAccess, canSeeResult, ownsRun } = useAnalyses()
       expect(canAccess(analysisOf('a1'))).toBe(true)
       expect(ownsRun(own())).toBe(false)
@@ -385,13 +385,13 @@ describe('trying an analysis on a document', () => {
     })
 
     it('is an administrator for the uses they ran themselves', () => {
-      useSession().login('admin')
+      useSession().setUser('admin', { isAdmin: true })
       const run = useAnalyses().startRun('a1', png(), { saveScreenshot: false })!
       expect(useAnalyses().canSeeResult(run)).toBe(true)
     })
 
     it('is no one, signed out', () => {
-      useSession().logout()
+      useSession().setUser(null)
       expect(useAnalyses().canSeeResult(own())).toBe(false)
     })
 
@@ -464,9 +464,9 @@ describe('trying an analysis on a document', () => {
 
     it('is for one\'s own results only: not for someone else, an administrator included', () => {
       const run = rich()
-      useSession().login('admin')
+      useSession().setUser('admin', { isAdmin: true })
       expect(useAnalyses().reviewDetection('a1', run.id, 'd1', { status: 'validated' })).toBe(false)
-      useSession().login('dana')
+      useSession().setUser('dana')
       expect(useAnalyses().reviewDetection('a1', run.id, 'd1', { status: 'validated' })).toBe(false)
       expect(run.detections![0].review).toEqual({ status: 'pending' })
     })
@@ -534,7 +534,7 @@ describe('trying an analysis on a document', () => {
 
     it('is for the person who ran it only', () => {
       const run = withCapture()
-      useSession().login('admin')
+      useSession().setUser('admin', { isAdmin: true })
       expect(useAnalyses().deleteScreenshot('a1', run.id)).toBe(false)
       expect(useAnalyses().keepScreenshot('a1', run.id)).toBe(false)
       expect(run.screenshot).not.toBeNull()
@@ -598,7 +598,7 @@ describe('the page and the elements added by hand', () => {
     resetAnalyses()
     URL.createObjectURL = vi.fn(() => 'blob:capture')
     URL.revokeObjectURL = vi.fn()
-    useSession().login('alice.martin')
+    useSession().setUser('alice.martin')
   })
   afterEach(() => vi.restoreAllMocks())
 
@@ -643,9 +643,9 @@ describe('the page and the elements added by hand', () => {
 
     it('is for the person who ran the use only, an administrator included', () => {
       const run = fresh()
-      useSession().login('admin')
+      useSession().setUser('admin', { isAdmin: true })
       expect(useAnalyses().reviewPage('a1', run.id, { status: 'validated' })).toBe(false)
-      useSession().login('dana')
+      useSession().setUser('dana')
       expect(useAnalyses().reviewPage('a1', run.id, { status: 'validated' })).toBe(false)
       expect(run.page!.review).toEqual({ status: 'pending' })
     })
@@ -721,7 +721,7 @@ describe('the page and the elements added by hand', () => {
     it('is for the person who ran the use only, an administrator included', () => {
       const run = fresh()
       const before = run.detections!.length
-      useSession().login('admin')
+      useSession().setUser('admin', { isAdmin: true })
       expect(useAnalyses().addElement('a1', run.id, { zone: square, templateId: 't1' })).toBeNull()
       expect(run.detections).toHaveLength(before)
     })
@@ -752,7 +752,7 @@ describe('the page and the elements added by hand', () => {
     it('is for the person who ran the use only, an administrator included', () => {
       const run = fresh()
       const added = useAnalyses().addElement('a1', run.id, { zone: square, templateId: 't1' })!
-      useSession().login('admin')
+      useSession().setUser('admin', { isAdmin: true })
       expect(useAnalyses().removeElement('a1', run.id, added.id)).toBe(false)
       expect(run.detections!.some((d) => d.id === added.id)).toBe(true)
     })

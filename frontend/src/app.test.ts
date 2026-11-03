@@ -33,8 +33,10 @@ describe('app', () => {
     localStorage.clear()
     resetCatalogue()
     resetAnalyses()
-    useSession().logout()
+    useSession().setUser(null)
   })
+
+  afterEach(() => vi.unstubAllGlobals())
 
   it('shows the landing page to visitors', async () => {
     const { wrapper } = await mountAt('/')
@@ -46,44 +48,46 @@ describe('app', () => {
     expect(router.currentRoute.value.name).toBe('login')
   })
 
-  it('signs in, lands on the catalogue and shows the sidebar with the user id', async () => {
-    const { wrapper, router } = await mountAt('/connexion')
-    await wrapper.get('input[autocomplete="username"]').setValue('alice')
-    await wrapper.get('form').trigger('submit')
-    await landsOn(router, 'catalogue')
+  it('sends the visitor to the backend to sign in, back to where they were going', async () => {
+    const assign = vi.fn()
+    vi.stubGlobal('location', { assign })
+    const { wrapper } = await mountAt('/connexion?redirect=/analyses')
+    await wrapper.findAll('button').find((b) => b.text() === 'Se connecter')!.trigger('click')
+    expect(assign).toHaveBeenCalledWith('/api/auth/login?redirect=%2Fanalyses')
+  })
+
+  it('does not follow an external redirect after login', async () => {
+    const assign = vi.fn()
+    vi.stubGlobal('location', { assign })
+    const { wrapper } = await mountAt('/connexion?redirect=//evil.example')
+    await wrapper.findAll('button').find((b) => b.text() === 'Se connecter')!.trigger('click')
+    expect(assign).toHaveBeenCalledWith('/api/auth/login?redirect=%2Fcatalogue')
+  })
+
+  it('shows the sidebar with the name of the user signed in', async () => {
+    useSession().setUser('alice')
+    const { wrapper } = await mountAt('/catalogue')
     const nav = wrapper.get('nav[aria-label="Navigation principale"]')
     expect(nav.text()).toContain('Catalogue')
     expect(nav.text()).toContain('Analyses')
     expect(wrapper.get('.app-sidebar__user').text()).toBe('alice')
   })
 
-  it('does not follow an external redirect after login', async () => {
-    const { wrapper, router } = await mountAt('/connexion?redirect=//evil.example')
-    await wrapper.get('input[autocomplete="username"]').setValue('alice')
-    await wrapper.get('form').trigger('submit')
-    await landsOn(router, 'catalogue')
-  })
-
-  it('refuses a blank identifier', async () => {
-    const { wrapper, router } = await mountAt('/connexion')
-    await wrapper.get('form').trigger('submit')
-    await flushPromises()
-    expect(router.currentRoute.value.name).toBe('login')
-    expect(wrapper.text()).toContain('Renseignez votre identifiant.')
-  })
-
   it('opens the settings from the user id and signs out from there', async () => {
-    useSession().login('alice')
+    useSession().setUser('alice')
     const { wrapper, router } = await mountAt('/catalogue')
     await wrapper.get('.app-sidebar__user').trigger('click')
     await landsOn(router, 'settings')
+    const assign = vi.fn()
+    vi.stubGlobal('location', { assign })
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({ redirectUrl: 'http://keycloak/logout' }) }))
     await wrapper.findAll('button').find((b) => b.text() === 'Se déconnecter')!.trigger('click')
-    await landsOn(router, 'landing')
+    await vi.waitFor(() => expect(assign).toHaveBeenCalledWith('http://keycloak/logout'))
     expect(useSession().isAuthenticated.value).toBe(false)
   })
 
   it('filters the catalogue', async () => {
-    useSession().login('alice')
+    useSession().setUser('alice')
     const { wrapper } = await mountAt('/catalogue')
     await wrapper.get('input[type="search"]').setValue('QR')
     expect(wrapper.text()).toContain('Code QR de suivi')
@@ -91,7 +95,7 @@ describe('app', () => {
   })
 
   it('creates a template that the creator owns and can then pick in a new analysis', async () => {
-    useSession().login('dana')
+    useSession().setUser('dana')
     const { wrapper, router } = await mountAt('/catalogue/nouveau')
     await field(wrapper, 'Nom').setValue('Tampon préfecture')
     await field(wrapper, 'Description').setValue('Tampon rectangulaire bleu')
@@ -106,7 +110,7 @@ describe('app', () => {
   })
 
   it('validates the template form', async () => {
-    useSession().login('dana')
+    useSession().setUser('dana')
     const { wrapper, router } = await mountAt('/catalogue/nouveau')
     await wrapper.get('form').trigger('submit')
     await flushPromises()
@@ -117,7 +121,7 @@ describe('app', () => {
   })
 
   it('stars and unstars a template from its page', async () => {
-    useSession().login('dana')
+    useSession().setUser('dana')
     const { wrapper } = await mountAt('/catalogue/t3')
     const star = wrapper.get('[data-testid="star"]')
     expect(star.text()).toContain('Ajouter aux favoris (0)')
@@ -129,7 +133,7 @@ describe('app', () => {
   })
 
   it('lets the owner edit directly', async () => {
-    useSession().login('bob.durand')
+    useSession().setUser('bob.durand')
     const { wrapper, router } = await mountAt('/catalogue/t5/modifier')
     expect(wrapper.get('h1').text()).toBe('Modifier le modèle')
     await wrapper.findAll('input:not([type="file"])')[0].setValue('Case cochée v2')
@@ -139,7 +143,7 @@ describe('app', () => {
   })
 
   it('turns a non-owner edit into a suggestion that the owner accepts', async () => {
-    useSession().login('dana')
+    useSession().setUser('dana')
     const first = await mountAt('/catalogue/t2')
     expect(first.wrapper.text()).toContain('Suggérer une modification')
     await first.router.push('/catalogue/t2/modifier')
@@ -153,7 +157,7 @@ describe('app', () => {
     expect(first.wrapper.get('h1').text()).toBe('Tampon « Reçu »') // unchanged until accepted
     expect(first.wrapper.text()).not.toContain('Accepter')
 
-    useSession().login('bob.durand')
+    useSession().setUser('bob.durand')
     const second = await mountAt('/catalogue/t2?onglet=suggestions')
     await second.wrapper.findAll('button').find((b) => b.text() === 'Accepter')!.trigger('click')
     await vi.waitFor(() => expect(second.wrapper.get('h1').text()).toBe('Tampon « Reçu » v2'))
@@ -161,7 +165,7 @@ describe('app', () => {
   })
 
   it('refuses a suggestion that changes nothing', async () => {
-    useSession().login('dana')
+    useSession().setUser('dana')
     const { wrapper, router } = await mountAt('/catalogue/t4/modifier')
     await wrapper.get('form').trigger('submit')
     await flushPromises()
@@ -171,16 +175,16 @@ describe('app', () => {
 
   describe('the administrator', () => {
     it('is named in the sidebar, and only the administrator', async () => {
-      useSession().login('admin')
+      useSession().setUser('admin', { isAdmin: true })
       const admin = await mountAt('/catalogue')
       expect(admin.wrapper.get('[data-testid="admin-badge"]').text()).toBe('Admin')
-      useSession().login('dana')
+      useSession().setUser('dana')
       const other = await mountAt('/catalogue')
       expect(other.wrapper.find('[data-testid="admin-badge"]').exists()).toBe(false)
     })
 
     it('can accept a suggestion on a model it does not own', async () => {
-      useSession().login('admin')
+      useSession().setUser('admin', { isAdmin: true })
       const { wrapper } = await mountAt('/catalogue/t1?onglet=suggestions')
       expect(wrapper.get('[role="tablist"]').text()).toContain('1 en attente')
       // Not the owner: the page offers to suggest, not to edit.
@@ -192,7 +196,7 @@ describe('app', () => {
     })
 
     it('can refuse one too', async () => {
-      useSession().login('admin')
+      useSession().setUser('admin', { isAdmin: true })
       const { wrapper } = await mountAt('/catalogue/t1?onglet=suggestions')
       await wrapper.findAll('button').find((b) => b.text() === 'Refuser')!.trigger('click')
       await flushPromises()
@@ -202,7 +206,7 @@ describe('app', () => {
 
     it('is told on the catalogue which models have suggestions waiting, as is their owner and not anyone else', async () => {
       const waiting = async (who: string) => {
-        useSession().login(who)
+        useSession().setUser(who, { isAdmin: who === 'admin' })
         const { wrapper } = await mountAt('/catalogue')
         return wrapper.text().includes('1 suggestion')
       }
@@ -210,18 +214,13 @@ describe('app', () => {
       expect(await waiting('alice.martin')).toBe(true)
       expect(await waiting('dana')).toBe(false)
     })
-
-    it('says that « admin » gives the administrator\'s rights, on the sign-in page', async () => {
-      const { wrapper } = await mountAt('/connexion')
-      expect(wrapper.text()).toContain('« admin » donne les droits d’administrateur')
-    })
   })
 
   describe('the catalogue, all or only one\'s own', () => {
     const tileTitles = (wrapper: ReturnType<typeof mount>) => wrapper.findAll('.tile__title').map((t) => t.text())
 
     it('shows everything at first, and says which view is on', async () => {
-      useSession().login('alice.martin')
+      useSession().setUser('alice.martin')
       const { wrapper } = await mountAt('/catalogue')
       expect(button(wrapper, 'Tous').attributes('aria-pressed')).toBe('true')
       expect(button(wrapper, 'Mes modèles').attributes('aria-pressed')).toBe('false')
@@ -229,7 +228,7 @@ describe('app', () => {
     })
 
     it('keeps only one\'s own models, then everything again', async () => {
-      useSession().login('alice.martin')
+      useSession().setUser('alice.martin')
       const { wrapper } = await mountAt('/catalogue')
       await button(wrapper, 'Mes modèles').trigger('click')
       expect(button(wrapper, 'Mes modèles').attributes('aria-pressed')).toBe('true')
@@ -240,7 +239,7 @@ describe('app', () => {
     })
 
     it('goes with the search', async () => {
-      useSession().login('alice.martin')
+      useSession().setUser('alice.martin')
       const { wrapper } = await mountAt('/catalogue')
       await button(wrapper, 'Mes modèles').trigger('click')
       await wrapper.get('input[type="search"]').setValue('logo')
@@ -250,7 +249,7 @@ describe('app', () => {
     })
 
     it('invites whoever has no model yet to make one', async () => {
-      useSession().login('dana')
+      useSession().setUser('dana')
       const { wrapper } = await mountAt('/catalogue')
       await button(wrapper, 'Mes modèles').trigger('click')
       expect(wrapper.text()).toContain('Vous n’avez pas encore de modèle.')
@@ -258,7 +257,7 @@ describe('app', () => {
     })
 
     it('includes a model one has just made', async () => {
-      useSession().login('dana')
+      useSession().setUser('dana')
       const { wrapper, router } = await mountAt('/catalogue/nouveau')
       await field(wrapper, 'Nom').setValue('Mon tampon')
       await field(wrapper, 'Description').setValue('Fait par moi')
@@ -273,7 +272,7 @@ describe('app', () => {
 
   describe('the cards', () => {
     it('show the description of each model, the whole card being the link', async () => {
-      useSession().login('dana')
+      useSession().setUser('dana')
       const { wrapper } = await mountAt('/catalogue')
       const first = wrapper.get('.tile')
       expect(first.get('.tile__description').text()).toBe('Bloc-marque de la République française.')
@@ -282,7 +281,7 @@ describe('app', () => {
     })
 
     it('say what an analysis is for, or else which models it looks for', async () => {
-      useSession().login('admin') // opens everything
+      useSession().setUser('admin', { isAdmin: true }) // opens everything
       const { wrapper } = await mountAt('/analyses')
       const description = (title: string) =>
         wrapper.findAll('.tile').find((t) => t.get('.tile__title').text() === title)!.get('.tile__description').text()
@@ -291,7 +290,7 @@ describe('app', () => {
     })
 
     it('say whether an analysis is public, shared, or neither', async () => {
-      useSession().login('admin') // opens everything
+      useSession().setUser('admin', { isAdmin: true }) // opens everything
       const { wrapper } = await mountAt('/analyses')
       const sharing = (title: string) =>
         wrapper.findAll('.tile').find((t) => t.get('.tile__title').text() === title)!.find('[data-testid="sharing"]')
@@ -304,7 +303,7 @@ describe('app', () => {
     })
 
     it('show the models and the details of each analysis', async () => {
-      useSession().login('admin') // opens everything
+      useSession().setUser('admin', { isAdmin: true }) // opens everything
       const { wrapper } = await mountAt('/analyses')
       const first = wrapper.get('.tile')
       expect(first.get('.tile__title').text()).toBe('Courriers octobre')
@@ -320,7 +319,7 @@ describe('app', () => {
       wrapper.findAll('.tile').find((t) => t.get('.tile__title').text() === title)!
 
     it('are links to their dashboard, and the others are named without one', async () => {
-      useSession().login('alice.martin')
+      useSession().setUser('alice.martin')
       const { wrapper } = await mountAt('/analyses')
       await vi.waitFor(() => expect(tile(wrapper, 'Accusés de réception T3').find('a').exists()).toBe(true)) // by her group, once loaded
       expect(tile(wrapper, 'Courriers octobre').get('a').attributes('href')).toBe('/analyses/a1') // hers
@@ -333,14 +332,14 @@ describe('app', () => {
     })
 
     it('are all of them for the administrator', async () => {
-      useSession().login('admin')
+      useSession().setUser('admin', { isAdmin: true })
       const { wrapper } = await mountAt('/analyses')
       expect(wrapper.findAll('.tile a').length).toBe(wrapper.findAll('.tile').length)
       expect(wrapper.findAll('[data-testid="restricted"]')).toHaveLength(0)
     })
 
     it('include what is shared with one\'s address or one\'s group', async () => {
-      useSession().login('dana')
+      useSession().setUser('dana')
       const { wrapper } = await mountAt('/analyses')
       await vi.waitFor(() => expect(tile(wrapper, 'Courriers de la poste').find('a').exists()).toBe(true)) // group « Préfecture de Paris »
       expect(tile(wrapper, 'Courriers octobre').find('a').exists()).toBe(false)
@@ -349,7 +348,7 @@ describe('app', () => {
     })
 
     it('opens the dashboard when one is clicked', async () => {
-      useSession().login('alice.martin')
+      useSession().setUser('alice.martin')
       const { wrapper, router } = await mountAt('/analyses')
       await tile(wrapper, 'Courriers octobre').get('a').trigger('click')
       await vi.waitFor(() => expect(router.currentRoute.value.name).toBe('analysis-detail'))
@@ -362,7 +361,7 @@ describe('app', () => {
       Object.fromEntries(wrapper.findAll('[data-testid="stat"]').map((s) => [s.get('[data-testid="stat-label"]').text(), s.get('[data-testid="stat-value"]').text()]))
     const open = async (id: string, who = 'alice.martin') => {
       await loadGroups()
-      useSession().login(who)
+      useSession().setUser(who, { isAdmin: who === 'admin' })
       const page = await mountAt(`/analyses/${id}`)
       await vi.waitFor(() => expect(page.wrapper.find('.fixed-page, [data-testid="no-access"]').exists()).toBe(true))
       return page
@@ -456,14 +455,14 @@ describe('app', () => {
     })
 
     it('says so for an analysis that does not exist', async () => {
-      useSession().login('alice.martin')
+      useSession().setUser('alice.martin')
       await loadGroups()
       const { wrapper } = await mountAt('/analyses/nope')
       await vi.waitFor(() => expect(wrapper.text()).toContain('Cette analyse n’existe pas.'))
     })
 
     it('shows a new analysis as one use, running, and no view yet but its own', async () => {
-      useSession().login('dana')
+      useSession().setUser('dana')
       await loadGroups()
       const created = useAnalyses().createAnalysis({ name: 'À moi', description: 'Pour voir.', templateIds: ['t1'], isPublic: false, shares: [] })
       const { wrapper } = await mountAt(`/analyses/${created.id}`)
@@ -639,7 +638,7 @@ describe('app', () => {
       })
 
       it('lists every class of an analysis of many models, four at most, saying how many are left', async () => {
-        useSession().login('admin')
+        useSession().setUser('admin', { isAdmin: true })
         await loadGroups()
         const ids = ['t1', 't2', 't3', 't4', 't5']
         const many = useAnalyses().createAnalysis({ name: 'Beaucoup', description: '', templateIds: ids, isPublic: true, shares: [] })
@@ -1239,22 +1238,22 @@ describe('app', () => {
       Object.fromEntries(wrapper.findAll('[data-testid="stat"]').map((s) => [s.get('[data-testid="stat-label"]').text(), s.get('[data-testid="stat-value"]').text()]))
 
     it('is in the sidebar for the administrator only', async () => {
-      useSession().login('admin')
+      useSession().setUser('admin', { isAdmin: true })
       const admin = await mountAt('/catalogue')
       expect(admin.wrapper.findAll('.app-sidebar__link').map((l) => l.text())).toEqual(['Catalogue', 'Analyses', 'Vue d’ensemble'])
-      useSession().login('dana')
+      useSession().setUser('dana')
       const other = await mountAt('/catalogue')
       expect(other.wrapper.findAll('.app-sidebar__link').map((l) => l.text())).toEqual(['Catalogue', 'Analyses'])
     })
 
     it('is out of reach of anyone else, who is sent to the analyses', async () => {
-      useSession().login('dana')
+      useSession().setUser('dana')
       const { router } = await mountAt('/vue-d-ensemble')
       expect(router.currentRoute.value.name).toBe('analyses')
     })
 
     it('shows the figures of every analysis', async () => {
-      useSession().login('admin')
+      useSession().setUser('admin', { isAdmin: true })
       const { wrapper } = await mountAt('/vue-d-ensemble')
       expect(wrapper.get('h1').text()).toBe('Vue d’ensemble')
       expect(values(wrapper)).toEqual({ Analyses: '8', Vues: '251', Utilisations: '20', Terminées: '12', 'En cours': '3', 'En erreur': '5' })
@@ -1262,7 +1261,7 @@ describe('app', () => {
     })
 
     it('spreads the uses over their three states', async () => {
-      useSession().login('admin')
+      useSession().setUser('admin', { isAdmin: true })
       const { wrapper } = await mountAt('/vue-d-ensemble')
       expect(wrapper.get('.bar').attributes('aria-label')).toBe('Terminées : 12, En cours : 3, En erreur : 5')
       const widths = wrapper.findAll('.bar__part').map((p) => p.attributes('style'))
@@ -1270,7 +1269,7 @@ describe('app', () => {
     })
 
     it('lists the most used analyses, each a link to its dashboard', async () => {
-      useSession().login('admin')
+      useSession().setUser('admin', { isAdmin: true })
       const { wrapper } = await mountAt('/vue-d-ensemble')
       const rows = wrapper.findAll('[data-testid="most-used"]')
       expect(rows).toHaveLength(5)
@@ -1281,7 +1280,7 @@ describe('app', () => {
     })
 
     it('lists what needs a look: the failures first, then what is still running', async () => {
-      useSession().login('admin')
+      useSession().setUser('admin', { isAdmin: true })
       const { wrapper } = await mountAt('/vue-d-ensemble')
       const rows = wrapper.findAll('[data-testid="to-watch"]')
       expect(rows.map((r) => r.get('a').text())).toEqual(['Formulaires CERFA', 'Demandes refusées', 'Contrats paraphés', 'Accusés de réception T3'])
@@ -1290,20 +1289,20 @@ describe('app', () => {
     })
 
     it('says so when nothing is wrong', async () => {
-      useSession().login('admin')
+      useSession().setUser('admin', { isAdmin: true })
       for (const a of useAnalyses().analyses.value) a.status = 'done'
       const { wrapper } = await mountAt('/vue-d-ensemble')
       expect(wrapper.text()).toContain('Rien à signaler')
     })
 
     it('does not count its own visit as a view of any analysis', async () => {
-      useSession().login('admin')
+      useSession().setUser('admin', { isAdmin: true })
       await mountAt('/vue-d-ensemble')
       expect(useAnalyses().analyses.value.reduce((n, a) => n + a.views, 0)).toBe(251)
     })
 
     it('counts the analyses made meanwhile', async () => {
-      useSession().login('admin')
+      useSession().setUser('admin', { isAdmin: true })
       useAnalyses().createAnalysis({ name: 'Neuve', description: '', templateIds: ['t1'], isPublic: false, shares: [] })
       const { wrapper } = await mountAt('/vue-d-ensemble')
       expect(values(wrapper)).toMatchObject({ Analyses: '9', Utilisations: '21', 'En cours': '4' })
@@ -1311,14 +1310,14 @@ describe('app', () => {
   })
 
   it('tells the owner how many suggestions wait on the catalogue', async () => {
-    useSession().login('alice.martin')
+    useSession().setUser('alice.martin')
     const { wrapper } = await mountAt('/catalogue')
     expect(wrapper.text()).toContain('1 suggestion')
     expect(wrapper.text()).toContain('Par alice.martin')
   })
 
   it('shows a message for an unknown template', async () => {
-    useSession().login('dana')
+    useSession().setUser('dana')
     const { wrapper } = await mountAt('/catalogue/nope')
     expect(wrapper.text()).toContain('Ce modèle n’existe pas.')
   })
@@ -1363,7 +1362,7 @@ describe('app', () => {
   const key = (name: string) => window.dispatchEvent(new KeyboardEvent('keydown', { key: name, bubbles: true }))
   /** A form with an image and one entity set to a zone: the drawing is under way. */
   async function startDrawing() {
-    useSession().login('dana')
+    useSession().setUser('dana')
     const rect = stubStage()
     const page = await mountAt('/catalogue/nouveau')
     await upload(page.wrapper, png())
@@ -1375,7 +1374,7 @@ describe('app', () => {
   const zones = (wrapper: ReturnType<typeof mount>) => wrapper.findAll('[data-testid="entity-zone"]')
 
   it('creates a template without any document', async () => {
-    useSession().login('dana')
+    useSession().setUser('dana')
     const { wrapper, router } = await mountAt('/catalogue/nouveau')
     await field(wrapper, 'Nom').setValue('Sans document')
     await field(wrapper, 'Description').setValue('Rien à joindre')
@@ -1386,13 +1385,13 @@ describe('app', () => {
   })
 
   it('has no size field', async () => {
-    useSession().login('dana')
+    useSession().setUser('dana')
     const { wrapper } = await mountAt('/catalogue/nouveau')
     expect(wrapper.text()).not.toContain('Taille')
   })
 
   it('accepts an image or a PDF and refuses anything else', async () => {
-    useSession().login('dana')
+    useSession().setUser('dana')
     const { wrapper } = await mountAt('/catalogue/nouveau')
     expect(wrapper.get('input[type="file"]').attributes('accept')).toBe(
       'image/png,image/jpeg,image/webp,image/gif,application/pdf',
@@ -1416,7 +1415,7 @@ describe('app', () => {
   })
 
   it('replaces or removes the document', async () => {
-    useSession().login('dana')
+    useSession().setUser('dana')
     const { wrapper } = await mountAt('/catalogue/nouveau')
     await upload(wrapper, png())
     expect(button(wrapper, 'Remplacer')).toBeDefined()
@@ -1434,7 +1433,7 @@ describe('app', () => {
     }
 
     it('takes custom categories as tags, and refuses blanks and duplicates', async () => {
-      useSession().login('dana')
+      useSession().setUser('dana')
       const { wrapper } = await mountAt('/catalogue/nouveau')
       await typeCategory(wrapper, 'Sur mesure')
       await typeCategory(wrapper, '  ')
@@ -1444,7 +1443,7 @@ describe('app', () => {
     })
 
     it('adds what was typed when leaving the field, and removes a tag from its button', async () => {
-      useSession().login('dana')
+      useSession().setUser('dana')
       const { wrapper } = await mountAt('/catalogue/nouveau')
       await wrapper.get('.categories input').setValue('Courrier')
       await wrapper.get('.categories input').trigger('blur')
@@ -1454,7 +1453,7 @@ describe('app', () => {
     })
 
     it('takes back the last tag with Backspace in an empty field, but not while there is text', async () => {
-      useSession().login('dana')
+      useSession().setUser('dana')
       const { wrapper } = await mountAt('/catalogue/nouveau')
       await typeCategory(wrapper, 'Un')
       await typeCategory(wrapper, 'Deux')
@@ -1467,7 +1466,7 @@ describe('app', () => {
     })
 
     it('offers the usual and the existing categories, and adds one picked in the list at once', async () => {
-      useSession().login('dana')
+      useSession().setUser('dana')
       const { wrapper } = await mountAt('/catalogue/nouveau')
       const options = wrapper.findAll('datalist option').map((o) => o.attributes('value'))
       expect(options).toContain('Tampon')
@@ -1478,7 +1477,7 @@ describe('app', () => {
     })
 
     it('keeps what is being typed until Enter or leaving the field', async () => {
-      useSession().login('dana')
+      useSession().setUser('dana')
       const { wrapper } = await mountAt('/catalogue/nouveau')
       await wrapper.get('.categories input').setValue('Sur mes')
       expect(categories(wrapper)).toEqual([])
@@ -1486,7 +1485,7 @@ describe('app', () => {
     })
 
     it('saves them on the model and shows them as tags', async () => {
-      useSession().login('dana')
+      useSession().setUser('dana')
       const { wrapper, router } = await mountAt('/catalogue/nouveau')
       await field(wrapper, 'Nom').setValue('Avec catégories')
       await field(wrapper, 'Description').setValue('Deux tags')
@@ -1501,7 +1500,7 @@ describe('app', () => {
 
   describe('entities, one at a time', () => {
     it('describes an entity by name and definition, and requires both', async () => {
-      useSession().login('dana')
+      useSession().setUser('dana')
       const { wrapper, router } = await mountAt('/catalogue/nouveau')
       await field(wrapper, 'Nom').setValue('Facture')
       await field(wrapper, 'Description').setValue('Une facture')
@@ -1524,7 +1523,7 @@ describe('app', () => {
     })
 
     it('shows one entity at a time and pages through them', async () => {
-      useSession().login('dana')
+      useSession().setUser('dana')
       const { wrapper } = await mountAt('/catalogue/nouveau')
       await addEntity(wrapper, 'A', 'La première')
       await addEntity(wrapper, 'B', 'La deuxième')
@@ -1543,7 +1542,7 @@ describe('app', () => {
     })
 
     it('removes the entity on show', async () => {
-      useSession().login('dana')
+      useSession().setUser('dana')
       const { wrapper } = await mountAt('/catalogue/nouveau')
       await addEntity(wrapper, 'A', 'La première')
       await addEntity(wrapper, 'B', 'La deuxième')
@@ -1556,7 +1555,7 @@ describe('app', () => {
     })
 
     it('jumps to the first incomplete entity when saving', async () => {
-      useSession().login('dana')
+      useSession().setUser('dana')
       const { wrapper, router } = await mountAt('/catalogue/nouveau')
       await field(wrapper, 'Nom').setValue('Facture')
       await field(wrapper, 'Description').setValue('Une facture')
@@ -1583,7 +1582,7 @@ describe('app', () => {
     }
 
     it('offers the types, starting at text', async () => {
-      useSession().login('dana')
+      useSession().setUser('dana')
       const { wrapper } = await mountAt('/catalogue/nouveau')
       await addEntity(wrapper)
       // The select's own « Sélectionner une option » is disabled: it is not a type.
@@ -1603,7 +1602,7 @@ describe('app', () => {
     const info = (wrapper: ReturnType<typeof mount>) => wrapper.get('[data-testid="entity"] .info-tip__button')
 
     it('has an « i » that gives the definition of the type, which follows the type chosen', async () => {
-      useSession().login('dana')
+      useSession().setUser('dana')
       const { wrapper } = await mountAt('/catalogue/nouveau')
       await addEntity(wrapper)
       expect(info(wrapper).attributes('aria-label')).toBe('Définition du type Texte')
@@ -1617,7 +1616,7 @@ describe('app', () => {
     })
 
     it('has an « i » on the page of a model too, with the definition of the type of the entity on show', async () => {
-      useSession().login('dana')
+      useSession().setUser('dana')
       const { wrapper } = await mountAt('/catalogue/t2')
       expect(wrapper.get('[data-testid="entity-type"]').text()).toBe('Date')
       await info(wrapper).trigger('click')
@@ -1625,7 +1624,7 @@ describe('app', () => {
     })
 
     it('takes examples as tags: added with Enter, kept distinct, at most five, taken back', async () => {
-      useSession().login('dana')
+      useSession().setUser('dana')
       const { wrapper } = await mountAt('/catalogue/nouveau')
       await addEntity(wrapper)
       await typeExample(wrapper, '12/03/2026')
@@ -1644,7 +1643,7 @@ describe('app', () => {
     })
 
     it('has them of its own for each entity', async () => {
-      useSession().login('dana')
+      useSession().setUser('dana')
       const { wrapper } = await mountAt('/catalogue/nouveau')
       await addEntity(wrapper, 'A', 'Un')
       await typeExample(wrapper, 'un exemple')
@@ -1658,7 +1657,7 @@ describe('app', () => {
     })
 
     it('saves them on the model and shows them on its page', async () => {
-      useSession().login('dana')
+      useSession().setUser('dana')
       const { wrapper, router } = await mountAt('/catalogue/nouveau')
       await field(wrapper, 'Nom').setValue('Facture')
       await field(wrapper, 'Description').setValue('Une facture')
@@ -1675,7 +1674,7 @@ describe('app', () => {
     })
 
     it('shows the type and the examples of the demo entities, and nothing for an entity without example', async () => {
-      useSession().login('dana')
+      useSession().setUser('dana')
       const { wrapper } = await mountAt('/catalogue/t2')
       expect(wrapper.get('[data-testid="entity-type"]').text()).toBe('Date')
       expect(wrapper.get('[data-testid="entity-examples"]').text()).toContain('12/03/2026')
@@ -1686,7 +1685,7 @@ describe('app', () => {
     })
 
     it('is filled in when editing an existing model, and changed in place', async () => {
-      useSession().login('bob.durand') // owns t2
+      useSession().setUser('bob.durand') // owns t2
       const { wrapper, router } = await mountAt('/catalogue/t2/modifier')
       expect((typeSelect(wrapper).element as HTMLSelectElement).value).toBe('date')
       expect(examples(wrapper)).toEqual(['12/03/2026', '1 novembre 2026'])
@@ -1701,7 +1700,7 @@ describe('app', () => {
   })
 
   it('offers the zone mode only once there is a document', async () => {
-    useSession().login('dana')
+    useSession().setUser('dana')
     const { wrapper } = await mountAt('/catalogue/nouveau')
     await addEntity(wrapper)
     const zone = () => wrapper.get('[data-testid="entity"] input[id$="-zone"]')
@@ -1712,7 +1711,7 @@ describe('app', () => {
   })
 
   it('does not offer to draw a zone on a PDF', async () => {
-    useSession().login('dana')
+    useSession().setUser('dana')
     const { wrapper } = await mountAt('/catalogue/nouveau')
     await upload(wrapper, new File(['x'], 'doc.pdf', { type: 'application/pdf' }))
     await addEntity(wrapper)
@@ -1742,7 +1741,7 @@ describe('app', () => {
     })
 
     it('does not start for the definition mode, nor without an image', async () => {
-      useSession().login('dana')
+      useSession().setUser('dana')
       const { wrapper } = await mountAt('/catalogue/nouveau')
       await upload(wrapper, png())
       await addEntity(wrapper, 'A', 'B')
@@ -1894,7 +1893,7 @@ describe('app', () => {
     const level = (wrapper: ReturnType<typeof mount>) => wrapper.get('[data-testid="zoom-level"]').text()
 
     it('zooms in and out with the buttons, and back to the whole image', async () => {
-      useSession().login('dana')
+      useSession().setUser('dana')
       const { wrapper } = await mountAt('/catalogue/nouveau')
       await upload(wrapper, png())
       expect(level(wrapper)).toBe('100 %')
@@ -1914,7 +1913,7 @@ describe('app', () => {
     })
 
     it('stops at 800 %', async () => {
-      useSession().login('dana')
+      useSession().setUser('dana')
       const { wrapper } = await mountAt('/catalogue/nouveau')
       await upload(wrapper, png())
       for (let i = 0; i < 12; i++) {
@@ -1926,7 +1925,7 @@ describe('app', () => {
     })
 
     it('zooms with Ctrl + wheel, and leaves a plain wheel to scroll', async () => {
-      useSession().login('dana')
+      useSession().setUser('dana')
       const { wrapper } = await mountAt('/catalogue/nouveau')
       await upload(wrapper, png())
       const viewport = wrapper.get('[data-testid="document-viewport"]').element
@@ -1958,7 +1957,7 @@ describe('app', () => {
   })
 
   it('drops the zones when the document is replaced', async () => {
-    useSession().login('alice.martin')
+    useSession().setUser('alice.martin')
     const { wrapper } = await mountAt('/catalogue/t1/modifier')
     expect(wrapper.text()).toContain('courrier-exemple.svg')
     expect(zones(wrapper)).toHaveLength(1)
@@ -1972,7 +1971,7 @@ describe('app', () => {
     const tabs = (wrapper: ReturnType<typeof mount>) => wrapper.findAll('[role="tab"]').map((t) => t.text())
 
     it('has the layout of the form, read-only, with the document and the entities', async () => {
-      useSession().login('dana')
+      useSession().setUser('dana')
       const { wrapper } = await mountAt('/catalogue/t1')
       expect(wrapper.find('.template-page').exists()).toBe(true) // the same two halves as the form
       expect(wrapper.get('[data-testid="document-name"]').text()).toBe('courrier-exemple.svg')
@@ -1985,18 +1984,18 @@ describe('app', () => {
     })
 
     it('offers the owner to edit, and anyone else to suggest', async () => {
-      useSession().login('alice.martin')
+      useSession().setUser('alice.martin')
       const owner = await mountAt('/catalogue/t1')
       const edit = owner.wrapper.get('a[href$="/catalogue/t1/modifier"]')
       expect(edit.text()).toBe('Modifier')
 
-      useSession().login('dana')
+      useSession().setUser('dana')
       const other = await mountAt('/catalogue/t1')
       expect(other.wrapper.get('a[href$="/catalogue/t1/modifier"]').text()).toBe('Suggérer une modification')
     })
 
     it('shows the entities one at a time', async () => {
-      useSession().login('dana')
+      useSession().setUser('dana')
       const { wrapper } = await mountAt('/catalogue/t1')
       expect(tabs(wrapper)).toEqual(['Entités (2)', 'Suggestions (1)'])
       expect(entityCount(wrapper)).toBe('1 / 2')
@@ -2010,7 +2009,7 @@ describe('app', () => {
     })
 
     it('outlines the zone of the entity on show, and only that one', async () => {
-      useSession().login('dana')
+      useSession().setUser('dana')
       const { wrapper } = await mountAt('/catalogue/t1')
       expect(wrapper.find('.doc-viewer__polygon--highlight').exists()).toBe(true) // « Emblème » has a zone
       await byTitle(wrapper, 'Entité suivante').trigger('click')
@@ -2018,7 +2017,7 @@ describe('app', () => {
     })
 
     it('stars an entity, for the current user only, and takes it back', async () => {
-      useSession().login('dana')
+      useSession().setUser('dana')
       const { wrapper } = await mountAt('/catalogue/t1')
       const star = () => wrapper.get('[data-testid="entity-star"]')
       expect(star().text()).toContain('2') // bob.durand and chloe.petit
@@ -2034,7 +2033,7 @@ describe('app', () => {
     })
 
     it('opens on the suggestions with ?onglet=suggestions, and tells the owner how many wait', async () => {
-      useSession().login('alice.martin')
+      useSession().setUser('alice.martin')
       const { wrapper } = await mountAt('/catalogue/t1?onglet=suggestions')
       expect(wrapper.get('[role="tab"][aria-selected="true"]').text()).toContain('Suggestions (1)')
       expect(wrapper.get('[role="tablist"]').text()).toContain('1 en attente')
@@ -2043,7 +2042,7 @@ describe('app', () => {
     })
 
     it('stars a suggestion, for the current user only, and takes it back', async () => {
-      useSession().login('dana')
+      useSession().setUser('dana')
       const { wrapper } = await mountAt('/catalogue/t1?onglet=suggestions')
       const star = () => wrapper.get('[data-testid="suggestion-star"]')
       expect(star().text()).toContain('1') // chloe.petit
@@ -2057,7 +2056,7 @@ describe('app', () => {
     })
 
     it('only lets the owner decide, but lets anyone comment', async () => {
-      useSession().login('dana')
+      useSession().setUser('dana')
       const { wrapper } = await mountAt('/catalogue/t1?onglet=suggestions')
       expect(wrapper.text()).not.toContain('Accepter')
       expect(wrapper.get('[data-testid="comment"]').text()).toContain('alice.martin') // already one in the demo data
@@ -2076,7 +2075,7 @@ describe('app', () => {
     })
 
     it('says so when there is nothing to show', async () => {
-      useSession().login('dana')
+      useSession().setUser('dana')
       const { wrapper } = await mountAt('/catalogue/t3')
       expect(wrapper.text()).toContain('Aucune entité définie pour ce modèle.')
       expect(wrapper.text()).toContain('Ce modèle n’a pas de document d’exemple.')
@@ -2086,7 +2085,7 @@ describe('app', () => {
   })
 
   it('lists the analyses as cards, with their total', async () => {
-    useSession().login('alice')
+    useSession().setUser('alice')
     const { wrapper } = await mountAt('/analyses')
     expect(wrapper.text()).toContain('Courriers octobre')
     expect(wrapper.text()).toContain('En échec')
@@ -2095,7 +2094,7 @@ describe('app', () => {
   })
 
   it('creates an analysis from catalogue items and lists it first', async () => {
-    useSession().login('alice')
+    useSession().setUser('alice')
     const before = analyses.value.length
     const { wrapper, router } = await mountAt('/analyses/nouvelle')
     await field(wrapper, 'Nom de l’analyse').setValue('Courriers novembre')
@@ -2110,7 +2109,7 @@ describe('app', () => {
   })
 
   it('needs a name and at least one catalogue item', async () => {
-    useSession().login('alice')
+    useSession().setUser('alice')
     const before = analyses.value.length
     const { wrapper, router } = await mountAt('/analyses/nouvelle')
     await wrapper.get('form').trigger('submit')
@@ -2146,7 +2145,7 @@ describe('app', () => {
     })
 
     it('shows the models as cards, as the catalogue does, each with its box', async () => {
-      useSession().login('dana')
+      useSession().setUser('dana')
       const { wrapper } = await mountAt('/analyses/nouvelle')
       expect(wrapper.findAll('.tile')).toHaveLength(6) // a page of six, with no layout to measure
       const first = wrapper.get('.tile')
@@ -2159,7 +2158,7 @@ describe('app', () => {
     })
 
     it('picks a model with its box, and lets it go', async () => {
-      useSession().login('dana')
+      useSession().setUser('dana')
       const { wrapper } = await mountAt('/analyses/nouvelle')
       await box(wrapper, 't1').setValue(true)
       expect(tile(wrapper, 't1').classList).toContain('tile--selected')
@@ -2171,7 +2170,7 @@ describe('app', () => {
     })
 
     it('picks a model by clicking anywhere on its card, once, and lets it go the same way', async () => {
-      useSession().login('dana')
+      useSession().setUser('dana')
       const { wrapper } = await mountAt('/analyses/nouvelle')
       await tile(wrapper, 't3').querySelector('.tile__description')!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       await flushPromises()
@@ -2182,7 +2181,7 @@ describe('app', () => {
     })
 
     it('leaves the box, its label and the detail button to do their own job, so that a click is one choice and not two', async () => {
-      useSession().login('dana')
+      useSession().setUser('dana')
       const { wrapper } = await mountAt('/analyses/nouvelle')
       // The page is not in a document here, so a click on a label ticks nothing by itself: what is seen is that the card's
       // own handler stays out of it. In a browser the label ticks the box, and the card must not tick it again.
@@ -2198,7 +2197,7 @@ describe('app', () => {
     })
 
     it('keeps what is picked through a search, the « mine » filter and a change of page', async () => {
-      useSession().login('alice.martin')
+      useSession().setUser('alice.martin')
       const { wrapper } = await mountAt('/analyses/nouvelle')
       await box(wrapper, 't1').setValue(true) // on the first page
       await wrapper.get('input[type="search"]').setValue('tampon')
@@ -2214,7 +2213,7 @@ describe('app', () => {
     })
 
     it('says so when the search, or « mine », shows nothing', async () => {
-      useSession().login('dana')
+      useSession().setUser('dana')
       const { wrapper } = await mountAt('/analyses/nouvelle')
       await wrapper.findAll('button').find((b) => b.text() === 'Mes modèles')!.trigger('click')
       expect(wrapper.text()).toContain('Vous n’avez pas encore de modèle.')
@@ -2224,7 +2223,7 @@ describe('app', () => {
     })
 
     it('creates the analysis with the picks of several searches, in the order of the catalogue', async () => {
-      useSession().login('alice')
+      useSession().setUser('alice')
       const before = analyses.value.length
       const { wrapper, router } = await mountAt('/analyses/nouvelle')
       await field(wrapper, 'Nom de l’analyse').setValue('Mélange')
@@ -2248,7 +2247,7 @@ describe('app', () => {
       }
       /** A form with a name and one model, ready to be sent. */
       async function ready() {
-        useSession().login('alice')
+        useSession().setUser('alice')
         const page = await mountAt('/analyses/nouvelle')
         await field(page.wrapper, 'Nom de l’analyse').setValue('Mon analyse')
         await box(page.wrapper, 't1').setValue(true)
@@ -2256,7 +2255,7 @@ describe('app', () => {
       }
 
       it('has the form on one side and the models on the other', async () => {
-        useSession().login('dana')
+        useSession().setUser('dana')
         const { wrapper } = await mountAt('/analyses/nouvelle')
         expect(wrapper.get('section[aria-label="Informations sur l’analyse"]').find('textarea').exists()).toBe(true)
         expect(wrapper.get('section[aria-label="Modèles à rechercher"]').findAll('.tile').length).toBeGreaterThan(0)
@@ -2369,7 +2368,7 @@ describe('app', () => {
     })
 
     it('says what is missing, one thing at a time', async () => {
-      useSession().login('dana')
+      useSession().setUser('dana')
       const { wrapper } = await mountAt('/analyses/nouvelle')
       await box(wrapper, 't1').setValue(true)
       await wrapper.get('form').trigger('submit')
@@ -2391,7 +2390,7 @@ describe('app', () => {
       }
 
       it('opens over the page, with the model\'s description, document and entities', async () => {
-        useSession().login('dana')
+        useSession().setUser('dana')
         const { wrapper } = await mountAt('/analyses/nouvelle')
         expect((wrapper.get('dialog').element as HTMLDialogElement).open).toBe(false)
         await open(wrapper, 't1')
@@ -2404,7 +2403,7 @@ describe('app', () => {
       })
 
       it('does not pick the model, nor lose what was filled in, and closes', async () => {
-        useSession().login('dana')
+        useSession().setUser('dana')
         const { wrapper } = await mountAt('/analyses/nouvelle')
         await field(wrapper, 'Nom de l’analyse').setValue('Mon analyse')
         await box(wrapper, 't2').setValue(true)
@@ -2419,7 +2418,7 @@ describe('app', () => {
       })
 
       it('shows the model asked for, one after the other', async () => {
-        useSession().login('dana')
+        useSession().setUser('dana')
         const { wrapper } = await mountAt('/analyses/nouvelle')
         await open(wrapper, 't2')
         expect(wrapper.get('[data-testid="preview"] h2').text()).toBe('Tampon « Reçu »')
@@ -2430,7 +2429,7 @@ describe('app', () => {
       })
 
       it('is named for a screen reader by the model it is about', async () => {
-        useSession().login('dana')
+        useSession().setUser('dana')
         const { wrapper } = await mountAt('/analyses/nouvelle')
         expect(detailButton(wrapper, 't1').textContent).toContain('Voir le détail')
         expect(detailButton(wrapper, 't1').textContent).toContain('de Logo Marianne')
