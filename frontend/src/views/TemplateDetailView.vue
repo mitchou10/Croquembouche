@@ -5,6 +5,7 @@ import ConfirmButton from '../components/ConfirmButton.vue'
 import DocumentViewer from '../components/DocumentViewer.vue'
 import EntitiesPane from '../components/EntitiesPane.vue'
 import PagerControls from '../components/PagerControls.vue'
+import QualityPanel from '../components/QualityPanel.vue'
 import TemplateLayout from '../components/TemplateLayout.vue'
 import { changedFields, MAX_COMMENT_LENGTH, useCatalogue } from '../composables/useCatalogue'
 import { useSession } from '../composables/useSession'
@@ -24,7 +25,7 @@ const owner = computed(() => !!template.value && isOwner(template.value))
 // The owner, or an administrator: they accept or refuse the suggestions.
 const decides = computed(() => !!template.value && canDecide(template.value))
 
-type Tab = 'entities' | 'suggestions'
+type Tab = 'entities' | 'suggestions' | 'quality'
 const tab = ref<Tab>(route.query.onglet === 'suggestions' ? 'suggestions' : 'entities')
 const entityIndex = ref(0)
 // The page of the document shown (from 1): what is said of it is shown under the heading.
@@ -134,7 +135,7 @@ async function comment() {
       <p class="template-view__description fr-mb-0" data-testid="description">{{ template.description }}</p>
       <p v-if="actionError" class="fr-error-text fr-mb-0" role="alert" data-testid="action-error">{{ actionError }}</p>
 
-      <div class="template-view__tabs" role="tablist" aria-label="Entités et suggestions">
+      <div class="template-view__tabs" role="tablist" aria-label="Entités, suggestions et qualité">
         <button
           type="button"
           role="tab"
@@ -154,11 +155,26 @@ async function comment() {
           Suggestions ({{ template.suggestions.length }})
           <DsfrBadge v-if="decides && pending" :label="`${pending} en attente`" type="new" small />
         </button>
+        <button
+          type="button"
+          role="tab"
+          class="template-view__tab"
+          :aria-selected="tab === 'quality'"
+          data-testid="quality-tab"
+          @click="tab = 'quality'"
+        >
+          Qualité
+        </button>
       </div>
 
       <!-- Entities: one at a time, like the form. -->
       <div v-if="tab === 'entities'" role="tabpanel" class="template-view__panel">
         <EntitiesPane v-model:index="entityIndex" :template="template" />
+      </div>
+
+      <!-- Quality: how right the analysis has been, from what people decided. -->
+      <div v-else-if="tab === 'quality'" role="tabpanel" class="template-view__panel">
+        <QualityPanel :template-id="template.id" />
       </div>
 
       <!-- Suggestions: one at a time too, with their discussion. -->

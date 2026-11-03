@@ -64,6 +64,8 @@ const tab = ref<'page' | 'elements' | 'runs'>('page')
 // Adding an element by hand: which model it is, and whether the zone is being drawn.
 const adding = ref(false)
 const newModel = ref('')
+// The entity of that model it is, when the person knows: what the recall of each entity is measured on.
+const newEntity = ref('')
 // Whether to keep a capture of the document tried: yes unless said otherwise.
 const saveScreenshot = ref(true)
 const fault = ref('')
@@ -139,16 +141,20 @@ function reviewPageDecision(decision: Review) {
   if (analysis.value && run.value) reviewPage(analysis.value.id, run.value.id, viewerPage.value, decision)
 }
 
+const entitiesOfNewModel = computed(() => findTemplate(newModel.value)?.entities ?? [])
+watch(newModel, () => (newEntity.value = ''))
+
 // A zone drawn on the document becomes an element, annotated with the model chosen.
 function startAdding() {
   newModel.value = newModel.value || models.value[0]?.id || ''
+  newEntity.value = ''
   adding.value = true
 }
 
 async function onDraw(zone: Zone) {
   if (!analysis.value || !run.value || !adding.value) return
   adding.value = false
-  if (await addElement(analysis.value.id, run.value.id, { zone, templateId: newModel.value })) current.value = detections.value.length - 1
+  if (await addElement(analysis.value.id, run.value.id, { zone, templateId: newModel.value, ...(newEntity.value && { entityId: newEntity.value }) })) current.value = detections.value.length - 1
 }
 
 async function remove(elementId: string) {
@@ -414,6 +420,13 @@ const sharing = computed(() => {
                 </select>
                 <button type="button" class="fr-btn fr-btn--sm fr-btn--tertiary" data-testid="add-cancel" @click="adding = false">Annuler</button>
               </div>
+              <template v-if="entitiesOfNewModel.length">
+                <label class="fr-label" for="new-element-entity">Entité <span class="fr-hint-text">(facultatif)</span></label>
+                <select id="new-element-entity" v-model="newEntity" class="fr-select adding__select" data-testid="new-element-entity">
+                  <option value="">Je ne sais pas</option>
+                  <option v-for="entity in entitiesOfNewModel" :key="entity.id" :value="entity.id">{{ entity.name }}</option>
+                </select>
+              </template>
               <p class="fr-hint-text fr-mb-0" data-testid="adding-hint">Dessinez la zone sur le document : un polygone, ou un rectangle.</p>
             </div>
             <div v-else class="elements__bar">

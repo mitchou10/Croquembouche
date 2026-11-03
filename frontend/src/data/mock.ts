@@ -165,6 +165,8 @@ export interface Detection {
   id: string
   zone: Zone
   classifications: Classification[]
+  /** Which entity of the model it is, when known: what the quality of each entity is measured on. */
+  entityId?: string | null
 }
 
 /** What the person who ran the analysis decided of a prediction: still to look at, right, wrong, or corrected by hand. */
@@ -494,4 +496,32 @@ export const statusLabels: Record<AnalysisStatus, { label: string; type: 'succes
   done: { label: 'Terminée', type: 'success' },
   running: { label: 'En cours', type: 'info' },
   failed: { label: 'En échec', type: 'error' },
+}
+
+/**
+ * How right the analysis has been on a model, as far as people have said so (validated, invalidated, annotated): there is
+ * no set of documents to measure against, the figures grow with every decision.
+ */
+export interface Quality {
+  /** Predictions someone decided on, those nobody looked at yet, and the decisions split into right and wrong. */
+  reviewed: number
+  pending: number
+  correct: number
+  wrong: number
+  /** What people found that the analysis did not: added by hand, or annotated as this model on another's prediction. */
+  missed: number
+  /** Null while there is nothing to divide. */
+  precision: number | null
+  recall: number | null
+  f1: number | null
+  /** How sure the analysis was, on average, of what turned out right and of what turned out wrong. */
+  meanConfidenceCorrect: number | null
+  meanConfidenceWrong: number | null
+}
+
+export interface TemplateQuality {
+  /** The classification of the pages; `exact`: of those rightly taken for a page of the model, the share whose page of it was right too. */
+  pages: Quality & { exact: number | null }
+  elements: Quality
+  entities: (Quality & { id: string; name: string })[]
 }

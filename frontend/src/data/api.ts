@@ -10,6 +10,7 @@ import type {
   Share,
   Template,
   TemplateDocument,
+  TemplateQuality,
   Zone,
 } from './mock'
 
@@ -96,6 +97,8 @@ const call = async (method: string, path: string, body?: unknown) =>
   toTemplate(await request<TemplateAnswer>(method, path, body))
 
 export const fetchTemplates = async () => (await request<TemplateAnswer[]>('GET', base)).map(toTemplate)
+/** How right the analysis has been on a model, from what people decided of its predictions. */
+export const fetchQuality = (id: string) => request<TemplateQuality>('GET', `${base}/${id}/metrics`)
 export const postTemplate = (body: TemplateBody) => call('POST', base, body)
 export const putTemplate = (id: string, body: TemplateBody) => call('PUT', `${base}/${id}`, body)
 /** Deletes a model: its owner only, and not one an analysis looks for. */
@@ -233,7 +236,7 @@ export const putDetectionReview = (id: string, runId: string, detectionId: strin
 /** The decision on the classification of one page of the document tried (from 1). */
 export const putPageReview = (id: string, runId: string, page: number, review: Review) =>
   runCall('PUT', id, runId, `/pages/${page}/review`, reviewBody(review))
-export const postElement = (id: string, runId: string, element: { zone: Zone; templateId: string }) =>
+export const postElement = (id: string, runId: string, element: { zone: Zone; templateId: string; entityId?: string }) =>
   runCall('POST', id, runId, '/elements', element)
 export const deleteElement = (id: string, runId: string, detectionId: string) =>
   runCall('DELETE', id, runId, `/elements/${detectionId}`)
