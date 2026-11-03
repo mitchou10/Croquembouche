@@ -23,6 +23,7 @@ env:
   LATEST_TAG: false
   USE_QEMU: false
   TAG_SHORT_SHA: false
+  CT_CONF_PATH: ci/configs/ct.yaml
 
 jobs:
   path-filter:
@@ -35,6 +36,7 @@ jobs:
       frontend: ${{ steps.filter.outputs.frontend }}
       backend: ${{ steps.filter.outputs.backend }}
       worker_template_matching: ${{ steps.filter.outputs.worker_template_matching }}
+      helm: ${{ steps.filter.outputs.helm }}
       ci: ${{ steps.filter.outputs.ci }}
       services: ${{ steps.services.outputs.services }}
     steps:
@@ -52,6 +54,9 @@ jobs:
               - 'backend/**'
             worker_template_matching:
               - 'worker/template_matching/**'
+            helm:
+              - 'helm/**'
+              - 'ci/configs/ct.yaml'
             ci:
               - '.github/workflows/**'
 
@@ -91,6 +96,7 @@ jobs:
       LATEST_TAG: ${{ env.LATEST_TAG }}
       USE_QEMU: ${{ env.USE_QEMU }}
       TAG_SHORT_SHA: ${{ env.TAG_SHORT_SHA }}
+      CT_CONF_PATH: ${{ env.CT_CONF_PATH }}
       IMAGE_BASE: ${{ steps.image.outputs.IMAGE_BASE }}
       IMAGE_TAG: ${{ steps.image.outputs.IMAGE_TAG }}
     steps:
@@ -265,6 +271,19 @@ jobs:
       FAIL_ON_ERROR: true
       TRIVYIGNORES: .trivyignore.yaml
 
+  lint-helm:
+    uses: dnum-mi/fabnum-cicd/.github/workflows/lint-helm.yml@v0
+    needs:
+      - path-filter
+      - expose-vars
+    if: ${{ needs.path-filter.outputs.helm == 'true' || needs.path-filter.outputs.ci == 'true' }}
+    permissions:
+      contents: read
+    with:
+      CT_CONF_PATH: ${{ needs.expose-vars.outputs.CT_CONF_PATH }}
+      CHARTS_DIR: helm
+      HELM_DOCS_VERSION: v1.14.2
+
   # Workaround for required status check in protection branches (see. https://github.com/orgs/community/discussions/13690)
   all-jobs-passed:
     name: Check jobs status
@@ -285,6 +304,7 @@ jobs:
       - build-docker
       - scan-trivy-images
       - gate-trivy-images
+      - lint-helm
     steps:
       - name: Check status of all required jobs
         run: |-
