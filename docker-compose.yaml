@@ -86,13 +86,13 @@ services:
     build:
       context: worker/template_matching
       target: runtime
+      # The embedding model is part of the image (see its Dockerfile): another model is another build.
+      args:
+        EMBEDDING_MODEL: ${EMBEDDING_MODEL:-Qdrant/clip-ViT-B-32-vision}
     environment:
       REDIS_URL: redis://redis:6379/0
-      # The vector store the catalogue is indexed in, and the image embedding model (downloaded on first use into the
-      # volume below, so that a restart does not download it again).
+      # The vector store the catalogue is indexed in.
       QDRANT_URL: http://qdrant:6333
-      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-Qdrant/clip-ViT-B-32-vision}
-      EMBEDDING_CACHE_DIR: /home/worker/.cache/fastembed
       # The page images it reads: the object store of the backend.
       AWS_ENDPOINT_URL: http://rustfs:9000
       AWS_ACCESS_KEY_ID: rustfsadmin
@@ -101,8 +101,6 @@ services:
       # Where a result goes back to, and the key that proves it is the worker's.
       BACKEND_URL: http://backend:8000
       INTERNAL_API_KEY: ${INTERNAL_API_KEY:-dev-only-internal-key}
-    volumes:
-      - worker-models:/home/worker/.cache
     depends_on:
       redis:
         condition: service_healthy
@@ -194,4 +192,3 @@ volumes:
   postgres-data:
   qdrant-data:
   rustfs-data:
-  worker-models:
