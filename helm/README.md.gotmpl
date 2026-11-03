@@ -1,0 +1,157 @@
+{{ template "chart.header" . }}
+
+{{ template "chart.badgesSection" . }}
+
+{{ template "chart.description" . }}
+
+{{ template "chart.requirementsSection" . }}
+
+## Before installing
+
+Keycloak is not deployed by this chart: create a realm and a confidential client for the backend (see `docker/keycloak/realm-croquembouche.json` for the shape), whose redirect URI is `https://<host>/api/auth/callback`, and set the `KEYCLOAK_*`, `BACKEND_PUBLIC_URL` and `FRONTEND_URL` variables of `backend.envCm`.
+
+Everything secret is read from Secrets created outside the chart (Vault, sealed-secrets...), never kept in the values:
+
+| Secret | Keys |
+| ------ | ---- |
+| `croquembouche-secrets` (the backend, the worker and the migration job) | `DATABASE_URL` (`postgresql+asyncpg://...`), `REDIS_URL`, `KEYCLOAK_CLIENT_SECRET`, `DATA_ENCRYPTION_KEYS` (Fernet keys, comma-separated, the first one encrypts), `BLIND_INDEX_PEPPER`, `INTERNAL_API_KEY` (what the worker hands its results back with), `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` |
+| `croquembouche-postgres` (if `postgres.enabled`) | `postgres-password` |
+| `croquembouche-redis` (if `redis.enabled`) | `redis-password` |
+| `croquembouche-rustfs` (if `rustfs.enabled`) | `access-key`, `secret-key` |
+
+The backend falls back to development keys for `DATA_ENCRYPTION_KEYS` and `BLIND_INDEX_PEPPER` when they are missing: set your own before keeping any data, and keep them, as what is encrypted cannot be read without them.
+
+The migration job (`jobs.migrate`) runs `alembic upgrade head` after the install and before each upgrade. The worker downloads its embedding model (about 350 MB) at its first start into `/home/worker/.cache`: give it a volume of its own (`worker_template_matching.volumes`) to keep it between restarts.
+
+## Values
+
+{{- $allValues := .Values }}
+{{- $topLevelKeys := list }}
+{{- $global := list }}
+{{- $general := list }}
+{{- range $allValues }}
+  {{- $keyParts := splitList "." .Key }}
+  {{- $top := index $keyParts 0 }}
+  {{- if eq $top "global" }}
+    {{- if eq (len $keyParts) 2 }}
+      {{- $global = append $global . }}
+    {{- end }}
+  {{- else if eq (len $keyParts) 1 }}
+    {{- $general = append $general . }}
+  {{- else }}
+    {{- $found := false }}
+    {{- range $topLevelKeys }}
+      {{- if eq . $top }}
+        {{- $found = true }}
+      {{- end }}
+    {{- end }}
+    {{- if not $found }}
+      {{- $topLevelKeys = append $topLevelKeys $top }}
+    {{- end }}
+  {{- end }}
+{{- end }}
+
+{{- if gt (len $general) 0 }}
+
+### General
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+{{- range $general }}
+| {{ .Key }} | {{ .Type }} | {{ if .Default }}{{ .Default }}{{ else }}{{ .AutoDefault }}{{ end }} | {{ if .Description }}{{ .Description }}{{ else }}{{ .AutoDescription }}{{ end }} |
+{{- end }}
+{{- end }}
+
+{{- $globalAll := list }}
+{{- range $allValues }}
+  {{- $keyParts := splitList "." .Key }}
+  {{- if eq (index $keyParts 0) "global" }}
+    {{- $globalAll = append $globalAll . }}
+  {{- end }}
+{{- end }}
+
+{{- if gt (len $globalAll) 0 }}
+
+### Global
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+{{- range $globalAll }}
+| {{ .Key }} | {{ .Type }} | {{ if .Default }}{{ .Default }}{{ else }}{{ .AutoDefault }}{{ end }} | {{ if .Description }}{{ .Description }}{{ else }}{{ .AutoDescription }}{{ end }} |
+{{- end }}
+{{- end }}
+
+{{- range $i, $top := $topLevelKeys }}
+  {{- $hasContent := false }}
+  {{- range $allValues }}
+    {{- $keyParts := splitList "." .Key }}
+    {{- if and (gt (len $keyParts) 1) (eq (index $keyParts 0) $top) (ne $top "global") }}
+      {{- $hasContent = true }}
+    {{- end }}
+  {{- end }}
+  {{- if $hasContent }}
+
+### {{ $top | camelcase }}
+
+    {{- $general := list }}
+    {{- $subs := list }}
+    {{- range $allValues }}
+      {{- $keyParts := splitList "." .Key }}
+      {{- if and (eq (index $keyParts 0) $top) (ne $top "global") }}
+        {{- if eq (len $keyParts) 2 }}
+          {{- $general = append $general . }}
+        {{- else if gt (len $keyParts) 2 }}
+          {{- $subs = append $subs . }}
+        {{- end }}
+      {{- end }}
+    {{- end }}
+    {{- if gt (len $general) 0 }}
+
+#### General
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+      {{- range $general }}
+| {{ .Key }} | {{ .Type }} | {{ if .Default }}{{ .Default }}{{ else }}{{ .AutoDefault }}{{ end }} | {{ if .Description }}{{ .Description }}{{ else }}{{ .AutoDescription }}{{ end }} |
+      {{- end }}
+    {{- end }}
+    {{- $subSecondaries := list }}
+    {{- range $subs }}
+      {{- $keyParts := splitList "." .Key }}
+      {{- $second := index $keyParts 1 }}
+      {{- $found := false }}
+      {{- range $subSecondaries }}
+        {{- if eq . $second }}
+          {{- $found = true }}
+        {{- end }}
+      {{- end }}
+      {{- if not $found }}
+        {{- $subSecondaries = append $subSecondaries $second }}
+      {{- end }}
+    {{- end }}
+    {{- range $j, $second := $subSecondaries }}
+
+#### {{ $second | camelcase }}
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+        {{- range $subs }}
+          {{- $keyParts := splitList "." .Key }}
+          {{- if eq (index $keyParts 1) $second }}
+| {{ .Key }} | {{ .Type }} | {{ if .Default }}{{ .Default }}{{ else }}{{ .AutoDefault }}{{ end }} | {{ if .Description }}{{ .Description }}{{ else }}{{ .AutoDescription }}{{ end }} |
+          {{- end }}
+        {{- end }}
+    {{- end }}
+  {{- end }}
+{{- end }}
+
+{{ template "chart.maintainersSection" . }}
+
+## Sources
+
+{{ template "chart.homepageLine" . }}
+
+**Source code:**
+{{ template "chart.sourcesList" . }}
+
+{{ template "helm-docs.versionFooter" . }}

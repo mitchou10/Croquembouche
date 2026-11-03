@@ -1,0 +1,23 @@
+{{- if .Values.enabled }}
+{{- if .Values.worker_template_matching.metrics.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "helper.componentFullname" (dict "root" . "componentName" "worker_template_matching-metrics") }}
+  labels: {{- (include "helper.labels" (dict "root" . "componentName" "worker_template_matching-metrics")) | nindent 4 }}
+  {{- if .Values.worker_template_matching.metrics.service.labels }}
+    {{- toYaml .Values.worker_template_matching.metrics.service.labels | nindent 4 }}
+  {{- end }}
+  {{- if .Values.worker_template_matching.metrics.service.annotations }}
+  annotations: {{- toYaml .Values.worker_template_matching.metrics.service.annotations | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.worker_template_matching.metrics.service.type | default "ClusterIP" }}
+  ports:
+  - port: {{ .Values.worker_template_matching.metrics.service.port }}
+    targetPort: {{ .Values.worker_template_matching.metrics.service.targetPort }}
+    protocol: TCP
+    name: {{ .Values.worker_template_matching.metrics.service.portName | default "metrics" }}
+  selector: {{- include "helper.selectorLabels" (dict "root" . "componentName" "worker_template_matching") | nindent 4 }}
+{{- end }}
+{{- end }}
