@@ -9,13 +9,13 @@ import TemplatePreview from '../components/TemplatePreview.vue'
 import { useAnalyses } from '../composables/useAnalyses'
 import { useCatalogue } from '../composables/useCatalogue'
 import { useGroups } from '../composables/useGroups'
-import type { Share, Template } from '../data/mock'
+import type { Share } from '../data/mock'
 
 const MAX_DESCRIPTION = 300
 
 const router = useRouter()
 const { createAnalysis } = useAnalyses()
-const { filter } = useCatalogue()
+const { filter, find } = useCatalogue()
 const { groups } = useGroups()
 
 const name = ref('')
@@ -29,7 +29,10 @@ const shareInput = ref<InstanceType<typeof ShareInput>>()
 const selected = ref<string[]>([])
 const query = ref('')
 const mine = ref(false)
-const preview = ref<Template | null>(null)
+// The model looked at, by its id: the catalogue replaces a model by a new object whenever something changes in it
+// (a star), and the preview must follow.
+const previewId = ref<string | null>(null)
+const preview = computed(() => (previewId.value === null ? null : (find(previewId.value) ?? null)))
 const nameError = ref('')
 const templatesError = ref('')
 const sharesError = ref(false)
@@ -158,10 +161,10 @@ async function submit() {
                   <DsfrTag v-for="category in template.categories" :key="category" :label="category" small />
                 </template>
                 <template #foot>
-                  <button type="button" class="fr-btn fr-btn--sm fr-btn--tertiary new-analysis__detail" @click="preview = template">
+                  <button type="button" class="fr-btn fr-btn--sm fr-btn--tertiary new-analysis__detail" @click="previewId = template.id">
                     Voir le détail<span class="fr-sr-only"> de {{ template.name }}</span>
                   </button>
-                  <span class="new-analysis__owner">Par {{ template.ownerId }}</span>
+                  <span class="new-analysis__owner">Par {{ template.ownerName }}</span>
                 </template>
               </ListTile>
             </template>
@@ -171,7 +174,7 @@ async function submit() {
     </FixedPage>
   </form>
 
-  <TemplatePreview :template="preview" @close="preview = null" />
+  <TemplatePreview :template="preview" @close="previewId = null" />
 </template>
 
 <style scoped>

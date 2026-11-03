@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { isImage } from '../composables/useCatalogue'
+import { canPreview } from '../composables/useCatalogue'
+import { pageUrl } from '../data/api'
 import type { Point, TemplateDocument, TemplateEntity, Zone } from '../data/mock'
 
 const props = defineProps<{
@@ -48,12 +49,35 @@ function onLoad(event: Event) {
   natural.value = { width: img.naturalWidth, height: img.naturalHeight }
 }
 
+// A document of several pages (a PDF's screenshots) is looked at one page at a time; the zones are of a page.
+const page = ref(1)
+const pageCount = computed(() => props.document.pages ?? 1)
+const imageUrl = computed(() => (props.document.id ? pageUrl(props.document.id, page.value) : props.document.url))
+
 watch(
   () => props.document.url,
   () => {
     natural.value = null
     zoom.value = 1
     draft.value = []
+    page.value = 1
+  },
+)
+
+function goToPage(next: number) {
+  const target = Math.min(Math.max(next, 1), pageCount.value)
+  if (target === page.value) return
+  natural.value = null
+  draft.value = []
+  page.value = target
+}
+
+// Looking at an entity brings its page up.
+watch(
+  () => props.highlightId,
+  (id) => {
+    const zone = props.entities?.find((e) => e.id === id)?.zone
+    if (zone) goToPage(zone.page)
   },
 )
 
@@ -111,7 +135,7 @@ const topLeftOf = (points: Point[]) => ({
 const shapes = computed(() =>
   (props.entities ?? [])
     .map((entity, index) => ({ entity, index }))
-    .filter(({ entity }) => entity.zone && entity.zone.points.length >= 3)
+    .filter(({ entity }) => entity.zone && entity.zone.points.length >= 3 && entity.zone.page === page.value)
     .map(({ entity, index }) => {
       const points = entity.zone!.points
       const corner = topLeftOf(points)
@@ -151,7 +175,7 @@ function finish(points: Point[]) {
   draft.value = []
   cursor.value = null
   dragRect.value = null
-  if (points.length >= 3) emit('draw', { page: 1, points })
+  if (points.length >= 3) emit('draw', { page: page.value, points })
 }
 
 const closeDraft = () => draft.value.length >= 3 && finish(draft.value)
@@ -287,7 +311,7 @@ const hint = computed(() =>
 
 <template>
   <div class="doc-viewer" :class="{ 'doc-viewer--fit': fit }">
-    <template v-if="isImage(document)">
+    <template v-if="canPreview(document)">
       <div class="doc-viewer__bar">
         <div class="doc-viewer__group" role="group" aria-label="Zoom">
           <button type="button" class="fr-btn fr-btn--sm fr-btn--tertiary" :disabled="zoom <= MIN_ZOOM" title="Dézoomer" @click="zoomOut">
@@ -298,6 +322,16 @@ const hint = computed(() =>
           </button>
           <button type="button" class="fr-btn fr-btn--sm fr-btn--tertiary" :disabled="zoom >= MAX_ZOOM" title="Zoomer" @click="zoomIn">
             +<span class="fr-sr-only"> Zoomer</span>
+          </button>
+        </div>
+
+        <div v-if="pageCount > 1" class="doc-viewer__group" role="group" aria-label="Pages">
+          <button type="button" class="fr-btn fr-btn--sm fr-btn--tertiary" :disabled="page <= 1" title="Page précédente" @click="goToPage(page - 1)">
+            ‹<span class="fr-sr-only"> Page précédente</span>
+          </button>
+          <span class="doc-viewer__page" data-testid="page-number">Page {{ page }} / {{ pageCount }}</span>
+          <button type="button" class="fr-btn fr-btn--sm fr-btn--tertiary" :disabled="page >= pageCount" title="Page suivante" @click="goToPage(page + 1)">
+            ›<span class="fr-sr-only"> Page suivante</span>
           </button>
         </div>
 
@@ -349,7 +383,7 @@ const hint = computed(() =>
           data-testid="document-stage"
           @pointerdown="onPointerDown"
         >
-          <img :src="document.url" :alt="`Aperçu de ${document.name}`" draggable="false" @load="onLoad" />
+          <img :src="imageUrl" :alt="`Aperçu de ${document.name}`" draggable="false" @load="onLoad" />
 
           <svg class="doc-viewer__shapes" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
             <polygon
@@ -420,7 +454,14 @@ const hint = computed(() =>
 .doc-viewer__group {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 0.25rem;
+}
+
+.doc-viewer__page {
+  padding: 0 0.25rem;
+  font-size: 0.875rem;
+  white-space: nowrap;
 }
 
 /* The scroller. Centres the image while it is smaller than the space, and scrolls once it is larger. */

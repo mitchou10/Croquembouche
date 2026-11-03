@@ -6,7 +6,8 @@ import EntitiesEditor from '../components/EntitiesEditor.vue'
 import TemplateLayout from '../components/TemplateLayout.vue'
 import TagsInput from '../components/TagsInput.vue'
 import { useWideScreen } from '../composables/useWideScreen'
-import { ACCEPTED_DOCUMENT_TYPES, documentError, toDocument, useCatalogue } from '../composables/useCatalogue'
+import { ACCEPTED_DOCUMENT_TYPES, documentError, useCatalogue } from '../composables/useCatalogue'
+import { ApiError, deleteDocument, uploadDocument } from '../data/api'
 import type { TemplateDocument, TemplateEntity, Zone } from '../data/mock'
 
 // One form, three uses: create a template, edit one you own, or suggest a change to someone else's.
@@ -45,19 +46,22 @@ const currentDocument = ref<TemplateDocument | null>(existing?.document ?? null)
 const documentChanged = ref(false)
 const documentFault = ref('')
 const zonesDropped = ref(false)
-// A blob: URL made here is released if the form is left without saving, and when it is replaced.
-let uploadedUrl: string | null = null
+const uploading = ref(false)
+// The documents uploaded in this form: one that is replaced, taken off, or never saved is deleted again.
+const uploadedIds = new Set<string>()
 let committed = false
 
-function releaseUpload() {
-  if (uploadedUrl) URL.revokeObjectURL(uploadedUrl)
-  uploadedUrl = null
+function discard(document: TemplateDocument | null) {
+  if (!document?.id || !uploadedIds.delete(document.id)) return
+  deleteDocument(document.id).catch(() => {
+    // Left behind, harmlessly: nothing points to it.
+  })
 }
 
 function setDocument(next: TemplateDocument | null) {
-  releaseUpload()
+  discard(currentDocument.value)
   drawingId.value = null
-  if (next) uploadedUrl = next.url
+  if (next?.id) uploadedIds.add(next.id)
   currentDocument.value = next
   documentChanged.value = true
   // Zones are positions on a given document: they mean nothing on another one.
@@ -71,7 +75,7 @@ function onDraw(zone: Zone) {
   drawingId.value = null
 }
 
-function onFile(event: Event) {
+async function onFile(event: Event) {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
   if (!file) return
@@ -81,7 +85,15 @@ function onFile(event: Event) {
     input.value = ''
     return
   }
-  setDocument(toDocument(file))
+  uploading.value = true
+  try {
+    setDocument(await uploadDocument(file))
+  } catch (error) {
+    documentFault.value = error instanceof ApiError ? error.message : 'Le document n’a pas pu être envoyé.'
+    input.value = ''
+  } finally {
+    uploading.value = false
+  }
 }
 
 function removeDocument() {
@@ -90,7 +102,7 @@ function removeDocument() {
 }
 
 onBeforeUnmount(() => {
-  if (!committed) releaseUpload()
+  if (!committed) discard(currentDocument.value)
 })
 
 async function submit() {
@@ -115,18 +127,22 @@ async function submit() {
   ]
   if (errors.value.name || errors.value.description || !entitiesValid) return
 
-  if (mode.value === 'create') {
-    const created = create(fields, currentDocument.value ?? undefined)
-    if (!created) return
-    committed = true
-    await router.push({ name: 'catalogue-detail', params: { id: created.id } })
-    return
-  }
-  if (mode.value === 'edit') {
-    update(existing!.id, fields, documentChanged.value ? currentDocument.value : undefined)
-    committed = true
-  } else if (!suggest(existing!.id, fields, message.value)) {
-    errors.value = { form: 'Modifiez au moins un champ pour envoyer une suggestion.' }
+  try {
+    if (mode.value === 'create') {
+      const created = await create(fields, currentDocument.value ?? undefined)
+      committed = true
+      await router.push({ name: 'catalogue-detail', params: { id: created.id } })
+      return
+    }
+    if (mode.value === 'edit') {
+      await update(existing!.id, fields, documentChanged.value ? currentDocument.value : undefined)
+      committed = true
+    } else {
+      await suggest(existing!.id, fields, message.value)
+    }
+  } catch (error) {
+    // What the backend refuses, with its reason: who may do this, what is not valid.
+    errors.value = { form: error instanceof ApiError ? error.message : 'Le serveur est injoignable.' }
     return
   }
   await router.push({
@@ -159,7 +175,7 @@ async function submit() {
           >
             Annuler
           </RouterLink>
-          <DsfrButton type="submit" :label="submitLabels[mode]" />
+          <DsfrButton type="submit" :label="submitLabels[mode]" :disabled="uploading" />
         </div>
       </template>
 
@@ -200,6 +216,7 @@ async function submit() {
           </div>
         </div>
 
+        <p v-if="uploading" class="fr-hint-text fr-mb-0" role="status">Envoi du document…</p>
         <p v-if="documentFault" id="document-error" class="fr-error-text fr-mb-0" role="alert">{{ documentFault }}</p>
         <p v-if="!currentDocument && mode === 'suggest'" class="fr-hint-text fr-mb-0">Ce modèle n’a pas de document d’exemple.</p>
         <p v-if="currentDocument && mode === 'suggest'" class="fr-hint-text fr-mb-0">Seul le propriétaire peut changer le document d’exemple.</p>

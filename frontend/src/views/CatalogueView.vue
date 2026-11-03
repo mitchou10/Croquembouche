@@ -52,7 +52,7 @@ const results = computed(() => filter(query.value, mine.value))
               type="new"
               small
             />
-            <span class="tile__owner">Par {{ template.ownerId }}</span>
+            <span class="tile__owner">Par {{ template.ownerName }}</span>
           </template>
         </ListTile>
       </template>
