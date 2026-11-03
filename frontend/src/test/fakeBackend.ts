@@ -9,6 +9,7 @@ import type {
   Template,
   TemplateEntity,
   TemplateFields,
+  TemplateQuality,
 } from '../data/mock'
 import { analyses as analysisSeed, entityTypeSeed, groupSeed, sampleLetter, templates as seed } from '../data/mock'
 import { simulatePage, simulateTest } from './simulate'
@@ -218,6 +219,7 @@ export async function fakeFetch(path: string, init: RequestInit = {}): Promise<A
   const sub = parts[2]
 
   if (parts.length === 2 && method === 'GET') return reply(200, template)
+  if (parts.length === 3 && parts[2] === 'metrics' && method === 'GET') return reply(200, qualityOf(template))
   if (parts.length === 2 && method === 'DELETE') {
     if (!owner) return refuse(403, 'Seul le propriétaire supprime le modèle.')
     const used = analyses.filter((a) => a.templateIds.includes(template.id)).length
@@ -335,6 +337,60 @@ function answer(run: AnalysisRun, analysis: Analysis, detections: ReviewedDetect
   run.detections = detections
   run.pages = pages
   analysis.matches += run.matches
+}
+
+/** One prediction and what was decided of it, as the metrics see it. */
+interface Row {
+  top: string | null
+  confidence: number
+  review: Review
+  manual?: boolean
+  entityId?: string | null
+}
+
+/** The quality of the analysis on a model, from the decisions in every use (the same rules as the backend's). */
+function qualityOf(template: Pick<Template, 'id' | 'entities'>): TemplateQuality {
+  const pages: Row[] = []
+  const elements: Row[] = []
+  for (const run of analyses.flatMap((a) => a.runs)) {
+    for (const page of run.pages ?? []) {
+      const top = [...page.classifications].sort((a, b) => b.confidence - a.confidence)[0]
+      pages.push({ top: top?.templateId ?? null, confidence: top?.confidence ?? 0, review: page.review })
+    }
+    for (const d of run.detections ?? []) {
+      const top = [...d.classifications].sort((a, b) => b.confidence - a.confidence)[0]
+      elements.push({ top: top?.templateId ?? null, confidence: top?.confidence ?? 0, review: d.review, manual: d.source === 'manual', entityId: d.entityId })
+    }
+  }
+  const quality = (rows: Row[]) => {
+    const predicted = rows.filter((r) => !r.manual && r.top === template.id)
+    const decided = predicted.filter((r) => r.review.status !== 'pending')
+    const right = (r: Row) => r.review.status === 'validated' || (r.review.status === 'annotated' && r.review.templateId === template.id)
+    const correct = decided.filter(right)
+    const wrong = decided.filter((r) => !right(r))
+    const missed = rows.filter((r) => !(!r.manual && r.top === template.id) && r.review.status === 'annotated' && r.review.templateId === template.id)
+    const ratio = (a: number, b: number) => (b ? Math.round((a / b) * 10000) / 10000 : null)
+    const mean = (list: Row[]) => (list.length ? Math.round((list.reduce((s, r) => s + r.confidence, 0) / list.length) * 10000) / 10000 : null)
+    const precision = ratio(correct.length, decided.length)
+    const recall = ratio(correct.length, correct.length + missed.length)
+    return {
+      reviewed: decided.length,
+      pending: predicted.length - decided.length,
+      correct: correct.length,
+      wrong: wrong.length,
+      missed: missed.length,
+      precision,
+      recall,
+      f1: precision && recall ? Math.round(((2 * precision * recall) / (precision + recall)) * 10000) / 10000 : null,
+      meanConfidenceCorrect: mean(correct),
+      meanConfidenceWrong: mean(wrong),
+    }
+  }
+  return {
+    pages: { ...quality(pages), exact: null },
+    elements: quality(elements),
+    entities: template.entities.map((e) => ({ id: e.id, name: e.name, ...quality(elements.filter((r) => r.entityId === e.id)) })),
+  }
 }
 
 /** What the backend sends of a use: what it found is for the person who ran it alone. */
@@ -500,9 +556,16 @@ function analysesRoute(user: string, admin: boolean, method: string, parts: stri
     return reply(200, runView(run, user))
   }
   if (parts[4] === 'elements' && parts.length === 5 && method === 'POST') {
-    const { zone, templateId } = body as { zone: { page: number; points: { x: number; y: number }[] }; templateId: string }
+    const { zone, templateId, entityId } = body as {
+      zone: { page: number; points: { x: number; y: number }[] }
+      templateId: string
+      entityId?: string
+    }
     if (!run.detections) return refuse(404, 'Not found')
     if (!analysis.templateIds.includes(templateId)) return refuse(422, 'Choisissez un des modèles de l’analyse.')
+    if (entityId && !templates.find((t) => t.id === templateId)?.entities.some((e) => e.id === entityId)) {
+      return refuse(422, 'Choisissez une entité du modèle.')
+    }
     if (zone.points.length < 3) return refuse(422, 'Zone invalide.')
     const taken = run.detections.map((d) => Number(d.id.match(/^m(\d+)$/)?.[1] ?? 0))
     run.detections = [
@@ -513,6 +576,7 @@ function analysesRoute(user: string, admin: boolean, method: string, parts: stri
         classifications: [{ templateId, confidence: 1 }],
         review: { status: 'annotated', templateId },
         source: 'manual',
+        ...(entityId && { entityId }),
       },
     ]
     return reply(201, runView(run, user))

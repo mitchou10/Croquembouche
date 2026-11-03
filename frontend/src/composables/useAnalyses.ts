@@ -207,7 +207,7 @@ export function useAnalyses() {
    * Adds by hand an element the analysis missed: a zone drawn on the document, annotated with one of the models of the
    * analysis. It is a decision from the start, so it counts as looked at.
    */
-  const addElement = (analysisId: string, runId: string, input: { zone: Zone; templateId: string }) =>
+  const addElement = (analysisId: string, runId: string, input: { zone: Zone; templateId: string; entityId?: string }) =>
     attempt(async () => keepRun(analysisId, await api.postElement(analysisId, runId, input)))
 
   /** Takes away an element that was added by hand. What the analysis found cannot be removed, only rejected. */

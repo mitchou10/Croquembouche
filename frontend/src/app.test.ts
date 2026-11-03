@@ -1055,7 +1055,7 @@ describe('app', () => {
           const { wrapper } = await trial()
           await add(wrapper).trigger('click')
           const panel = wrapper.get('[data-testid="adding"]')
-          expect(panel.findAll('option').map((o) => o.text())).toEqual(['Logo Marianne', 'Filigrane « Copie »'])
+          expect(panel.findAll('#new-element-model option').map((o) => o.text())).toEqual(['Logo Marianne', 'Filigrane « Copie »'])
           expect(panel.get('[data-testid="adding-hint"]').text()).toContain('Dessinez la zone sur le document')
           expect(wrapper.find('[data-testid="add-element"]').exists()).toBe(false) // the button gives way to the panel
           expect(wrapper.find('[data-testid="zoom-level"]').exists()).toBe(true)
@@ -1087,6 +1087,21 @@ describe('app', () => {
           expect(wrapper.get('[data-testid="manual-model"]').text()).toBe('Logo Marianne')
           expect(zones(wrapper).at(-1)!.attributes('points')).toBe('10,10 60,10 60,60')
           expect(wrapper.findAll('[data-testid="entity-label"]').at(-1)!.text()).toBe('✎ Logo Marianne')
+          rect.mockRestore()
+        })
+
+        it('asks which entity of the model it is, if the person knows, and keeps it', async () => {
+          const { wrapper } = await trial()
+          const rect = stubStage()
+          await add(wrapper).trigger('click')
+          const options = wrapper.findAll('[data-testid="new-element-entity"] option').map((o) => o.text())
+          expect(options[0]).toBe('Je ne sais pas')
+          expect(options.length).toBeGreaterThan(1)
+          const entity = useCatalogue().find('t1')!.entities[0]
+          await wrapper.get('[data-testid="new-element-entity"]').setValue(entity.id)
+          await draw(wrapper)
+          const detection = useAnalyses().findRun('a1', useAnalyses().find('a1')!.runs[0].id)!.detections!.at(-1)!
+          expect(detection.entityId).toBe(entity.id)
           rect.mockRestore()
         })
 
@@ -2315,7 +2330,7 @@ describe('app', () => {
     it('shows the entities one at a time', async () => {
       useSession().setUser('dana')
       const { wrapper } = await mountAt('/catalogue/t1')
-      expect(tabs(wrapper)).toEqual(['Entités (2)', 'Suggestions (1)'])
+      expect(tabs(wrapper)).toEqual(['Entités (2)', 'Suggestions (1)', 'Qualité'])
       expect(entityCount(wrapper)).toBe('1 / 2')
       expect(wrapper.findAll('[data-testid="entity"]')).toHaveLength(1)
       expect(wrapper.get('[data-testid="entity"]').text()).toContain('Emblème')
@@ -2324,6 +2339,49 @@ describe('app', () => {
       expect(entityCount(wrapper)).toBe('2 / 2')
       expect(wrapper.get('[data-testid="entity"]').text()).toContain('Devise')
       expect(wrapper.get('[data-testid="entity"]').text()).toContain('Définition')
+    })
+
+    describe('the quality tab', () => {
+      const quality = async () => {
+        useSession().setUser('dana')
+        const page = await mountAt('/catalogue/t1')
+        await page.wrapper.get('[data-testid="quality-tab"]').trigger('click')
+        await flushPromises()
+        return page.wrapper
+      }
+
+      it('says how right the analysis has been on the model: its pages, its elements and each entity', async () => {
+        const wrapper = await quality()
+        expect(wrapper.get('[data-testid="quality-pages"] h3').text()).toBe('Classification des pages')
+        expect(wrapper.get('[data-testid="quality-elements"] h3').text()).toBe('Éléments trouvés')
+        expect(wrapper.findAll('[data-testid="quality-entity"]').map((r) => r.find('th').text())).toEqual(['Emblème', 'Devise'])
+        expect(wrapper.get('[data-testid="quality-pages"] [data-testid="exact"]').exists()).toBe(true)
+      })
+
+      it('learns from what people decide: a prediction validated is one more right', async () => {
+        const correct = (wrapper: Awaited<ReturnType<typeof quality>>) =>
+          Number(wrapper.get('[data-testid="quality-elements"] [data-testid="counts"]').text().match(/^(\d+) juste/)![1])
+        const before = correct(await quality())
+        // alice.martin tries the analysis on a document in which t1 is found, and validates what was found.
+        useSession().setUser('alice.martin')
+        const name = Array.from({ length: 300 }, (_, i) => `essai-${i}.png`).find(
+          (n) => simulateTest({ templateIds: ['t1', 't6'] }, { name: n, size: 1 }).some((d) => d.classifications[0].templateId === 't1'),
+        )!
+        const { startRun, reviewDetection, findRun } = useAnalyses()
+        const run = (await startRun('a1', new File(['x'], name, { type: 'image/png' }), { saveScreenshot: false }))!
+        const found = findRun('a1', run.id)!.detections!.filter((d) => d.classifications[0].templateId === 't1')
+        for (const d of found) await reviewDetection('a1', run.id, d.id, { status: 'validated' })
+        expect(correct(await quality())).toBe(before + found.length)
+      })
+
+      it('says when the figures cannot be loaded', async () => {
+        useSession().setUser('dana')
+        const { wrapper } = await mountAt('/catalogue/t1')
+        vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline')))
+        await wrapper.get('[data-testid="quality-tab"]').trigger('click')
+        await flushPromises()
+        expect(wrapper.get('[data-testid="quality"] [role="alert"]').text()).toContain('n’a pas pu être chargée')
+      })
     })
 
     it('outlines the zone of the entity on show, and only that one', async () => {
