@@ -4,12 +4,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createMemoryHistory, createRouter } from 'vue-router'
 import App from './App.vue'
-import { resetAnalyses, simulatePage, simulateTest, useAnalyses } from './composables/useAnalyses'
+import { loadAnalyses, resetAnalyses, useAnalyses } from './composables/useAnalyses'
+import { simulatePage, simulateTest } from './test/simulate'
 import { resetCatalogue } from './composables/useCatalogue'
-import { loadGroups } from './composables/useGroups'
+import { loadGroups, resetGroups } from './composables/useGroups'
 import { useSession } from './composables/useSession'
 import { requireAuth, routes } from './router'
-import { uploaded } from './test/fakeBackend'
+import { backendAnalysis, uploaded } from './test/fakeBackend'
 
 // Routes load their view on demand, which takes real time rather than just a few microtasks.
 const landsOn = (router: ReturnType<typeof createRouter>, name: string) =>
@@ -34,6 +35,7 @@ describe('app', () => {
     localStorage.clear()
     resetCatalogue()
     resetAnalyses()
+    resetGroups()
     useSession().setUser(null)
   })
 
@@ -363,6 +365,9 @@ describe('app', () => {
     const figures = (wrapper: ReturnType<typeof mount>) =>
       Object.fromEntries(wrapper.findAll('[data-testid="stat"]').map((s) => [s.get('[data-testid="stat-label"]').text(), s.get('[data-testid="stat-value"]').text()]))
     const open = async (id: string, who = 'alice.martin') => {
+      // What the backend tells depends on who asks: the pages ask again for each person.
+      resetAnalyses()
+      resetCatalogue()
       await loadGroups()
       useSession().setUser(who, { isAdmin: who === 'admin' })
       const page = await mountAt(`/analyses/${id}`)
@@ -454,7 +459,7 @@ describe('app', () => {
       const { wrapper } = await open('a3', 'dana')
       expect(wrapper.get('[data-testid="no-access"]').text()).toContain('Vous n’avez pas accès à cette analyse.')
       expect(wrapper.find('h1').exists()).toBe(false)
-      expect(useAnalyses().analyses.value.find((a) => a.id === 'a3')!.views).toBe(9)
+      expect(backendAnalysis('a3').views).toBe(9) // not counted: it was not opened
     })
 
     it('says so for an analysis that does not exist', async () => {
@@ -467,7 +472,7 @@ describe('app', () => {
     it('shows a new analysis as one use, running, and no view yet but its own', async () => {
       useSession().setUser('dana')
       await loadGroups()
-      const created = useAnalyses().createAnalysis({ name: 'À moi', description: 'Pour voir.', templateIds: ['t1'], isPublic: false, shares: [] })
+      const created = await useAnalyses().createAnalysis({ name: 'À moi', description: 'Pour voir.', templateIds: ['t1'], isPublic: false, shares: [] })
       const { wrapper } = await mountAt(`/analyses/${created.id}`)
       await vi.waitFor(() => expect(wrapper.find('h1').exists()).toBe(true))
       expect(figures(wrapper)).toEqual({ Vues: '1', Utilisations: '1', Terminées: '0', 'En cours': '1', 'En erreur': '0' })
@@ -533,7 +538,8 @@ describe('app', () => {
         await send(wrapper, image(name))
         expect(wrapper.get('h2#tester-title').text()).toBe('Document testé')
         expect(wrapper.get('[data-testid="tested-name"]').text()).toBe(name)
-        expect(wrapper.find('.doc-viewer img').attributes('src')).toMatch(/^blob:test-/)
+        // Kept with the use by the backend, which serves the image of its page.
+        expect(wrapper.find('.doc-viewer img').attributes('src')).toMatch(/^\/api\/documents\/[^/]+\/pages\/1$/)
         const found = simulateTest({ templateIds: models }, { name, size: 1 })
         expect(wrapper.findAll('[data-testid="entity-zone"]')).toHaveLength(found.length)
         const labels = wrapper.findAll('[data-testid="entity-label"]').map((l) => l.text())
@@ -612,12 +618,12 @@ describe('app', () => {
         expect(detections(wrapper)).toHaveLength(1)
       })
 
-      it('says what it can of a PDF: the elements, and no capture to show', async () => {
+      it('shows a PDF through the screenshots of its pages, with the elements found', async () => {
         const { wrapper } = await open('a1')
         await sendShow(wrapper, new File(['x'], nameWith(models, 1).replace('.png', '.pdf'), { type: 'application/pdf' }))
         expect(detections(wrapper)).toHaveLength(1)
-        expect(wrapper.find('.doc-viewer').exists()).toBe(false)
-        expect(wrapper.get('[data-testid="no-screenshot"]').text()).toContain('Aucune capture n’a été enregistrée')
+        expect(wrapper.find('.doc-viewer').exists()).toBe(true)
+        expect(wrapper.get('[data-testid="page-number"]').text()).toBe('Page 1 / 3')
       })
 
       it('answers the same for the same document', async () => {
@@ -644,7 +650,7 @@ describe('app', () => {
         useSession().setUser('admin', { isAdmin: true })
         await loadGroups()
         const ids = ['t1', 't2', 't3', 't4', 't5']
-        const many = useAnalyses().createAnalysis({ name: 'Beaucoup', description: '', templateIds: ids, isPublic: true, shares: [] })
+        const many = await useAnalyses().createAnalysis({ name: 'Beaucoup', description: '', templateIds: ids, isPublic: true, shares: [] })
         const { wrapper } = await mountAt(`/analyses/${many.id}`)
         await vi.waitFor(() => expect(wrapper.find('h1').exists()).toBe(true))
         await send(wrapper, image(nameWith(ids, 1)))
@@ -694,10 +700,10 @@ describe('app', () => {
           expect(detections(wrapper)).toHaveLength(1) // the predictions can still be looked at
         })
 
-        it('keeps none of a PDF, even when asked to', async () => {
+        it('keeps the screenshots of the pages of a PDF too', async () => {
           const { wrapper } = await open('a1')
           await send(wrapper, new File(['x'], nameWith(models, 1).replace('.png', '.pdf'), { type: 'application/pdf' }))
-          expect(wrapper.get('[data-testid="file-state"]').text()).toBe('Capture non enregistrée.')
+          expect(wrapper.get('[data-testid="file-state"]').text()).toContain('Capture enregistrée.')
         })
       })
 
@@ -926,11 +932,6 @@ describe('app', () => {
           expect(wrapper.get('[data-testid="cannot-draw"]').text()).toContain('gardez une capture du document')
         })
 
-        it('cannot be done on a PDF, which has no capture', async () => {
-          const { wrapper } = await trial({ file: new File(['x'], nameWith(models, 1).replace('.png', '.pdf'), { type: 'application/pdf' }) })
-          expect(add(wrapper).attributes('disabled')).toBeDefined()
-        })
-
         it('cannot be done once the file is deleted', async () => {
           const { wrapper } = await trial()
           await wrapper.get('[data-testid="file-state"] [data-testid="file-delete"]').trigger('click')
@@ -1105,7 +1106,6 @@ describe('app', () => {
           expect(wrapper.find('.doc-viewer').exists()).toBe(false)
           expect(wrapper.get('[data-testid="no-screenshot"]').text()).toContain('La capture de ce document a été supprimée')
           expect(wrapper.get('[data-testid="file-state"]').text()).toBe('Fichier supprimé.')
-          expect(URL.revokeObjectURL).toHaveBeenCalled()
           expect(wrapper.get('[data-testid="review-state"]').text()).toBe('Prédiction validée') // the decisions stay
           await showElements(wrapper)
           expect(detections(wrapper)).toHaveLength(1)
@@ -1163,7 +1163,7 @@ describe('app', () => {
         await rows(wrapper)[0].get('[data-testid="run-open"]').trigger('click')
         expect(wrapper.get('[role="tab"][aria-selected="true"]').text()).toBe('Page')
         expect(wrapper.get('[data-testid="tested-name"]').text()).toBe('courrier-octobre-1.svg')
-        expect(wrapper.find('.doc-viewer img').attributes('src')).toContain('data:image/svg+xml')
+        expect(wrapper.find('.doc-viewer img').attributes('src')).toBe('/api/documents/seed-shot/pages/1')
         await showElements(wrapper)
         expect(wrapper.get('[data-testid="review-state"]').text()).toBe('Prédiction validée') // the demo's first element
       })
@@ -1226,9 +1226,8 @@ describe('app', () => {
       it('does not show someone else\'s result even when asked for its identifier', async () => {
         const { wrapper } = await open('a5', 'admin')
         const { analyses } = useAnalyses()
-        // Nothing in the page reaches it: the use is selected only through the buttons, which are not offered. And what the
-        // page would show for a selected use is checked against who is signed in.
-        expect(analyses.value.find((a) => a.id === 'a5')!.runs.find((r) => r.id === 'r12')!.detections).toBeDefined()
+        // The backend does not send it, and nothing in the page selects the use: its result is nowhere to be seen.
+        expect(analyses.value.find((a) => a.id === 'a5')!.runs.find((r) => r.id === 'r12')!.detections).toBeUndefined()
         await showRuns(wrapper)
         expect(wrapper.findAll('[data-testid="run-open"]')).toHaveLength(0)
         expect(wrapper.find('[data-testid="detection"]').exists()).toBe(false)
@@ -1293,8 +1292,9 @@ describe('app', () => {
 
     it('says so when nothing is wrong', async () => {
       useSession().setUser('admin', { isAdmin: true })
-      for (const a of useAnalyses().analyses.value) a.status = 'done'
       const { wrapper } = await mountAt('/vue-d-ensemble')
+      for (const a of useAnalyses().analyses.value) a.status = 'done'
+      await flushPromises()
       expect(wrapper.text()).toContain('Rien à signaler')
     })
 
@@ -2135,6 +2135,7 @@ describe('app', () => {
 
   it('creates an analysis from catalogue items and lists it first', async () => {
     useSession().setUser('alice')
+    await loadAnalyses()
     const before = analyses.value.length
     const { wrapper, router } = await mountAt('/analyses/nouvelle')
     await field(wrapper, 'Nom de l’analyse').setValue('Courriers novembre')
@@ -2150,6 +2151,7 @@ describe('app', () => {
 
   it('needs a name and at least one catalogue item', async () => {
     useSession().setUser('alice')
+    await loadAnalyses()
     const before = analyses.value.length
     const { wrapper, router } = await mountAt('/analyses/nouvelle')
     await wrapper.get('form').trigger('submit')
@@ -2264,6 +2266,7 @@ describe('app', () => {
 
     it('creates the analysis with the picks of several searches, in the order of the catalogue', async () => {
       useSession().setUser('alice')
+      await loadAnalyses()
       const before = analyses.value.length
       const { wrapper, router } = await mountAt('/analyses/nouvelle')
       await field(wrapper, 'Nom de l’analyse').setValue('Mélange')
@@ -2287,7 +2290,7 @@ describe('app', () => {
       }
       /** A form with a name and one model, ready to be sent. */
       async function ready() {
-        useSession().setUser('alice')
+        useSession().setUser('chloe.petit') // of the group « Service contentieux »
         const page = await mountAt('/analyses/nouvelle')
         await field(page.wrapper, 'Nom de l’analyse').setValue('Mon analyse')
         await box(page.wrapper, 't1').setValue(true)
@@ -2334,14 +2337,9 @@ describe('app', () => {
         expect(wrapper.get('[data-testid="sharing"]').attributes('title')).toContain('1 personne et 1 groupe')
       })
 
-      it('offers the groups the backend knows', async () => {
+      it('offers the groups of the person, which are the ones the backend gives', async () => {
         const { wrapper } = await ready()
-        expect(wrapper.findAll('.share datalist option').map((o) => o.attributes('value'))).toEqual([
-          'Équipe courriers',
-          'Préfecture de Paris',
-          'Service contentieux',
-          'Direction',
-        ])
+        expect(wrapper.findAll('.share datalist option').map((o) => o.attributes('value'))).toEqual(['Service contentieux'])
       })
 
       it('takes what was typed in the field when the form is sent, without Enter', async () => {

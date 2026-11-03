@@ -1,5 +1,16 @@
-import type { Suggestion, Template, TemplateEntity, TemplateFields } from '../data/mock'
-import { entityTypeSeed, templates as seed } from '../data/mock'
+import type {
+  Analysis,
+  AnalysisRun,
+  Review,
+  ReviewedDetection,
+  Share,
+  Suggestion,
+  Template,
+  TemplateEntity,
+  TemplateFields,
+} from '../data/mock'
+import { analyses as analysisSeed, entityTypeSeed, groupSeed, sampleLetter, templates as seed } from '../data/mock'
+import { simulatePage, simulateTest } from './simulate'
 import { changedFields, cleanCategories, cleanList, MAX_EXAMPLES } from '../composables/useCatalogue'
 import { useSession } from '../composables/useSession'
 
@@ -34,8 +45,37 @@ function seedTemplates(): Stored[] {
   }))
 }
 
+let analyses: Analysis[] = []
+/** An analysis as the backend itself holds it, for the tests to look at what the pages did to it. */
+export const backendAnalysis = (id: string) => analyses.find((a) => a.id === id)!
+
+/**
+ * The demo analyses: the uses that name a document get what the analysis found in it, still to be looked at, except for
+ * one where the first element is already confirmed and the first run keeps a capture of its document.
+ */
+function seedAnalyses(): Analysis[] {
+  const list = structuredClone(analysisSeed)
+  for (const analysis of list) {
+    for (const run of analysis.runs) {
+      if (!run.fileName) continue
+      run.detections = simulateTest(analysis, { name: run.fileName, size: 1 }).map((d) => ({
+        ...d,
+        review: { status: 'pending' as const },
+        source: 'analysis' as const,
+      }))
+      run.page = { classifications: simulatePage(analysis, { name: run.fileName, size: 1 }), review: { status: 'pending' } }
+      run.screenshot = null
+    }
+  }
+  const first = list.find((a) => a.id === 'a1')!.runs[0]
+  first.screenshot = { id: 'seed-shot', name: 'courrier-octobre-1.svg', type: 'image/svg+xml', url: sampleLetter, pages: 1 }
+  if (first.detections?.[0]) first.detections[0].review = { status: 'validated' }
+  return list
+}
+
 export function resetBackend() {
   templates = seedTemplates()
+  analyses = seedAnalyses()
   uploads.clear()
   sequence = 0
 }
@@ -112,6 +152,9 @@ export async function fakeFetch(path: string, init: RequestInit = {}): Promise<A
     uploads.delete(parts[1])
     return reply(204)
   }
+
+  if (parts[0] === 'groups') return reply(200, groupsOf(user))
+  if (parts[0] === 'analyses') return analysesRoute(user, isAdmin.value, method, parts, body, init)
 
   if (parts[0] !== 'templates') return refuse(404, 'Not found')
 
@@ -218,6 +261,176 @@ export async function fakeFetch(path: string, init: RequestInit = {}): Promise<A
     }
     suggestion.status = accept ? 'accepted' : 'rejected'
     return reply(200, template)
+  }
+  return refuse(404, 'Not found')
+}
+
+// ------------------------------------------------------------------------------------------------ analyses
+
+const emailOf = (user: string) => `${user.toLowerCase()}@example.org`
+const groupsOf = (user: string) => groupSeed.filter((g) => g.memberIds.includes(user))
+
+function canOpen(analysis: Analysis, user: string, admin: boolean): boolean {
+  if (admin || analysis.ownerId === user || analysis.isPublic) return true
+  const groups = groupsOf(user).map((g) => g.name)
+  return analysis.shares.some((s) => (s.kind === 'email' ? s.value.toLowerCase() === emailOf(user) : groups.includes(s.value)))
+}
+
+/** What the backend sends of a use: what it found is for the person who ran it alone. */
+function runView(run: AnalysisRun, user: string) {
+  const mine = run.userId === user
+  const { screenshot, detections, page, fileName, fileDecision, ...rest } = run
+  return {
+    ...rest,
+    hasResult: !!fileName,
+    fileName: mine ? (fileName ?? null) : null,
+    detections: mine ? (detections ?? null) : null,
+    page: mine ? (page ?? null) : null,
+    screenshot:
+      mine && screenshot
+        ? { id: screenshot.id ?? 'shot', name: screenshot.name, contentType: screenshot.type, pages: screenshot.pages ?? 1 }
+        : null,
+    fileDecision: mine ? (fileDecision ?? null) : null,
+  }
+}
+
+function analysisView(analysis: Analysis, user: string, admin: boolean) {
+  if (!canOpen(analysis, user, admin)) {
+    return { id: analysis.id, canOpen: false, name: analysis.name, description: '', ownerId: '', ownerName: '', views: 0, runs: [], templateIds: [], isPublic: false, shares: [], date: analysis.date, status: analysis.status, matches: 0 }
+  }
+  const sees = analysis.ownerId === user || admin
+  return { ...analysis, shares: sees ? analysis.shares : [], runs: analysis.runs.map((r) => runView(r, user)) }
+}
+
+const sameShare = (a: Share, b: Share) => a.kind === b.kind && a.value.toLowerCase() === b.value.toLowerCase()
+
+function checkReview(analysis: Analysis, review: Review): string | null {
+  if (review.status === 'annotated' && !(review.templateId && analysis.templateIds.includes(review.templateId))) {
+    return 'Choisissez un des modèles de l’analyse.'
+  }
+  return null
+}
+
+const asReview = (review: Review): Review =>
+  review.status === 'annotated' ? { status: 'annotated', templateId: review.templateId } : { status: review.status }
+
+function analysesRoute(user: string, admin: boolean, method: string, parts: string[], body: unknown, init: RequestInit): Answer {
+  if (parts.length === 1) {
+    if (method === 'GET') return reply(200, analyses.map((a) => analysisView(a, user, admin)))
+    const input = body as { name: string; description: string; templateIds: string[]; isPublic: boolean; shares: Share[] }
+    if (!input.name.trim()) return refuse(422, 'Donnez un nom à l’analyse.')
+    const date = today()
+    const created: Analysis = {
+      id: newId('a'),
+      canOpen: true,
+      name: input.name.trim(),
+      description: input.description.trim(),
+      ownerId: user,
+      ownerName: user,
+      views: 0,
+      runs: [{ id: newId('r'), userId: user, userName: user, hasResult: false, date, status: 'running', matches: 0 }],
+      templateIds: input.templateIds,
+      isPublic: input.isPublic,
+      // A public analysis is for everyone: no recipients to keep.
+      shares: input.isPublic ? [] : input.shares.filter((s, i, all) => all.findIndex((o) => sameShare(o, s)) === i),
+      date,
+      status: 'running',
+      matches: 0,
+    }
+    analyses = [created, ...analyses]
+    return reply(201, analysisView(created, user, admin))
+  }
+
+  const analysis = analyses.find((a) => a.id === parts[1])
+  if (!analysis || !canOpen(analysis, user, admin)) return refuse(404, 'Not found')
+  if (parts.length === 2) return reply(200, analysisView(analysis, user, admin))
+  if (parts[2] === 'views') {
+    analysis.views++
+    return reply(200, { views: analysis.views })
+  }
+  if (parts[2] !== 'runs') return refuse(404, 'Not found')
+
+  if (parts.length === 3) {
+    const file = (init.body as FormData).get('file') as File
+    const keep = (init.body as FormData).get('keepScreenshot') === 'true'
+    if (!['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'application/pdf'].includes(file.type)) {
+      return refuse(422, 'Seuls les images (PNG, JPEG, WebP, GIF) et les PDF sont acceptés.')
+    }
+    const detections: ReviewedDetection[] = simulateTest(analysis, file).map((d) => ({
+      ...d,
+      review: { status: 'pending' as const },
+      source: 'analysis' as const,
+    }))
+    const run: AnalysisRun = {
+      id: newId('r'),
+      userId: user,
+      userName: user,
+      hasResult: true,
+      date: today(),
+      status: 'done',
+      matches: detections.length,
+      fileName: file.name,
+      detections,
+      page: { classifications: simulatePage(analysis, file), review: { status: 'pending' } },
+      screenshot: keep ? { id: newId('d'), name: file.name, type: file.type, url: '', pages: file.type === 'application/pdf' ? 3 : 1 } : null,
+    }
+    analysis.runs = [run, ...analysis.runs]
+    analysis.matches += run.matches
+    return reply(201, runView(run, user))
+  }
+
+  const run = analysis.runs.find((r) => r.id === parts[3])
+  // What a use found is its person's alone, an administrator included.
+  if (!run || run.userId !== user) return refuse(404, 'Not found')
+  if (parts.length === 4) return reply(200, runView(run, user))
+  const detection = run.detections?.find((d) => d.id === parts[5])
+
+  if (parts[4] === 'detections' && parts[6] === 'review') {
+    if (!detection) return refuse(404, 'Not found')
+    const review = body as Review
+    const fault = checkReview(analysis, review)
+    if (fault) return refuse(422, fault)
+    detection.review = asReview(review)
+    return reply(200, runView(run, user))
+  }
+  if (parts[4] === 'page' && parts[5] === 'review') {
+    if (!run.page) return refuse(404, 'Not found')
+    const review = body as Review
+    const fault = checkReview(analysis, review)
+    if (fault) return refuse(422, fault)
+    run.page.review = asReview(review)
+    return reply(200, runView(run, user))
+  }
+  if (parts[4] === 'elements' && parts.length === 5 && method === 'POST') {
+    const { zone, templateId } = body as { zone: { page: number; points: { x: number; y: number }[] }; templateId: string }
+    if (!run.detections) return refuse(404, 'Not found')
+    if (!analysis.templateIds.includes(templateId)) return refuse(422, 'Choisissez un des modèles de l’analyse.')
+    if (zone.points.length < 3) return refuse(422, 'Zone invalide.')
+    const taken = run.detections.map((d) => Number(d.id.match(/^m(\d+)$/)?.[1] ?? 0))
+    run.detections = [
+      ...run.detections,
+      {
+        id: `m${Math.max(0, ...taken) + 1}`,
+        zone,
+        classifications: [{ templateId, confidence: 1 }],
+        review: { status: 'annotated', templateId },
+        source: 'manual',
+      },
+    ]
+    return reply(201, runView(run, user))
+  }
+  if (parts[4] === 'elements' && method === 'DELETE') {
+    if (!detection) return refuse(404, 'Not found')
+    if (detection.source !== 'manual') return refuse(422, 'Ce qu’a trouvé l’analyse ne s’efface pas : refusez-le.')
+    run.detections = run.detections!.filter((d) => d.id !== detection.id)
+    return reply(200, runView(run, user))
+  }
+  if (parts[4] === 'file') {
+    if (!run.screenshot) return refuse(404, 'Not found')
+    const { decision } = body as { decision: 'kept' | 'deleted' }
+    if (decision === 'deleted') run.screenshot = null
+    run.fileDecision = decision
+    return reply(200, runView(run, user))
   }
   return refuse(404, 'Not found')
 }
