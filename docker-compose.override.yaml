@@ -1,0 +1,35 @@
+# Development stack, loaded automatically by `docker compose up` on top of docker-compose.yaml:
+# the sources are mounted into the containers and each service reloads when a file changes.
+#   frontend  http://localhost:8080   (Vite, hot module replacement)
+#   backend   http://localhost:8000   (uvicorn --reload)
+#
+# The first start installs the dependencies into the image: after changing package.json, pyproject.toml or a
+# lockfile, run `docker compose up --build -V` to rebuild and renew the node_modules volume.
+# On macOS and Windows, file events do not cross the mount: set VITE_USE_POLLING=true WATCHFILES_FORCE_POLLING=true.
+# The worker has no reload yet: restart it with `docker compose restart worker-template-matching`.
+services:
+  frontend:
+    build:
+      target: dev
+    ports: !override
+      - "8080:5173"
+    volumes:
+      - ./frontend:/app
+      # The image's own node_modules, kept out of the way of whatever the host has in frontend/node_modules.
+      - /app/node_modules
+    environment:
+      VITE_USE_POLLING: ${VITE_USE_POLLING:-false}
+
+  backend:
+    build:
+      target: dev
+    volumes:
+      - ./backend/app:/app/app
+    environment:
+      WATCHFILES_FORCE_POLLING: ${WATCHFILES_FORCE_POLLING:-false}
+    # The dev image has no HEALTHCHECK of its own, and the frontend waits for this one to be healthy.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/api/health',timeout=5).status==200 else 1)"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
