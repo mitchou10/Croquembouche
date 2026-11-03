@@ -144,6 +144,9 @@ def _carry(
     points = np.float32([[p["x"] * template_width, p["y"] * template_height] for p in zone]).reshape(-1, 1, 2)
     moved = cv2.perspectiveTransform(points, homography).reshape(-1, 2)
     return [
-        {"x": round(min(max(x / target_width, 0.0), 1.0), 4), "y": round(min(max(y / target_height, 0.0), 1.0), 4)}
+        {
+            "x": round(float(min(max(x / target_width, 0.0), 1.0)), 4),
+            "y": round(float(min(max(y / target_height, 0.0), 1.0)), 4),
+        }
         for x, y in moved
     ]
