@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.5.0](https://github.com/mitchou10/Croquembouche/compare/v1.4.0...v1.5.0) (2026-11-03)
+
+
+### Features
+
+* **frontend:** fill the address of the backend into the nginx configuration at start ([54c40f3](https://github.com/mitchou10/Croquembouche/commit/54c40f3ef56b6492fa15eb6c9fac10984d4c5fce))
+* **helm:** add a chart built on the this-is-tobi template for the components and their services ([78c0c24](https://github.com/mitchou10/Croquembouche/commit/78c0c2408330fd4f0d974c8d0064ea77a02f2b8f))
+* **helm:** add the common values of the platform: Harbor, Vault secrets and a CloudNativePG cluster ([05463eb](https://github.com/mitchou10/Croquembouche/commit/05463eb46fd875220a3ff77652bfa26e009068b7))
+* **worker:** put the embedding model in the image at build time, so a pod downloads nothing ([8359f1c](https://github.com/mitchou10/Croquembouche/commit/8359f1c4164f8c3cf845a5f3c8f1bcd68cec9a97))
+
 ## [1.4.0](https://github.com/mitchou10/Croquembouche/compare/v1.3.0...v1.4.0) (2026-11-03)
 
 
