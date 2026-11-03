@@ -5,9 +5,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security.factory import RequestContext, get_current_user
 from app.db import get_db
+from app.repositories.analysis import AnalysisRepository
 from app.repositories.catalogue import CatalogueRepository
+from app.repositories.document import DocumentRepository
 from app.repositories.profile import ProfileRepository
+from app.services.analyses import AnalysisService
 from app.services.catalogue import CatalogueService
+from app.services.matching import Matcher, SimulatedMatcher
 
 
 def display_name(user: RequestContext) -> str | None:
@@ -32,3 +36,15 @@ def get_catalogue(user: CurrentUser, db: Db) -> CatalogueService:
 
 
 Catalogue = Annotated[CatalogueService, Depends(get_catalogue)]
+
+
+def get_matcher() -> Matcher:
+    """What finds things in a document: made up for now, until the template_matching worker does it."""
+    return SimulatedMatcher()
+
+
+def get_analyses(user: CurrentUser, db: Db, matcher: Annotated[Matcher, Depends(get_matcher)]) -> AnalysisService:
+    return AnalysisService(AnalysisRepository(db), DocumentRepository(db), matcher, user)
+
+
+Analyses = Annotated[AnalysisService, Depends(get_analyses)]

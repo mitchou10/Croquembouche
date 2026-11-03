@@ -1,0 +1,59 @@
+import uuid
+
+from sqlalchemy import or_, select, update
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.analysis import Analysis, AnalysisShare
+from app.models.catalogue import Template
+from app.models.document import Document
+
+
+class AnalysisRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def get(self, analysis_id: str) -> Analysis | None:
+        try:
+            return await self._session.get(Analysis, uuid.UUID(analysis_id))
+        except ValueError:
+            return None
+
+    async def accessible(self, user_id: str, share_hashes: list[str], everything: bool) -> list[Analysis]:
+        """The analyses a person can open: their own, the public ones, and those shared with them by e-mail address or
+        by one of their groups (an administrator opens them all). Newest first."""
+        query = select(Analysis).order_by(Analysis.created_at.desc())
+        if not everything:
+            shared = select(AnalysisShare.analysis_id).where(AnalysisShare.value_hash.in_(share_hashes))
+            query = query.where(
+                or_(Analysis.owner_id == user_id, Analysis.is_public.is_(True), Analysis.id.in_(shared))
+            )
+        return list((await self._session.scalars(query)).all())
+
+    async def existing_templates(self, template_ids: list[uuid.UUID]) -> set[uuid.UUID]:
+        return set((await self._session.scalars(select(Template.id).where(Template.id.in_(template_ids)))).all())
+
+    async def count_view(self, analysis: Analysis) -> int:
+        """One more look, counted by the database itself: two at once are two."""
+        views = await self._session.scalar(
+            update(Analysis)
+            .where(Analysis.id == analysis.id)
+            .values(views=Analysis.views + 1)
+            .returning(Analysis.views)
+        )
+        await self._session.commit()
+        return views or 0
+
+    async def document(self, document_id: uuid.UUID) -> Document | None:
+        return await self._session.get(Document, document_id)
+
+    def add(self, entity: object) -> None:
+        self._session.add(entity)
+
+    async def commit(self) -> None:
+        await self._session.commit()
+
+    async def reload(self, analysis: Analysis) -> Analysis:
+        """The analysis read again from the database, with everything it holds: what a commit just changed."""
+        reloaded = await self._session.get(Analysis, analysis.id, populate_existing=True)
+        assert reloaded is not None
+        return reloaded

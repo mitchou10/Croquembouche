@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
-from app.dependencies import Catalogue
+from app.dependencies import Analyses, Catalogue
+from app.schemas.analysis import GroupOut
 from app.schemas.catalogue import EntityTypeOut
 
 router = APIRouter(tags=["Reference"])
@@ -14,3 +15,8 @@ async def entity_types(service: Catalogue) -> list[EntityTypeOut]:
 @router.get("/categories", summary="The categories a model can be tagged with: the usual ones, then those made up")
 async def categories(service: Catalogue) -> list[str]:
     return await service.categories()
+
+
+@router.get("/groups", summary="The groups an analysis can be shared with: the person's own")
+async def groups(service: Analyses) -> list[GroupOut]:
+    return service.groups()

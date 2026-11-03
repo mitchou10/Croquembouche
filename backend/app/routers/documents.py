@@ -12,9 +12,12 @@ router = APIRouter(tags=["Documents"])
 
 
 async def _own(repository: DocumentRepository, document_id: str, user: CurrentUser) -> Document:
-    """A document is its owner's (and an administrator's): anyone else is told it does not exist."""
+    """A document is its owner's (and an administrator's): anyone else is told it does not exist. The screenshots kept
+    with a use of an analysis are what that use found, private to who ran it: an administrator included."""
     document = await repository.get(document_id)
-    if document is None or (document.owner_id != user.user_id and not user.is_admin):
+    if document is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+    if document.owner_id != user.user_id and (not user.is_admin or await repository.is_kept_with_a_use(document)):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
     return document
 
