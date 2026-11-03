@@ -11,13 +11,34 @@ from typing import Protocol
 
 MASK = 0xFFFFFFFF
 
+# A class something can be: a model and, for a classification of a page, the page of that model.
+Key = tuple[str, int | None]
+
+
+@dataclass
+class TemplateRef:
+    """A model an analysis looks for, with how many pages its example document has (1 when it has none)."""
+
+    id: str
+    pages: int = 1
+
 
 @dataclass
 class Classification:
-    """What something could be, and how sure the analysis is (0 to 1). No template is « other »."""
+    """What something could be, and how sure the analysis is (0 to 1). No model is « other ». For a page of the
+    document, `template_page` is the page of the model it looks like (« form X, page 3 »)."""
 
     template_id: str | None
     confidence: float
+    template_page: int | None = None
+
+
+@dataclass
+class PageResult:
+    """What one page of the document could be, the likeliest first."""
+
+    page: int
+    classifications: list[Classification]
 
 
 @dataclass
@@ -29,12 +50,14 @@ class Found:
 
 @dataclass
 class MatchResult:
-    page: list[Classification]
+    """One entry per page of the document, then what was found in them."""
+
+    pages: list[PageResult]
     found: list[Found]
 
 
 class Matcher(Protocol):
-    def match(self, template_ids: list[str], pages: list[bytes]) -> MatchResult: ...
+    def match(self, templates: list[TemplateRef], pages: list[bytes]) -> MatchResult: ...
 
 
 def _random(seed: int) -> Callable[[], float]:
@@ -57,10 +80,10 @@ def _seed(*parts: bytes | str | int) -> int:
     return int.from_bytes(digest[:4], "big")
 
 
-def _classes_for(best: str | None, template_ids: list[str], next_value: Callable[[], float]) -> list[Classification]:
+def _classes_for(best: Key | None, keys: list[Key], next_value: Callable[[], float]) -> list[Classification]:
     """Every class something could be, the likeliest first, adding up to 100 %: the analysis is 62 to 98 % sure of the
-    best answer, and the rest is shared among the other models of the analysis and « other »."""
-    others: list[str | None] = [t for t in template_ids if t != best]
+    best answer, and the rest is shared among the other classes and « other »."""
+    others: list[Key | None] = [k for k in keys if k != best]
     if best is not None:
         others.append(None)
     # With no other class to share the rest with, the only one is certain.
@@ -70,10 +93,12 @@ def _classes_for(best: str | None, template_ids: list[str], next_value: Callable
     shares = [int((100 - top) * w / total) for w in weights]
     if shares:
         shares[0] += 100 - top - sum(shares)  # what rounding left goes to the first
-    classes = [
-        Classification(best, top / 100),
-        *(Classification(t, s / 100) for t, s in zip(others, shares, strict=True)),
-    ]
+
+    def make(key: Key | None, confidence: float) -> Classification:
+        template_id, template_page = key or (None, None)
+        return Classification(template_id, confidence, template_page)
+
+    classes = [make(best, top / 100), *(make(k, s / 100) for k, s in zip(others, shares, strict=True))]
     return sorted(classes, key=lambda c: -c.confidence)
 
 
@@ -91,19 +116,23 @@ def _zone(next_value: Callable[[], float]) -> list[dict[str, float]]:
 
 
 class SimulatedMatcher:
-    def match(self, template_ids: list[str], pages: list[bytes]) -> MatchResult:
-        content = b"".join(pages)
-        first = _random(_seed("page", content))
-        best = template_ids[int(first() * len(template_ids))] if template_ids else None
-        page = _classes_for(best, template_ids, first)
+    def match(self, templates: list[TemplateRef], pages: list[bytes]) -> MatchResult:
+        # Every page of every model is something a page of the document could be.
+        page_keys: list[Key] = [(t.id, number) for t in templates for number in range(1, t.pages + 1)]
+        model_keys: list[Key] = [(t.id, None) for t in templates]
 
+        results: list[PageResult] = []
         found: list[Found] = []
         for number, image in enumerate(pages, start=1):
+            first = _random(_seed("page", image, number))
+            best = page_keys[int(first() * len(page_keys))] if page_keys else None
+            results.append(PageResult(number, _classes_for(best, page_keys, first)))
+
             next_value = _random(_seed(image, number))
-            for template_id in template_ids:
+            for template in templates:
                 for _ in range(int(next_value() * 4)):  # 0 to 3: a model is missing from a page one time in four
                     points = _zone(next_value)
-                    found.append(Found(number, points, _classes_for(template_id, template_ids, next_value)))
+                    found.append(Found(number, points, _classes_for((template.id, None), model_keys, next_value)))
         # In reading order: by page, then top to bottom and left to right.
         found.sort(key=lambda f: (f.page, min(p["y"] for p in f.points), min(p["x"] for p in f.points)))
-        return MatchResult(page=page, found=found)
+        return MatchResult(pages=results, found=found)
