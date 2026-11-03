@@ -9,6 +9,7 @@ import { resetCatalogue } from './composables/useCatalogue'
 import { loadGroups } from './composables/useGroups'
 import { useSession } from './composables/useSession'
 import { requireAuth, routes } from './router'
+import { uploaded } from './test/fakeBackend'
 
 // Routes load their view on demand, which takes real time rather than just a few microtasks.
 const landsOn = (router: ReturnType<typeof createRouter>, name: string) =>
@@ -126,9 +127,11 @@ describe('app', () => {
     const star = wrapper.get('[data-testid="star"]')
     expect(star.text()).toContain('Ajouter aux favoris (0)')
     await star.trigger('click')
+    await flushPromises()
     expect(star.text()).toContain('Retirer des favoris (1)')
     expect(star.attributes('aria-pressed')).toBe('true')
     await star.trigger('click')
+    await flushPromises()
     expect(star.text()).toContain('Ajouter aux favoris (0)')
   })
 
@@ -1326,6 +1329,7 @@ describe('app', () => {
     const input = wrapper.get('input[type="file"]')
     Object.defineProperty(input.element, 'files', { value: [file], configurable: true })
     await input.trigger('change')
+    await flushPromises() // the document is sent to the backend
   }
   const png = () => new File(['x'], 'scan.png', { type: 'image/png' })
   const button = (wrapper: ReturnType<typeof mount>, text: string) =>
@@ -1404,14 +1408,44 @@ describe('app', () => {
     await upload(wrapper, png())
     expect(wrapper.find('#document-error').exists()).toBe(false)
     expect(wrapper.get('[data-testid="document-name"]').text()).toBe('scan.png')
-    expect(wrapper.find('img').attributes('src')).toMatch(/^blob:test-/)
+    // Sent to the backend, which serves the image of its page.
+    expect(wrapper.find('img').attributes('src')).toMatch(/^\/api\/documents\/[^/]+\/pages\/1$/)
+    expect(uploaded()).toHaveLength(1)
 
+    // A PDF is shown through the screenshots of its pages; the image it replaces is deleted from the backend.
     await upload(wrapper, new File(['x'], 'doc.pdf', { type: 'application/pdf' }))
     expect(wrapper.get('[data-testid="document-name"]').text()).toBe('doc.pdf')
-    expect(URL.revokeObjectURL).toHaveBeenCalled() // the replaced image is released
-    // No PDF reader: the document is kept, without a preview.
-    expect(wrapper.find('img').exists()).toBe(false)
-    expect(wrapper.get('[data-testid="no-preview"]').text()).toContain('Aperçu indisponible')
+    expect(uploaded().map((d) => d.name)).toEqual(['doc.pdf'])
+    expect(wrapper.find('img').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="page-number"]').text()).toBe('Page 1 / 3')
+  })
+
+  it('says why the backend refused a document', async () => {
+    useSession().setUser('dana')
+    const { wrapper } = await mountAt('/catalogue/nouveau')
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 422, json: async () => ({ detail: 'Ce PDF est illisible.' }) }))
+    await upload(wrapper, new File(['x'], 'doc.pdf', { type: 'application/pdf' }))
+    expect(wrapper.get('#document-error').text()).toBe('Ce PDF est illisible.')
+    expect(wrapper.find('[data-testid="document-name"]').exists()).toBe(false)
+
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('down')))
+    await upload(wrapper, png())
+    expect(wrapper.get('#document-error').text()).toBe('Le document n’a pas pu être envoyé.')
+  })
+
+  it('looks at the pages of a PDF one at a time', async () => {
+    useSession().setUser('dana')
+    const { wrapper } = await mountAt('/catalogue/nouveau')
+    await upload(wrapper, new File(['x'], 'doc.pdf', { type: 'application/pdf' }))
+    const page = () => wrapper.get('[data-testid="page-number"]').text()
+    expect(wrapper.get('button[title="Page précédente"]').attributes('disabled')).toBeDefined()
+    await wrapper.get('button[title="Page suivante"]').trigger('click')
+    expect(page()).toBe('Page 2 / 3')
+    expect(wrapper.find('img').attributes('src')).toMatch(/\/pages\/2$/)
+    await wrapper.get('button[title="Page suivante"]').trigger('click')
+    expect(wrapper.get('button[title="Page suivante"]').attributes('disabled')).toBeDefined()
+    await wrapper.get('button[title="Page précédente"]').trigger('click')
+    expect(page()).toBe('Page 2 / 3')
   })
 
   it('replaces or removes the document', async () => {
@@ -1420,8 +1454,10 @@ describe('app', () => {
     await upload(wrapper, png())
     expect(button(wrapper, 'Remplacer')).toBeDefined()
     await button(wrapper, 'Retirer le document').trigger('click')
+    await flushPromises()
     expect(wrapper.find('[data-testid="document-name"]').exists()).toBe(false)
     expect(wrapper.find('img').exists()).toBe(false)
+    expect(uploaded()).toHaveLength(0) // taken off the backend too, as nothing keeps it
   })
 
   describe('categories', () => {
@@ -1710,13 +1746,13 @@ describe('app', () => {
     expect(zone().attributes('disabled')).toBeUndefined()
   })
 
-  it('does not offer to draw a zone on a PDF', async () => {
+  it('offers to draw a zone on a PDF, on the page that is shown', async () => {
     useSession().setUser('dana')
     const { wrapper } = await mountAt('/catalogue/nouveau')
     await upload(wrapper, new File(['x'], 'doc.pdf', { type: 'application/pdf' }))
     await addEntity(wrapper)
-    expect(wrapper.get('[data-testid="entity"] input[id$="-zone"]').attributes('disabled')).toBeDefined()
-    expect(wrapper.text()).toContain('Pas encore disponible pour un PDF')
+    expect(wrapper.get('[data-testid="entity"] input[id$="-zone"]').attributes('disabled')).toBeUndefined()
+    expect(wrapper.text()).not.toContain('Pas encore disponible pour un PDF')
   })
 
   describe('drawing a zone on the document', () => {
@@ -2023,12 +2059,14 @@ describe('app', () => {
       expect(star().text()).toContain('2') // bob.durand and chloe.petit
       expect(star().attributes('aria-pressed')).toBe('false')
       await star().trigger('click')
+      await flushPromises()
       expect(star().text()).toContain('3')
       expect(star().attributes('aria-pressed')).toBe('true')
       await byTitle(wrapper, 'Entité suivante').trigger('click') // the other entity is not starred
       expect(wrapper.get('[data-testid="entity-star"]').attributes('aria-pressed')).toBe('false')
       await byTitle(wrapper, 'Entité précédente').trigger('click')
       await star().trigger('click')
+      await flushPromises()
       expect(star().text()).toContain('2')
     })
 
@@ -2048,9 +2086,11 @@ describe('app', () => {
       expect(star().text()).toContain('1') // chloe.petit
       expect(star().attributes('aria-pressed')).toBe('false')
       await star().trigger('click')
+      await flushPromises()
       expect(star().text()).toContain('2')
       expect(star().attributes('aria-pressed')).toBe('true')
       await star().trigger('click')
+      await flushPromises()
       expect(star().text()).toContain('1')
       expect(star().attributes('aria-pressed')).toBe('false')
     })
@@ -2426,6 +2466,17 @@ describe('app', () => {
         await flushPromises()
         await open(wrapper, 't3')
         expect(wrapper.get('[data-testid="preview"] h2').text()).toBe('Signature type')
+      })
+
+      it('shows a star as soon as it is given', async () => {
+        useSession().setUser('dana')
+        const { wrapper } = await mountAt('/analyses/nouvelle')
+        await open(wrapper, 't1')
+        const star = () => wrapper.get('[data-testid="preview"] [data-testid="entity-star"]')
+        expect(star().text()).toContain('2')
+        await star().trigger('click')
+        await flushPromises()
+        expect(star().text()).toContain('3') // the page follows the catalogue, which holds a new object for the model
       })
 
       it('is named for a screen reader by the model it is about', async () => {
