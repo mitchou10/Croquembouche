@@ -25,8 +25,11 @@ async def _let_go(run: Run, repository: DocumentRepository) -> None:
         await documents.delete(repository, document)
 
 
-async def finish(run: Run, result: MatchingResult, documents_repository: DocumentRepository) -> None:
-    """Records how a use that was running went. The caller commits."""
+async def finish(
+    run: Run, result: MatchingResult, documents_repository: DocumentRepository, entities: set[uuid.UUID] | None = None
+) -> None:
+    """Records how a use that was running went. The caller commits. `entities` are the ones of the elements found that
+    still exist: a model edited while the worker was computing may have dropped one."""
     if result.status == "done":
         run.matches = len(result.found)
         run.pages = [RunPage(page=answer.page) for answer in result.pages]
@@ -46,6 +49,7 @@ async def finish(run: Run, result: MatchingResult, documents_repository: Documen
                 zone_points=[{"x": p.x, "y": p.y} for p in f.points],
                 source="analysis",
                 position=position,
+                entity_id=_known(f.entity_id, entities),
                 classifications=[
                     DetectionClassification(template_id=_uuid(c.template_id), confidence=c.confidence)
                     for c in f.classifications
@@ -55,6 +59,10 @@ async def finish(run: Run, result: MatchingResult, documents_repository: Documen
         ]
     run.status = result.status
     await _let_go(run, documents_repository)
+
+
+def _known(entity_id: uuid.UUID | None, entities: set[uuid.UUID] | None) -> uuid.UUID | None:
+    return entity_id if entity_id is not None and entities is not None and entity_id in entities else None
 
 
 def _in_reading_order(result: MatchingResult):
@@ -70,7 +78,8 @@ async def apply(
     run = await repository.get_run(run_id)
     if run is None or run.status != "running":
         return False
-    await finish(run, result, documents_repository)
+    wanted = {f.entity_id for f in result.found if f.entity_id}
+    await finish(run, result, documents_repository, await repository.existing_entities(wanted))
     await repository.commit()
     return True
 

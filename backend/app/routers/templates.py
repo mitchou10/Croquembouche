@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, status
 
-from app.dependencies import Catalogue
+from app.dependencies import Catalogue, Quality
 from app.schemas.catalogue import (
     CommentCreate,
     Decision,
@@ -9,6 +9,7 @@ from app.schemas.catalogue import (
     TemplateOut,
     TemplateUpdate,
 )
+from app.schemas.metrics import TemplateMetrics
 from app.services.catalogue import ConflictError, ForbiddenError, InvalidError, NotFoundError
 
 router = APIRouter(tags=["Catalogue"])
@@ -83,3 +84,8 @@ async def toggle_suggestion_star(template_id: str, suggestion_id: str, service: 
 @router.post("/{template_id}/suggestions/{suggestion_id}/comments", status_code=status.HTTP_201_CREATED)
 async def comment(template_id: str, suggestion_id: str, body: CommentCreate, service: Catalogue) -> TemplateOut:
     return await _run(service.comment(template_id, suggestion_id, body.text))
+
+
+@router.get("/{template_id}/metrics", summary="How right the analysis is on a model, from what people decided")
+async def metrics(template_id: str, service: Quality) -> TemplateMetrics:
+    return await _run(service.of_template(template_id))

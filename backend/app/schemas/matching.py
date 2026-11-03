@@ -1,5 +1,6 @@
 """What the worker hands back for a use: how each page of the document was classified, and the elements found."""
 
+import uuid
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -25,6 +26,7 @@ class FoundClass(BaseModel):
 
 class FoundElement(BaseModel):
     page: int = Field(ge=1)
+    entity_id: uuid.UUID | None = None
     points: list[Point] = Field(min_length=3)
     classifications: list[FoundClass]
 

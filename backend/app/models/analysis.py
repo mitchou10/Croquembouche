@@ -120,6 +120,10 @@ class Detection(UUIDMixin, Base):
     review_template_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("templates.id", ondelete="SET NULL"))
     # Reading order for what the analysis found; what was added by hand comes after.
     position: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    # The entity of the model it is (or was said to be), when known: what the quality of each entity is measured on.
+    entity_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("template_entities.id", ondelete="SET NULL"), index=True
+    )
 
     classifications: Mapped[list["DetectionClassification"]] = relationship(
         order_by="DetectionClassification.confidence.desc()", cascade="all, delete-orphan", lazy="selectin"

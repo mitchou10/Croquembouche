@@ -41,6 +41,8 @@ class Review(CamelModel):
 class ElementCreate(CamelModel):
     zone: Zone
     template_id: str
+    # Which entity of the model it is, when the person knows: what the recall of each entity is measured on.
+    entity_id: str | None = None
 
 
 class FileDecision(CamelModel):
@@ -68,6 +70,7 @@ class DetectionOut(CamelModel):
     classifications: list[ClassificationOut]
     review: ReviewOut
     source: Literal["analysis", "manual"]
+    entity_id: str | None = None
 
 
 class PageOut(CamelModel):

@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.analysis import Analysis, Run
 from app.models.base import utcnow
-from app.models.catalogue import Template
+from app.models.catalogue import Template, TemplateEntity
 from app.models.document import Document
 
 
@@ -26,6 +26,12 @@ class AnalysisRepository:
 
     async def existing_templates(self, template_ids: list[uuid.UUID]) -> set[uuid.UUID]:
         return set((await self._session.scalars(select(Template.id).where(Template.id.in_(template_ids)))).all())
+
+    async def existing_entities(self, entity_ids: set[uuid.UUID]) -> set[uuid.UUID]:
+        if not entity_ids:
+            return set()
+        found = await self._session.scalars(select(TemplateEntity.id).where(TemplateEntity.id.in_(entity_ids)))
+        return set(found.all())
 
     async def count_view(self, analysis: Analysis) -> int:
         """One more look, counted by the database itself: two at once are two."""
