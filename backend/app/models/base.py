@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy import DateTime, LargeBinary, TypeDecorator, func
 from sqlalchemy.dialects.postgresql import UUID
@@ -10,6 +10,12 @@ from app.core import crypto
 
 class Base(DeclarativeBase):
     pass
+
+
+def utcnow() -> datetime:
+    """Set by the application, not by the database: `now()` is the start of the transaction, the same for everything
+    written in it, which would leave newest-first orders to chance."""
+    return datetime.now(UTC)
 
 
 class EncryptedText(TypeDecorator):
@@ -30,7 +36,7 @@ class UUIDMixin:
 
 
 class TimestampMixin:
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+        DateTime(timezone=True), server_default=func.now(), default=utcnow, onupdate=utcnow
     )

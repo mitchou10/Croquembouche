@@ -56,3 +56,7 @@ packages = ["app"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 env_files = ["tests/.env.testing"]
+
+[tool.coverage.run]
+# SQLAlchemy's async layer runs the code in greenlets, and the PDF work in threads: neither is seen otherwise.
+concurrency = ["greenlet", "thread"]
