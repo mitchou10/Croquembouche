@@ -116,6 +116,11 @@ export interface Template extends TemplateFields {
   /** X.Y.Z, kept by the backend: X when the example document changes, Y when what describes the model does, Z when its
    *  entities do. */
   version: string
+  /** The model it is a sub-model of (a sub-model has no sub-model), and its name; null for a root. */
+  parentId: string | null
+  parentName: string | null
+  /** The sub-models of a root, by name. */
+  children: { id: string; name: string; version: string }[]
   document?: TemplateDocument
   /** Who made it, as the backend knows them (the identifier of their account), and their name to show. */
   ownerId: string
@@ -278,7 +283,7 @@ const letterEntities = (): TemplateEntity[] => [
 type RawComment = Omit<Comment, 'authorName'>
 type RawFields = Omit<TemplateFields, 'pages'>
 type RawSuggestion = Omit<Suggestion, 'authorName' | 'comments' | 'fields'> & { comments: RawComment[]; fields: RawFields }
-type RawTemplate = Omit<Template, 'ownerName' | 'suggestions' | 'pages' | 'version'> & { suggestions: RawSuggestion[] }
+type RawTemplate = Omit<Template, 'ownerName' | 'suggestions' | 'pages' | 'version' | 'parentId' | 'parentName' | 'children'> & { suggestions: RawSuggestion[] }
 
 const rawTemplates: RawTemplate[] = [
   {
@@ -416,6 +421,9 @@ const rawTemplates: RawTemplate[] = [
 export const templates: Template[] = rawTemplates.map((t) => ({
   ...t,
   version: '1.0.0',
+  parentId: null,
+  parentName: null,
+  children: [],
   ownerName: t.ownerId,
   // A demo model's document is one image: one page, which is the model itself.
   pages: t.document ? [{ page: 1, name: '', description: '', label: t.name }] : [],

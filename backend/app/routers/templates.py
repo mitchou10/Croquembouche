@@ -38,7 +38,7 @@ async def list_templates(service: Catalogue, q: str = "", mine: bool = False) ->
 
 @router.post("", status_code=status.HTTP_201_CREATED, summary="Make a model; the user becomes its owner")
 async def create(body: TemplateCreate, service: Catalogue) -> TemplateOut:
-    return await _run(service.create(body, body.document_id))
+    return await _run(service.create(body, body.document_id, body.parent_id))
 
 
 @router.get("/{template_id}")
@@ -53,9 +53,13 @@ async def update(template_id: str, body: TemplateUpdate, service: Catalogue) -> 
     return await _run(service.update(template_id, body, document))
 
 
-@router.delete("/{template_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete a model: its owner only")
-async def delete(template_id: str, service: Catalogue) -> None:
-    await _run(service.delete(template_id))
+@router.delete(
+    "/{template_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete a model: its owner only; a model with sub-models says which one is promoted",
+)
+async def delete(template_id: str, service: Catalogue, promote: str | None = None) -> None:
+    await _run(service.delete(template_id, promote))
 
 
 @router.get("/{template_id}/versions", summary="The versions of a model, the newest first")
@@ -71,6 +75,11 @@ async def get_version(template_id: str, version: str, service: Catalogue) -> Tem
 @router.post("/{template_id}/versions/{version}/restore", summary="Go back to a version: its owner only")
 async def restore(template_id: str, version: str, service: Catalogue) -> TemplateOut:
     return await _run(service.restore(template_id, version))
+
+
+@router.post("/{template_id}/promote", summary="Make a sub-model a model of its own: its owner only")
+async def promote(template_id: str, service: Catalogue) -> TemplateOut:
+    return await _run(service.promote(template_id))
 
 
 @router.put("/{template_id}/star", summary="Star a model, or take the star back")

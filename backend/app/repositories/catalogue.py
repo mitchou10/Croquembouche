@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import func, select
+from sqlalchemy import Row, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.analysis import AnalysisTemplate
@@ -38,6 +38,31 @@ class CatalogueRepository:
         query = select(Template).order_by(Template.created_at.desc())
         if owner_id is not None:
             query = query.where(Template.owner_id == owner_id)
+        return list((await self._session.scalars(query)).all())
+
+    async def links_of(self, template_ids: list[uuid.UUID]) -> list[Row]:
+        """Name and version of the sub-models of these models, and of the models these are sub-models of: what a model
+        says of its place in the catalogue, without loading everything each of them holds."""
+        if not template_ids:
+            return []
+        columns = (Template.id, Template.parent_id, Template.name, Template.major, Template.minor, Template.patch)
+        query = (
+            select(*columns)
+            .where(
+                or_(
+                    Template.parent_id.in_(template_ids),
+                    Template.id.in_(select(Template.parent_id).where(Template.id.in_(template_ids))),
+                )
+            )
+            .order_by(Template.name)
+        )
+        return list((await self._session.execute(query)).all())
+
+    async def children_of(self, template_ids: list[uuid.UUID]) -> list[Template]:
+        """The sub-models of these models, by name, whole."""
+        if not template_ids:
+            return []
+        query = select(Template).where(Template.parent_id.in_(template_ids)).order_by(Template.name)
         return list((await self._session.scalars(query)).all())
 
     async def get_template(self, template_id: str) -> Template | None:

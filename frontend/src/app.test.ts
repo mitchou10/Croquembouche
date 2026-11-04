@@ -114,6 +114,101 @@ describe('app', () => {
     await vi.waitFor(() => expect(wrapper.text()).toContain('Tampon préfecture'))
   })
 
+  it('adds a sub-model to a model: listed under it, found by search, with its own version', async () => {
+    useSession().setUser('alice.martin')
+    const { wrapper, router } = await mountAt('/catalogue/t1')
+    expect(wrapper.find('[data-testid="parent-link"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="add-sub-model"]').trigger('click')
+    await vi.waitFor(() => expect(router.currentRoute.value.name).toBe('catalogue-new'))
+    expect(wrapper.get('h1').text()).toBe('Nouveau sous-modèle')
+    expect(wrapper.get('[data-testid="parent-model"]').text()).toContain('Logo Marianne')
+
+    await field(wrapper, 'Nom').setValue('Logo Marianne, version noir et blanc')
+    await field(wrapper, 'Description').setValue('Le même logo en noir et blanc')
+    await wrapper.get('form').trigger('submit')
+    await landsOn(router, 'catalogue-detail')
+    await vi.waitFor(() => expect(wrapper.get('h1').text()).toBe('Logo Marianne, version noir et blanc'))
+    expect(wrapper.get('[data-testid="parent-link"]').text()).toContain('Sous-modèle de Logo Marianne')
+    expect(wrapper.find('[data-testid="add-sub-model"]').exists()).toBe(false) // one level only
+    expect(wrapper.get('[data-testid="template-version"]').text()).toBe('v1.0.0')
+
+    // The model lists it; the catalogue shows the models, and the sub-model when it is searched for.
+    await router.push('/catalogue/t1')
+    await vi.waitFor(() => expect(wrapper.get('[data-testid="sub-model-link"]').text()).toContain('noir et blanc'))
+    await router.push('/catalogue')
+    await vi.waitFor(() => expect(wrapper.get('[data-testid="children-tag"]').text()).toBe('1 sous-modèle'))
+    expect(wrapper.text()).not.toContain('noir et blanc')
+    await wrapper.get('input[type="search"]').setValue('noir et blanc')
+    expect(wrapper.get('[data-testid="sub-model-tag"]').text()).toBe('Sous-modèle de Logo Marianne')
+  })
+
+  it('does not delete a model with sub-models before one of them is chosen to take its place', async () => {
+    useSession().setUser('dana')
+    const { wrapper, router } = await mountAt('/catalogue/nouveau')
+    await field(wrapper, 'Nom').setValue('Racine')
+    await field(wrapper, 'Description').setValue('Le modèle racine')
+    await wrapper.get('form').trigger('submit')
+    await landsOn(router, 'catalogue-detail')
+    const rootId = String(router.currentRoute.value.params.id)
+    for (const name of ['Annexe A', 'Annexe B']) {
+      await router.push({ name: 'catalogue-new', query: { parent: rootId } })
+      await field(wrapper, 'Nom').setValue(name)
+      await field(wrapper, 'Description').setValue(`${name} du formulaire`)
+      await wrapper.get('form').trigger('submit')
+      await landsOn(router, 'catalogue-detail')
+    }
+    await router.push(`/catalogue/${rootId}`)
+    await vi.waitFor(() => expect(wrapper.findAll('[data-testid="sub-model-link"]')).toHaveLength(2))
+
+    await wrapper.get('[data-testid="delete"]').trigger('click')
+    // It asks which one: every sub-model is offered, and nothing goes before one is chosen.
+    const options = wrapper.findAll('[data-testid="promote-select"] option')
+    expect(options.map((o) => o.text())).toEqual(['Annexe A', 'Annexe B'])
+    await wrapper.get('[data-testid="promote-select"]').setValue(options[1].element.value)
+    await wrapper.get('[data-testid="promote-confirm"]').trigger('click')
+
+    await vi.waitFor(() => expect(router.currentRoute.value.name).toBe('catalogue'))
+    await vi.waitFor(() => expect(useCatalogue().find(rootId)).toBeUndefined())
+    const [first, second] = useCatalogue()
+      .templates.value.filter((t) => t.name.startsWith('Annexe'))
+      .sort((x, y) => x.name.localeCompare(y.name))
+    expect(second.parentId).toBeNull() // « Annexe B » took its place
+    expect(first.parentId).toBe(second.id) // and « Annexe A » is under it
+    expect(second.children.map((c) => c.name)).toEqual(['Annexe A'])
+  })
+
+  it('promotes a sub-model to a model of its own, which its model stops listing', async () => {
+    useSession().setUser('alice.martin')
+    const { wrapper, router } = await mountAt('/catalogue/nouveau')
+    await field(wrapper, 'Nom').setValue('Racine P')
+    await field(wrapper, 'Description').setValue('Le modèle racine')
+    await wrapper.get('form').trigger('submit')
+    await landsOn(router, 'catalogue-detail')
+    const rootId = String(router.currentRoute.value.params.id)
+    expect(wrapper.find('[data-testid="parent-link"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Promouvoir en modèle') // a root has nothing to be promoted from
+
+    await router.push({ name: 'catalogue-new', query: { parent: rootId } })
+    await field(wrapper, 'Nom').setValue('Annexe P')
+    await field(wrapper, 'Description').setValue('Une annexe')
+    await wrapper.get('form').trigger('submit')
+    await landsOn(router, 'catalogue-detail')
+    await vi.waitFor(() => expect(wrapper.get('[data-testid="parent-link"]').text()).toContain('Racine P'))
+
+    await wrapper.get('[data-testid="delete"]').trigger('click') // « Promouvoir en modèle » (the first of the two buttons)
+    await wrapper.get('[data-testid="confirm-yes"]').trigger('click')
+
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="parent-link"]').exists()).toBe(false))
+    expect(useCatalogue().find(rootId)?.children).toEqual([])
+    expect(wrapper.find('[data-testid="add-sub-model"]').exists()).toBe(true) // a root again: it can have sub-models
+  })
+
+  it('does not offer a sub-model to someone who does not own the model', async () => {
+    useSession().setUser('dana')
+    const { wrapper } = await mountAt('/catalogue/t1')
+    expect(wrapper.find('[data-testid="add-sub-model"]').exists()).toBe(false)
+  })
+
   it('validates the template form', async () => {
     useSession().setUser('dana')
     const { wrapper, router } = await mountAt('/catalogue/nouveau')

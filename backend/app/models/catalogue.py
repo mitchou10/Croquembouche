@@ -35,6 +35,9 @@ class Template(UUIDMixin, TimestampMixin, Base):
     name: Mapped[str] = mapped_column(String(200))
     description: Mapped[str] = mapped_column(Text, default="")
     document_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("documents.id", ondelete="SET NULL"))
+    # A sub-model points to the model it is under; a root has none. One level only: a sub-model has no sub-model (kept
+    # by the service). A sub-model is a model like any other, with its own entities, document and version.
+    parent_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("templates.id"), index=True)
     # X.Y.Z: X goes up when the example document changes, Y when what describes the model does (name, description,
     # categories, notes of pages), Z when its entities do. Each bump keeps a snapshot (see `TemplateVersion`).
     major: Mapped[int] = mapped_column(Integer, default=1, server_default="1")

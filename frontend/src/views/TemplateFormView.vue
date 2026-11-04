@@ -15,14 +15,17 @@ const route = useRoute()
 const router = useRouter()
 const { find, isOwner, create, update, suggest, knownCategories } = useCatalogue()
 
+// A new model can be a sub-model of another: « Ajouter un sous-modèle » on the page of a model brings its id here.
+const parent = route.name === 'catalogue-new' && typeof route.query.parent === 'string' ? find(route.query.parent) : undefined
+
 const existing = route.name === 'catalogue-new' ? undefined : find(String(route.params.id))
 const missing = route.name !== 'catalogue-new' && !existing
 const mode = computed<'create' | 'edit' | 'suggest'>(() =>
   !existing ? 'create' : isOwner(existing) ? 'edit' : 'suggest',
 )
 
-const titles = { create: 'Nouveau modèle', edit: 'Modifier le modèle', suggest: 'Suggérer une modification' }
-const submitLabels = { create: 'Créer le modèle', edit: 'Enregistrer', suggest: 'Envoyer la suggestion' }
+const titles = { create: parent ? 'Nouveau sous-modèle' : 'Nouveau modèle', edit: 'Modifier le modèle', suggest: 'Suggérer une modification' }
+const submitLabels = { create: parent ? 'Créer le sous-modèle' : 'Créer le modèle', edit: 'Enregistrer', suggest: 'Envoyer la suggestion' }
 
 const name = ref(existing?.name ?? '')
 const description = ref(existing?.description ?? '')
@@ -199,7 +202,7 @@ async function submit() {
 
   try {
     if (mode.value === 'create') {
-      const created = await create(fields, currentDocument.value ?? undefined)
+      const created = await create(fields, currentDocument.value ?? undefined, parent?.id)
       committed = true
       await router.push({ name: 'catalogue-detail', params: { id: created.id } })
       return
@@ -233,6 +236,7 @@ async function submit() {
     <TemplateLayout>
       <template #header>
         <h1 class="template-form__title fr-h5 fr-mb-0">{{ titles[mode] }}</h1>
+        <p v-if="parent" class="fr-mb-0" data-testid="parent-model">Sous-modèle de <strong>{{ parent.name }}</strong></p>
         <!-- What is wrong, on the title's line: it takes no height of its own. -->
         <p v-if="errors.form" class="template-form__alert fr-error-text fr-mb-0" role="alert">{{ errors.form }}</p>
         <p v-if="toComplete.length" class="template-form__alert fr-error-text fr-mb-0" role="alert" data-testid="missing">

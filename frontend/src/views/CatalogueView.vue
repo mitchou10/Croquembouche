@@ -38,7 +38,14 @@ const results = computed(() => filter(query.value, mine.value))
       </template>
       <template #item="{ item: template }">
         <ListTile :title="template.name" :description="template.description" :to="{ name: 'catalogue-detail', params: { id: template.id } }">
-          <template v-if="template.categories.length" #tags>
+          <template v-if="template.categories.length || template.parentId || template.children.length" #tags>
+            <DsfrTag v-if="template.parentId" :label="`Sous-modèle de ${template.parentName}`" small data-testid="sub-model-tag" />
+            <DsfrTag
+              v-if="template.children.length"
+              :label="`${template.children.length} sous-modèle${template.children.length > 1 ? 's' : ''}`"
+              small
+              data-testid="children-tag"
+            />
             <DsfrTag v-for="category in template.categories" :key="category" :label="category" small />
           </template>
           <template #foot>

@@ -202,10 +202,11 @@ export function useCatalogue() {
   /** Models matching a search, and only the signed-in user's own when `mine` is set. */
   function filter(query: string, mine = false): Template[] {
     const q = query.trim().toLowerCase()
+    // The sub-models show under their model (on its page); they are listed on their own when one is searched for.
     return templates.value.filter(
       (t) =>
         (!mine || isOwner(t)) &&
-        (!q || [t.name, t.description, ...t.categories].some((field) => field.toLowerCase().includes(q))),
+        (q ? [t.name, t.description, ...t.categories].some((field) => field.toLowerCase().includes(q)) : t.parentId === null),
     )
   }
 
@@ -221,19 +222,44 @@ export function useCatalogue() {
   // suggest) throw an `ApiError` saying why; the small actions say whether they went through, and `actionError` why not.
 
   /** The signed-in user becomes the owner. Newest first. */
-  const create = async (fields: TemplateFields, document?: TemplateDocument) =>
-    keep(await api.postTemplate(toBody(fields, document?.id ?? undefined)))
+  const create = async (fields: TemplateFields, document?: TemplateDocument, parentId?: string) => {
+    const created = keep(await api.postTemplate({ ...toBody(fields, document?.id ?? undefined), ...(parentId && { parentId }) }))
+    // The parent lists it from now on.
+    if (created.parentId) updateChildren(created.parentId, (children) => [...children, { id: created.id, name: created.name, version: created.version }])
+    return created
+  }
 
-  /** Only the owner deletes a model, and not one an analysis looks for: `actionError` says why when it is refused. */
-  const remove = (id: string) =>
+  /** Changes the list of sub-models a model shows, without asking the backend again. */
+  function updateChildren(id: string, change: (children: Template['children']) => Template['children']) {
+    templates.value = templates.value.map((t) => (t.id === id ? { ...t, children: change(t.children) } : t))
+  }
+
+  /** Only the owner deletes a model, and not one an analysis looks for. A model with sub-models says which one is
+   *  promoted to take its place (it becomes a root and the others go under it): `actionError` says why when it is refused. */
+  const remove = (id: string, promote?: string) =>
     attempt(async () => {
-      await api.deleteTemplate(id)
+      await api.deleteTemplate(id, promote)
+      const parentId = find(id)?.parentId
       templates.value = templates.value.filter((t) => t.id !== id)
+      if (parentId) updateChildren(parentId, (children) => children.filter((c) => c.id !== id))
+      // A model with sub-models gave its place to one of them, which took the others under it: ask what it is now.
+      if (promote) {
+        loading = null
+        await loadCatalogue()
+      }
     })
 
   /** Goes back to a version of the model: the owner only; `actionError` says why when it is refused. */
   const restoreVersion = (id: string, version: string) =>
     attempt(async () => keep(await api.restoreVersion(id, version)))
+
+  /** The owner of a sub-model makes it a model of its own; its former model stops listing it. */
+  const promote = (id: string) =>
+    attempt(async () => {
+      const parentId = find(id)?.parentId
+      keep(await api.promoteTemplate(id))
+      if (parentId) updateChildren(parentId, (children) => children.filter((c) => c.id !== id))
+    })
 
   const toggleStar = (id: string) => attempt(async () => keep(await api.putTemplateStar(id)))
 
@@ -277,6 +303,7 @@ export function useCatalogue() {
     create,
     remove,
     toggleStar,
+    promote,
     restoreVersion,
     toggleEntityStar,
     toggleSuggestionStar,

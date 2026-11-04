@@ -24,6 +24,11 @@ class AnalysisRepository:
         """Every analysis, newest first: the ones a person cannot open are listed too, named and no more."""
         return list((await self._session.scalars(select(Analysis).order_by(Analysis.created_at.desc()))).all())
 
+    async def children_of(self, template_ids: list[uuid.UUID]) -> list[Template]:
+        """The sub-models of these models, whole: an analysis looks for them as it looks for their model."""
+        query = select(Template).where(Template.parent_id.in_(template_ids)).order_by(Template.name)
+        return list((await self._session.scalars(query)).all())
+
     async def template_versions(self, template_ids: list[uuid.UUID]) -> dict[str, str]:
         """The version (X.Y.Z) each of these models is at now, by id."""
         query = select(Template).where(Template.id.in_(template_ids))

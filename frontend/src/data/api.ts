@@ -70,6 +70,8 @@ export interface TemplateBody {
   }[]
   /** Absent keeps the document; null removes it. */
   documentId?: string | null
+  /** When making a model: the one it is a sub-model of. Ignored by a change: where a model stands does not change. */
+  parentId?: string
 }
 
 interface DocumentAnswer {
@@ -108,7 +110,8 @@ export const fetchAllQuality = () => request<QualityOverview>('GET', '/api/metri
 export const postTemplate = (body: TemplateBody) => call('POST', base, body)
 export const putTemplate = (id: string, body: TemplateBody) => call('PUT', `${base}/${id}`, body)
 /** Deletes a model: its owner only, and not one an analysis looks for. */
-export const deleteTemplate = (id: string) => request<void>('DELETE', `${base}/${id}`)
+export const deleteTemplate = (id: string, promote?: string) =>
+  request<void>('DELETE', `${base}/${id}${promote ? `?promote=${encodeURIComponent(promote)}` : ''}`)
 /** The versions of a model, the newest first. */
 export const fetchVersions = async (id: string): Promise<TemplateVersion[]> =>
   (await request<(Omit<TemplateVersion, 'document'> & { document: DocumentAnswer | null })[]>('GET', `${base}/${id}/versions`)).map(
@@ -116,6 +119,8 @@ export const fetchVersions = async (id: string): Promise<TemplateVersion[]> =>
   )
 /** Goes back to a version: its owner only. It makes a new version. */
 export const restoreVersion = (id: string, version: string) => call('POST', `${base}/${id}/versions/${version}/restore`)
+/** Makes a sub-model a model of its own: its owner only. */
+export const promoteTemplate = (id: string) => call('POST', `${base}/${id}/promote`)
 export const putTemplateStar = (id: string) => call('PUT', `${base}/${id}/star`)
 export const putEntityStar = (id: string, entityId: string) => call('PUT', `${base}/${id}/entities/${entityId}/star`)
 export const postSuggestion = (id: string, fields: TemplateBody, message: string) =>

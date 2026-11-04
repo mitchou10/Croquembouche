@@ -42,6 +42,7 @@ const {
   keepScreenshot,
   actionError,
   remove: removeAnalysis,
+  searchedIds,
 } = useAnalyses()
 const { userId } = useSession()
 const { find: findTemplate, pageLabel } = useCatalogue()
@@ -185,10 +186,12 @@ const NO_MODEL = 'Autre, non reconnu'
 /** What a class is called: a model, a page of a model (« Formulaire X · page 3 »), or « other ». */
 const nameOf = (templateId: string | null, templatePage?: number | null) =>
   templateId === null ? NO_MODEL : pageLabel(templateId, templatePage)
-const models = computed(() => (analysis.value?.templateIds ?? []).map((id) => ({ id, name: nameOf(id) })))
+// The models the analysis looks for: its own and their sub-models.
+const searched = computed(() => (analysis.value ? searchedIds(analysis.value) : []))
+const models = computed(() => searched.value.map((id) => ({ id, name: nameOf(id) })))
 // What a page of the document can be annotated with: the pages of the models that have several, else the model.
 const pageModels = computed(() =>
-  (analysis.value?.templateIds ?? []).flatMap((id) => {
+  searched.value.flatMap((id) => {
     const pages = findTemplate(id)?.pages ?? []
     return pages.length > 1 ? pages.map((p) => ({ id, name: p.label, page: p.page })) : [{ id, name: nameOf(id) }]
   }),
@@ -391,7 +394,7 @@ const sharing = computed(() => {
           <p class="side__summary fr-mb-0" data-testid="test-summary">
             <template v-if="detections.length">
               <strong>{{ detections.length }} élément{{ detections.length > 1 ? 's' : '' }}</strong>
-              · {{ foundModels }} modèle{{ foundModels > 1 ? 's' : '' }} sur {{ analysis.templateIds.length }}
+              · {{ foundModels }} modèle{{ foundModels > 1 ? 's' : '' }} sur {{ searched.length }}
             </template>
             <strong v-else data-testid="nothing-found">Aucun élément trouvé dans ce document.</strong>
             · <span data-testid="progress">{{ progress.reviewed }} / {{ progress.total }} vérifiée{{ progress.reviewed > 1 ? 's' : '' }}</span>
