@@ -59,6 +59,15 @@ describe('DocumentViewer fit', () => {
   })
 })
 
+const triangle = {
+  page: 1,
+  points: [
+    { x: 0.2, y: 0.2 },
+    { x: 0.6, y: 0.2 },
+    { x: 0.4, y: 0.6 },
+  ],
+}
+
 describe('DocumentViewer rectangle editing', () => {
   const rectZone = {
     page: 1,
@@ -116,9 +125,74 @@ describe('DocumentViewer rectangle editing', () => {
     expect(wrapper.emitted('remove')).toEqual([['e1']])
   })
 
-  it('leaves a polygon alone', () => {
-    const polygon = { page: 1, points: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 0, y: 1 }] }
-    const wrapper = mount(DocumentViewer, { props: { ...props, entities: [{ ...entities[0], zone: polygon }] as never } })
+  it('shows no rectangle handles on a polygon', () => {
+    const wrapper = mount(DocumentViewer, { props: { ...props, entities: [{ ...entities[0], zone: triangle }] as never } })
     expect(wrapper.find('[data-testid="rect-edit"]').exists()).toBe(false)
+  })
+})
+
+describe('DocumentViewer polygon editing', () => {
+  const entities = [{ id: 'p1', name: 'Zone', definition: '', type: 'text', examples: [], zone: triangle }]
+  const props = { document, entities: entities as never, highlightId: 'p1', editable: true }
+
+  async function fire(wrapper: ReturnType<typeof mount>, selector: string, type: string, x = 0, y = 0, index = 0) {
+    wrapper.findAll(selector)[index].element.dispatchEvent(new MouseEvent(type, { bubbles: true, clientX: x, clientY: y }))
+    await wrapper.vm.$nextTick()
+  }
+  function stageOf(wrapper: ReturnType<typeof mount>) {
+    wrapper.get('[data-testid="document-stage"]').element.getBoundingClientRect = () =>
+      ({ left: 0, top: 0, width: 100, height: 100, right: 100, bottom: 100 }) as DOMRect
+  }
+  const lastPoints = (wrapper: ReturnType<typeof mount>) =>
+    (wrapper.emitted('update')!.at(-1)! as [string, { points: { x: number; y: number }[] }])[1].points
+
+  it('shows a handle on each point and on each edge, only when editable', () => {
+    const wrapper = mount(DocumentViewer, { props })
+    expect(wrapper.findAll('[data-testid="poly-vertex"]')).toHaveLength(3)
+    expect(wrapper.findAll('[data-testid="poly-midpoint"]')).toHaveLength(3)
+    expect(mount(DocumentViewer, { props: { ...props, editable: false } }).find('[data-testid="poly-edit"]').exists()).toBe(false)
+  })
+
+  it('moves a point', async () => {
+    const wrapper = mount(DocumentViewer, { props })
+    stageOf(wrapper)
+    await fire(wrapper, '[data-testid="poly-vertex"]', 'pointerdown', 60, 20, 1)
+    await fire(wrapper, '[data-testid="document-viewport"]', 'pointermove', 80, 30)
+    expect(lastPoints(wrapper)[1]).toEqual({ x: 0.8, y: 0.3 })
+    expect(lastPoints(wrapper)[0]).toEqual({ x: 0.2, y: 0.2 })
+  })
+
+  it('moves the whole polygon', async () => {
+    const wrapper = mount(DocumentViewer, { props })
+    stageOf(wrapper)
+    await fire(wrapper, '[data-testid="entity-zone"]', 'pointerdown', 40, 30)
+    await fire(wrapper, '[data-testid="document-viewport"]', 'pointermove', 50, 30)
+    expect(lastPoints(wrapper).map((p) => Math.round(p.x * 100))).toEqual([30, 70, 50])
+  })
+
+  it('adds a point by pulling the middle of an edge', async () => {
+    const wrapper = mount(DocumentViewer, { props })
+    stageOf(wrapper)
+    await fire(wrapper, '[data-testid="poly-midpoint"]', 'pointerdown', 40, 20, 0)
+    expect(lastPoints(wrapper)).toHaveLength(4)
+    await fire(wrapper, '[data-testid="document-viewport"]', 'pointermove', 40, 5)
+    expect(lastPoints(wrapper)[1]).toEqual({ x: 0.4, y: 0.05 })
+  })
+
+  it('removes a point on double click, but not below three', async () => {
+    const square = { page: 1, points: [...triangle.points, { x: 0.1, y: 0.5 }] }
+    const wrapper = mount(DocumentViewer, { props: { ...props, entities: [{ ...entities[0], zone: square }] as never } })
+    await fire(wrapper, '[data-testid="poly-vertex"]', 'dblclick', 0, 0, 3)
+    expect(lastPoints(wrapper)).toHaveLength(3)
+
+    const tri = mount(DocumentViewer, { props })
+    await fire(tri, '[data-testid="poly-vertex"]', 'dblclick', 0, 0, 0)
+    expect(lastPoints(tri)).toHaveLength(3) // unchanged
+  })
+
+  it('asks to remove the zone on Delete', async () => {
+    const wrapper = mount(DocumentViewer, { props })
+    await wrapper.get('[data-testid="poly-edit"]').trigger('keydown', { key: 'Delete' })
+    expect(wrapper.emitted('remove')).toEqual([['p1']])
   })
 })
