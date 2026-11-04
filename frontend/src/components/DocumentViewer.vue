@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { canPreview } from '../composables/useCatalogue'
 import { pageUrl } from '../data/api'
+import { type Handle, pointsOf, type Rect, rectOf, resizeRect } from '../composables/zoneRect'
 import type { Point, TemplateDocument, TemplateEntity, Zone } from '../data/mock'
 
 const props = defineProps<{
@@ -11,10 +12,12 @@ const props = defineProps<{
   highlightId?: string
   /** When true, clicks on the image place the points of a zone, which is emitted once closed. */
   drawing?: boolean
+  /** When true, the rectangle of the entity on show can be moved, resized (emitted as it goes) and deleted. */
+  editable?: boolean
   /** When true, the image is shown whole inside the space its parent gives it (no scrolling), keeping its ratio. */
   fit?: boolean
 }>()
-const emit = defineEmits<{ draw: [zone: Zone]; cancel: [] }>()
+const emit = defineEmits<{ draw: [zone: Zone]; cancel: []; update: [id: string, zone: Zone]; remove: [id: string] }>()
 
 const MIN_ZOOM = 1
 const MAX_ZOOM = 8
@@ -144,11 +147,59 @@ const shapes = computed(() =>
         // The name as it is typed (the zone follows the form); a number until there is one.
         label: entity.name.trim() || `Entité ${index + 1}`,
         highlighted: entity.id === props.highlightId,
+        rect: rectOf(points),
         polygon: points.map((p) => `${p.x * 100},${p.y * 100}`).join(' '),
         labelStyle: { left: `${corner.x * 100}%`, top: `${corner.y * 100}%` },
       }
     }),
 )
+
+// ---------------------------------------------------------------- editing a rectangle
+const HANDLES: Handle[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w']
+
+/** The rectangle that can be edited: the one of the entity on show, when nothing is being drawn. */
+const editing = computed(() => {
+  if (!props.editable || props.drawing) return null
+  const shape = shapes.value.find((s) => s.highlighted && s.rect)
+  if (!shape) return null
+  const r = shape.rect!
+  return {
+    id: shape.id,
+    label: shape.label,
+    style: {
+      left: `${r.x0 * 100}%`,
+      top: `${r.y0 * 100}%`,
+      width: `${(r.x1 - r.x0) * 100}%`,
+      height: `${(r.y1 - r.y0) * 100}%`,
+    },
+  }
+})
+
+let grab: { id: string; handle: Handle; from: Point; start: Rect } | null = null
+
+function onGrab(event: PointerEvent, handle: Handle) {
+  const shape = shapes.value.find((s) => s.id === editing.value?.id)
+  if (!shape?.rect || event.button !== 0) return
+  event.stopPropagation() // not the pan of the stage
+  event.preventDefault()
+  ;(event.currentTarget as HTMLElement).closest<HTMLElement>('.doc-viewer__edit')?.focus()
+  viewport.value!.setPointerCapture?.(event.pointerId)
+  grab = { id: shape.id, handle, from: toPoint(event), start: shape.rect }
+}
+
+function onGrabMove(event: PointerEvent) {
+  if (!grab) return false
+  const here = toPoint(event)
+  const next = resizeRect(grab.start, grab.handle, here.x - grab.from.x, here.y - grab.from.y)
+  emit('update', grab.id, { page: page.value, points: pointsOf(next) })
+  return true
+}
+
+function onEditKey(event: KeyboardEvent) {
+  if (!editing.value || (event.key !== 'Delete' && event.key !== 'Backspace')) return
+  event.preventDefault()
+  emit('remove', editing.value.id)
+}
 
 // ---------------------------------------------------------------- drawing
 type Tool = 'polygon' | 'rectangle'
@@ -202,6 +253,7 @@ function onPointerDown(event: PointerEvent) {
 }
 
 function onPointerMove(event: PointerEvent) {
+  if (onGrabMove(event)) return
   const vp = viewport.value!
   if (press?.pan) {
     vp.scrollLeft = press.scrollLeft - (event.clientX - press.x)
@@ -215,6 +267,7 @@ function onPointerMove(event: PointerEvent) {
 }
 
 function onPointerUp(event: PointerEvent) {
+  grab = null
   const current = press
   press = null
   if (!current || current.pan || !props.drawing) return
@@ -373,7 +426,7 @@ const hint = computed(() =>
         @wheel="onWheel"
         @pointermove="onPointerMove"
         @pointerup="onPointerUp"
-        @pointercancel="press = null"
+        @pointercancel="((press = null), (grab = null))"
       >
         <div
           ref="stage"
@@ -396,6 +449,27 @@ const hint = computed(() =>
             />
             <polyline v-if="draftLine" :points="draftLine" class="doc-viewer__draft" />
           </svg>
+
+          <div
+            v-if="editing"
+            class="doc-viewer__edit"
+            :style="editing.style"
+            tabindex="0"
+            role="group"
+            :aria-label="`Zone de ${editing.label} : Suppr pour la supprimer`"
+            data-testid="rect-edit"
+            @pointerdown="onGrab($event, 'move')"
+            @keydown="onEditKey"
+          >
+            <span
+              v-for="handle in HANDLES"
+              :key="handle"
+              class="doc-viewer__handle"
+              :class="`doc-viewer__handle--${handle}`"
+              :data-testid="`rect-handle-${handle}`"
+              @pointerdown="onGrab($event, handle)"
+            />
+          </div>
 
           <span
             v-for="shape in shapes"
@@ -537,6 +611,72 @@ const hint = computed(() =>
   border: 2px dashed var(--border-plain-error);
   background: rgb(206 5 0 / 10%);
   pointer-events: none;
+}
+
+.doc-viewer__edit {
+  position: absolute;
+  cursor: move;
+  outline: none;
+}
+
+.doc-viewer__edit:focus-visible {
+  outline: 2px solid var(--border-active-blue-france);
+  outline-offset: 2px;
+}
+
+/* Fixed size whatever the zoom, like the vertices. */
+.doc-viewer__handle {
+  position: absolute;
+  width: 0.75rem;
+  height: 0.75rem;
+  border: 2px solid #fff;
+  background: var(--background-action-high-blue-france);
+  transform: translate(-50%, -50%);
+}
+
+.doc-viewer__handle--nw,
+.doc-viewer__handle--n,
+.doc-viewer__handle--ne {
+  top: 0;
+}
+.doc-viewer__handle--sw,
+.doc-viewer__handle--s,
+.doc-viewer__handle--se {
+  top: 100%;
+}
+.doc-viewer__handle--e,
+.doc-viewer__handle--w {
+  top: 50%;
+}
+.doc-viewer__handle--nw,
+.doc-viewer__handle--w,
+.doc-viewer__handle--sw {
+  left: 0;
+}
+.doc-viewer__handle--n,
+.doc-viewer__handle--s {
+  left: 50%;
+}
+.doc-viewer__handle--ne,
+.doc-viewer__handle--e,
+.doc-viewer__handle--se {
+  left: 100%;
+}
+.doc-viewer__handle--nw,
+.doc-viewer__handle--se {
+  cursor: nwse-resize;
+}
+.doc-viewer__handle--ne,
+.doc-viewer__handle--sw {
+  cursor: nesw-resize;
+}
+.doc-viewer__handle--n,
+.doc-viewer__handle--s {
+  cursor: ns-resize;
+}
+.doc-viewer__handle--e,
+.doc-viewer__handle--w {
+  cursor: ew-resize;
 }
 
 .doc-viewer__label {

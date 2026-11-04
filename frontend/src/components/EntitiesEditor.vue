@@ -173,6 +173,15 @@ defineExpose({ validate, incomplete })
           <button v-else type="button" class="fr-btn fr-btn--sm fr-btn--secondary" @click="drawingId = entity.id">
             {{ entity.zone ? 'Redessiner' : 'Dessiner la zone' }}
           </button>
+          <button
+            v-if="entity.zone && drawingId !== entity.id"
+            type="button"
+            class="fr-btn fr-btn--sm fr-btn--tertiary"
+            data-testid="delete-zone"
+            @click="delete entity.zone"
+          >
+            Supprimer la zone
+          </button>
         </div>
       </div>
       <p v-if="inZoneMode && entityErrors.zone" class="fr-error-text fr-mb-0" role="alert">{{ entityErrors.zone }}</p>
