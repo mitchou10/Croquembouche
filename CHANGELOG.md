@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.0](https://github.com/mitchou10/Croquembouche/compare/v1.7.0...v1.8.0) (2026-11-04)
+
+
+### Features
+
+* **templates:** move, add, remove the points of a polygon already drawn ([7fc937a](https://github.com/mitchou10/Croquembouche/commit/7fc937a868c89b1c11a6b03915a012143f948a3d)), closes [#39](https://github.com/mitchou10/Croquembouche/issues/39)
+
 ## [1.7.0](https://github.com/mitchou10/Croquembouche/compare/v1.6.2...v1.7.0) (2026-11-04)
 
 
