@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.9.0](https://github.com/mitchou10/Croquembouche/compare/v1.8.0...v1.9.0) (2026-11-04)
+
+
+### Features
+
+* **templates:** history of versions in the interface, and search in every X ([eb2e988](https://github.com/mitchou10/Croquembouche/commit/eb2e98816189eb9ad1e8da7fde4118a845ebbc36)), closes [#40](https://github.com/mitchou10/Croquembouche/issues/40)
+* **templates:** version the models X.Y.Z, with a snapshot of each version ([51e1943](https://github.com/mitchou10/Croquembouche/commit/51e1943ed18581e5cc09a4c64c8c2bd77c614534)), closes [#40](https://github.com/mitchou10/Croquembouche/issues/40)
+
 ## [1.8.0](https://github.com/mitchou10/Croquembouche/compare/v1.7.0...v1.8.0) (2026-11-04)
 
 
