@@ -11,6 +11,7 @@ from app.models.catalogue import (
     TemplateEntity,
     TemplatePage,
     TemplateStar,
+    TemplateVersion,
 )
 from app.repositories.catalogue import CatalogueRepository
 from app.repositories.document import DocumentRepository
@@ -22,6 +23,8 @@ from app.schemas.catalogue import (
     TemplateFields,
     TemplateOut,
     TemplatePageOut,
+    TemplateVersionDetail,
+    TemplateVersionOut,
 )
 from app.services import documents
 
@@ -136,6 +139,19 @@ def index_message(template: Template) -> dict | None:
     }
 
 
+def bump_for(before: dict, before_document: uuid.UUID | None, after: dict, after_document: uuid.UUID | None):
+    """The part of the version that goes up for a change, the biggest one when there are several: X for the example
+    document, Y for what describes the model (name, description, categories, notes of pages), Z for its entities.
+    None when nothing changed."""
+    if before_document != after_document:
+        return "major"
+    if any(before[key] != after[key] for key in ("name", "description", "categories", "pages")):
+        return "minor"
+    if before["entities"] != after["entities"]:
+        return "patch"
+    return None
+
+
 def changed(template: Template, fields: dict) -> bool:
     return _template_fields_dict(template) != fields
 
@@ -197,9 +213,13 @@ class CatalogueService:
     # --- writing a template
 
     async def create(self, fields: TemplateFields, document_id: str | None) -> TemplateOut:
-        template = Template(owner_id=self._user.user_id, name="", description="")
+        template = Template(
+            id=uuid.uuid4(), owner_id=self._user.user_id, name="", description="", major=1, minor=0, patch=0
+        )
         await self._apply(template, fields, document_id, replace_document=True)
         self._repository.add(template)
+        await self._repository.flush()  # the model comes first: its first version points to it
+        self._repository.add(self._snapshot(template))  # 1.0.0
         await self._repository.commit()
         return await self._saved(template, reindex=True)
 
@@ -208,9 +228,88 @@ class CatalogueService:
         template = await self._template(template_id)
         if not self._is_owner(template):
             raise ForbiddenError("Seul le propriétaire modifie le modèle.")
-        await self._apply(template, fields, document[1], replace_document=document[0])
+        await self._change(template, fields, document[1], replace_document=document[0])
         await self._repository.commit()
         return await self._saved(template, reindex=True)
+
+    async def _change(
+        self, template: Template, fields: TemplateFields, document_id: str | None, replace_document: bool
+    ):
+        """Applies the fields, and when that changes the model, goes up a version and keeps it as it became."""
+        before, before_document = _template_fields_dict(template), template.document_id
+        await self._apply(template, fields, document_id, replace_document=replace_document)
+        self._bump(template, before, before_document)
+
+    def _bump(self, template: Template, before: dict, before_document: uuid.UUID | None) -> None:
+        part = bump_for(before, before_document, _template_fields_dict(template), template.document_id)
+        if part is None:
+            return
+        if part == "major":
+            template.major, template.minor, template.patch = template.major + 1, 0, 0
+        elif part == "minor":
+            template.minor, template.patch = template.minor + 1, 0
+        else:
+            template.patch += 1
+        self._repository.add(self._snapshot(template))
+
+    def _snapshot(self, template: Template) -> TemplateVersion:
+        return TemplateVersion(
+            template_id=template.id,
+            major=template.major,
+            minor=template.minor,
+            patch=template.patch,
+            snapshot=_template_fields_dict(template),
+            document_id=template.document_id,
+            author_id=self._user.user_id,
+        )
+
+    # --- versions
+
+    async def versions(self, template_id: str) -> list[TemplateVersionOut]:
+        template = await self._template(template_id)
+        return [self._version_out(v) for v in await self._repository.list_versions(template.id)]
+
+    async def get_version(self, template_id: str, version: str) -> TemplateVersionDetail:
+        found = await self._version(await self._template(template_id), version)
+        return TemplateVersionDetail(
+            **self._version_out(found).model_dump(), fields=TemplateFields.model_validate(found.snapshot)
+        )
+
+    async def restore(self, template_id: str, version: str) -> TemplateOut:
+        """Goes back to a version: the model takes that version's fields and document, which is a change like any other
+        (it makes a new version, history stays as it was). Its owner only."""
+        template = await self._template(template_id)
+        if not self._is_owner(template):
+            raise ForbiddenError("Seul le propriétaire modifie le modèle.")
+        found = await self._version(template, version)
+        before, before_document = _template_fields_dict(template), template.document_id
+        # The document was a valid one when that version was saved: no need to check whose it is again.
+        template.document_id = found.document_id
+        await self._apply(template, TemplateFields.model_validate(found.snapshot), None, replace_document=False)
+        self._bump(template, before, before_document)
+        await self._repository.commit()
+        return await self._saved(template, reindex=True)
+
+    async def _version(self, template: Template, version: str) -> TemplateVersion:
+        found = await self._repository.get_version(template.id, version)
+        if found is None:
+            raise NotFoundError(version)
+        return found
+
+    @staticmethod
+    def _version_out(version: TemplateVersion) -> TemplateVersionOut:
+        document = version.document
+        return TemplateVersionOut(
+            version=version.version,
+            date=version.created_at.date(),
+            author_id=version.author_id,
+            author_name=_display_name(version.author),
+            document=None
+            if document is None
+            else DocumentOut(
+                id=str(document.id), name=document.name, content_type=document.content_type, pages=document.pages
+            ),
+        )
 
     async def delete(self, template_id: str) -> None:
         """Only the owner deletes a model; one an analysis looks for stays, or that analysis would look for nothing. Its
@@ -222,13 +321,18 @@ class CatalogueService:
         if used:
             plural = "s" if used > 1 else ""
             raise ConflictError(f"Ce modèle est utilisé par {used} analyse{plural} : supprimez-la{plural} d’abord.")
-        document = template.document
+        # The documents of every version go too, except those another model still has.
+        kept = {d.id: d for d in [template.document] if d is not None}
+        for version in await self._repository.list_versions(template.id):
+            if version.document is not None:
+                kept[version.document.id] = version.document
         template_id = str(template.id)
         await self._repository.delete(template)
         await self._repository.commit()
         self._indexer.remove(template_id)
-        if document is not None and not await self._repository.count_templates_with(document.id):
-            await documents.delete(self._documents, document)
+        for document in kept.values():
+            if not await self._repository.count_templates_with(document.id):
+                await documents.delete(self._documents, document)
 
     async def _apply(self, template: Template, fields: TemplateFields, document_id: str | None, replace_document: bool):
         cleaned = _fields_dict(fields)
@@ -341,7 +445,7 @@ class CatalogueService:
             raise InvalidError("Cette suggestion a déjà reçu une réponse.")
         if accept:
             fields = TemplateFields.model_validate(suggestion.fields)
-            await self._apply(template, fields, None, replace_document=False)
+            await self._change(template, fields, None, replace_document=False)
         suggestion.status = "accepted" if accept else "rejected"
         await self._repository.commit()
         # What was proposed is the model now: the worker sees it.
@@ -406,6 +510,7 @@ class CatalogueService:
             id=str(template.id),
             owner_id=template.owner_id,
             owner_name=_display_name(template.owner),
+            version=template.version,
             name=template.name,
             description=template.description,
             categories=[c.name for c in template.categories],

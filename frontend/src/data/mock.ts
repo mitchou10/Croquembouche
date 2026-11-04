@@ -113,6 +113,9 @@ export interface Suggestion {
 
 export interface Template extends TemplateFields {
   id: string
+  /** X.Y.Z, kept by the backend: X when the example document changes, Y when what describes the model does, Z when its
+   *  entities do. */
+  version: string
   document?: TemplateDocument
   /** Who made it, as the backend knows them (the identifier of their account), and their name to show. */
   ownerId: string
@@ -263,7 +266,7 @@ const letterEntities = (): TemplateEntity[] => [
 type RawComment = Omit<Comment, 'authorName'>
 type RawFields = Omit<TemplateFields, 'pages'>
 type RawSuggestion = Omit<Suggestion, 'authorName' | 'comments' | 'fields'> & { comments: RawComment[]; fields: RawFields }
-type RawTemplate = Omit<Template, 'ownerName' | 'suggestions' | 'pages'> & { suggestions: RawSuggestion[] }
+type RawTemplate = Omit<Template, 'ownerName' | 'suggestions' | 'pages' | 'version'> & { suggestions: RawSuggestion[] }
 
 const rawTemplates: RawTemplate[] = [
   {
@@ -400,6 +403,7 @@ const rawTemplates: RawTemplate[] = [
 // In the demo the name of everyone is their identifier.
 export const templates: Template[] = rawTemplates.map((t) => ({
   ...t,
+  version: '1.0.0',
   ownerName: t.ownerId,
   // A demo model's document is one image: one page, which is the model itself.
   pages: t.document ? [{ page: 1, name: '', description: '', label: t.name }] : [],

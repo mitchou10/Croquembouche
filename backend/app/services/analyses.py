@@ -174,7 +174,14 @@ class AnalysisService:
             # A public analysis is for everyone: no recipients to keep.
             shares=[] if body.is_public else self._shares(body.shares),
             # It starts with its first use, running, with nothing found yet.
-            runs=[Run(user_id=self._user.user_id, status="running", matches=0)],
+            runs=[
+                Run(
+                    user_id=self._user.user_id,
+                    status="running",
+                    matches=0,
+                    template_versions=await self._repository.template_versions(list(wanted)),
+                )
+            ],
         )
         self._repository.add(analysis)
         await self._repository.commit()
@@ -216,6 +223,8 @@ class AnalysisService:
             file_name=file_name[:255],
             matching_document_id=saved.id,
             keep_screenshot=keep_screenshot,
+            # The model is searched as it is now: the use says in which version.
+            template_versions={str(m.template_id): m.template.version for m in analysis.models},
         )
         analysis.runs.insert(0, run)
         await self._repository.commit()
@@ -369,6 +378,7 @@ class AnalysisService:
             date=run.created_at.date(),
             status=run.status,  # type: ignore[arg-type]
             matches=run.matches,
+            template_versions=run.template_versions or {},
             has_result=run.file_name is not None,
             file_name=run.file_name if mine else None,
             detections=[

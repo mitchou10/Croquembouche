@@ -202,6 +202,7 @@ export async function fakeFetch(path: string, init: RequestInit = {}): Promise<A
     const fields = clean(body as Body)
     const created: Stored = {
       id: newId('t'),
+      version: '1.0.0',
       ownerId: user,
       ownerName: user,
       stars: [],

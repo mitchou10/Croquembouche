@@ -24,6 +24,11 @@ class AnalysisRepository:
         """Every analysis, newest first: the ones a person cannot open are listed too, named and no more."""
         return list((await self._session.scalars(select(Analysis).order_by(Analysis.created_at.desc()))).all())
 
+    async def template_versions(self, template_ids: list[uuid.UUID]) -> dict[str, str]:
+        """The version (X.Y.Z) each of these models is at now, by id."""
+        query = select(Template).where(Template.id.in_(template_ids))
+        return {str(t.id): t.version for t in (await self._session.scalars(query)).all()}
+
     async def existing_templates(self, template_ids: list[uuid.UUID]) -> set[uuid.UUID]:
         return set((await self._session.scalars(select(Template.id).where(Template.id.in_(template_ids)))).all())
 

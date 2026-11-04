@@ -116,8 +116,25 @@ class TemplatePageOut(PageFields):
     label: str
 
 
+class TemplateVersionOut(CamelModel):
+    """A version of a model, X.Y.Z, as it was saved."""
+
+    version: str
+    date: date
+    author_id: str
+    author_name: str
+    document: DocumentOut | None = None
+
+
+class TemplateVersionDetail(TemplateVersionOut):
+    """A version with everything the model was then."""
+
+    fields: TemplateFields
+
+
 class TemplateOut(CamelModel):
     id: str
+    version: str
     owner_id: str
     owner_name: str
     name: str
