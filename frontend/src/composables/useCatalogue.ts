@@ -231,6 +231,10 @@ export function useCatalogue() {
       templates.value = templates.value.filter((t) => t.id !== id)
     })
 
+  /** Goes back to a version of the model: the owner only; `actionError` says why when it is refused. */
+  const restoreVersion = (id: string, version: string) =>
+    attempt(async () => keep(await api.restoreVersion(id, version)))
+
   const toggleStar = (id: string) => attempt(async () => keep(await api.putTemplateStar(id)))
 
   /** Anyone signed in can star an entity, as a model: it says which ones are worth looking for. */
@@ -273,6 +277,7 @@ export function useCatalogue() {
     create,
     remove,
     toggleStar,
+    restoreVersion,
     toggleEntityStar,
     toggleSuggestionStar,
     addComment,

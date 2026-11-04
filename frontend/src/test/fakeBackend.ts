@@ -34,6 +34,16 @@ interface Stored extends Omit<Template, 'document'> {
 
 let templates: Stored[] = []
 
+/** The versions each model has had, newest first: only the ones a test looked at or went back to. */
+const history = new Map<string, unknown[]>()
+const versionOf = (template: Stored) => ({
+  version: template.version,
+  date: '2026-11-04',
+  authorId: template.ownerId,
+  authorName: template.ownerId,
+  document: template.document ?? null,
+})
+
 /** How many pages the document of a model has: 0 when it has none. */
 const pagesOfDocument = (template: Stored) => template.document?.pages ?? 0
 const labelOf = (name: string, total: number, page: number, given = '') =>
@@ -95,6 +105,7 @@ export function resetBackend() {
   templates = seedTemplates()
   analyses = seedAnalyses()
   uploads.clear()
+  history.clear()
   sequence = 0
 }
 resetBackend()
@@ -226,6 +237,21 @@ export async function fakeFetch(path: string, init: RequestInit = {}): Promise<A
 
   if (parts.length === 2 && method === 'GET') return reply(200, template)
   if (parts.length === 3 && parts[2] === 'metrics' && method === 'GET') return reply(200, qualityOf(template))
+  if (parts[2] === 'versions') {
+    // The history starts with the version the model is at; going back adds a new one on top.
+    const kept = (history.get(template.id) ?? [versionOf(template)]) as ReturnType<typeof versionOf>[]
+    history.set(template.id, kept)
+    if (parts.length === 3 && method === 'GET') return reply(200, kept)
+    if (parts.length === 5 && parts[4] === 'restore' && method === 'POST') {
+      if (!owner) return refuse(403, 'Seul le propriétaire modifie le modèle.')
+      if (!kept.some((v) => v.version === parts[3])) return refuse(404, 'Not found')
+      const [major, minor] = template.version.split('.').map(Number)
+      template.version = `${major}.${minor + 1}.0`
+      history.set(template.id, [versionOf(template), ...kept])
+      return reply(200, template)
+    }
+    return refuse(404, 'Not found')
+  }
   if (parts.length === 2 && method === 'DELETE') {
     if (!owner) return refuse(403, 'Seul le propriétaire supprime le modèle.')
     const used = analyses.filter((a) => a.templateIds.includes(template.id)).length

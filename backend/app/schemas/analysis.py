@@ -55,6 +55,8 @@ class ClassificationOut(CamelModel):
 
     template_id: str | None
     template_page: int | None = None
+    # The version (X.Y.Z) of the model the page looks like: the page above is a page of that version.
+    template_version: str | None = None
     confidence: float
 
 

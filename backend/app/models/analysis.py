@@ -108,6 +108,8 @@ class PageClassification(UUIDMixin, Base):
     page: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
     template_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("templates.id", ondelete="CASCADE"))
     template_page: Mapped[int | None] = mapped_column(Integer)
+    # The version (X.Y.Z) of the model that was matched: its page is a page of that version.
+    template_version: Mapped[str | None] = mapped_column(String(32))
     confidence: Mapped[float] = mapped_column(Float)
 
 

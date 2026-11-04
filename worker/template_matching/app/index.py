@@ -2,8 +2,10 @@
 each entity drawn on it (the crop of its zone). The backend says what a model is made of; this keeps the vector store
 in step.
 
-A point has a fixed identifier made from what it is (a page, an entity of a model), so indexing a model again replaces
-its points instead of adding to them, and what the model no longer has (a page, an entity) is removed."""
+A point has a fixed identifier made from what it is (a page, an entity of a model, in a version X of it), so indexing a
+model again replaces its points instead of adding to them, and what the model no longer has (a page, an entity) is
+removed. A model is indexed in every X it has had (X is its example document, so each X is another image to recognise):
+saving it again in the same X replaces that X, a new X adds to the others."""
 
 import io
 import uuid
@@ -25,9 +27,9 @@ BATCH = 32
 _NAMESPACE = uuid.UUID("6b1f0c5e-3d1e-4c70-9a43-0f5c9f2a7e10")
 
 
-def point_id(kind: str, template_id: str, ref: str | int, rotation: int = 0) -> str:
-    """The same page or entity of the same model, turned the same way, always has the same identifier."""
-    return str(uuid.uuid5(_NAMESPACE, f"{kind}:{template_id}:{ref}:{rotation}"))
+def point_id(kind: str, template_id: str, ref: str | int, rotation: int = 0, major: int = 1) -> str:
+    """The same page or entity of the same model in the same X, turned the same way, always has the same identifier."""
+    return str(uuid.uuid5(_NAMESPACE, f"{kind}:{template_id}:{major}:{ref}:{rotation}"))
 
 
 def turned(image: Image.Image, rotation: int) -> Image.Image:
@@ -90,11 +92,13 @@ class TemplateIndex:
         self._ready = True
 
     def index(self, template: dict) -> dict[str, int]:
-        """Brings the index of a model up to date with what it is now: `template` is `{template_id, document_id,
-        pages: [{page, key, name, description}], entities: [{id, name, page, points}]}`. Returns how many pages and
-        entities there are, and how many vectors (each is indexed turned four ways)."""
+        """Brings the index of a model up to date with what it is in its X: `template` is `{template_id, major, version,
+        document_id, pages: [{page, key, name, description}], entities: [{id, name, page, points}]}`. The other X of the
+        model are left alone. Returns how many pages and entities there are, and how many vectors (each is indexed
+        turned four ways)."""
         self.ensure_collection()
         template_id = template["template_id"]
+        major = template.get("major", 1)
         images: dict[int, Image.Image] = {}
         for page in template["pages"]:
             images[page["page"]] = Image.open(io.BytesIO(self._read(page["key"]))).convert("RGB")
@@ -127,7 +131,7 @@ class TemplateIndex:
             for rotation in ROTATIONS:
                 seen = turned(image, rotation)
                 details = {**payload, "rotation": rotation, "width": seen.width, "height": seen.height}
-                wanted.append((point_id(kind, template_id, ref, rotation), seen, details))
+                wanted.append((point_id(kind, template_id, ref, rotation, major), seen, details))
 
         for batch in _batches(wanted, BATCH):
             vectors = self._embedder.embed([image for _, image, _ in batch])
@@ -140,6 +144,8 @@ class TemplateIndex:
                         payload={
                             **payload,
                             "template_id": template_id,
+                            "major": major,
+                            "version": template.get("version"),
                             "document_id": template["document_id"],
                             "model": self._embedder.name,
                         },
@@ -147,12 +153,17 @@ class TemplateIndex:
                     for (identifier, _, payload), vector in zip(batch, vectors, strict=True)
                 ],
             )
-        # What the model no longer has (a page taken away with its document, an entity deleted) leaves the index.
+        # What the model no longer has in this X (a page taken away, an entity deleted) leaves the index; so does what
+        # was indexed before the X was kept (no `major`): it is this X, indexed again.
         self._client.delete(
             self._collection,
             points_selector=models.FilterSelector(
                 filter=models.Filter(
                     must=[models.FieldCondition(key="template_id", match=models.MatchValue(value=template_id))],
+                    should=[
+                        models.FieldCondition(key="major", match=models.MatchValue(value=major)),
+                        models.IsEmptyCondition(is_empty=models.PayloadField(key="major")),
+                    ],
                     must_not=[models.HasIdCondition(has_id=[identifier for identifier, _, _ in wanted])],
                 )
             ),

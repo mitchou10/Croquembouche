@@ -33,7 +33,9 @@ const hidden = computed(() => props.detection.classifications.length - shown.val
     <p class="fr-text--sm fr-mb-0">Classes possibles, de la plus à la moins probable :</p>
     <ul class="classes">
       <li v-for="(c, index) in shown" :key="`${c.templateId ?? 'other'}#${c.templatePage ?? 0}`" class="classes__row" :class="{ 'classes__row--best': index === 0 }" data-testid="classification">
-        <span class="classes__name" :title="nameOf(c.templateId, c.templatePage)">{{ nameOf(c.templateId, c.templatePage) }}</span>
+        <span class="classes__name" :title="nameOf(c.templateId, c.templatePage)">
+          {{ nameOf(c.templateId, c.templatePage) }}<template v-if="c.templateVersion"> · v{{ c.templateVersion }}</template>
+        </span>
         <span
           class="classes__bar"
           role="meter"

@@ -133,10 +133,38 @@ def test_with_no_model_every_page_is_other(classifier):
     assert result == [
         {
             "page": 1,
-            "classifications": [{"template_id": None, "template_page": None, "confidence": 1.0, "rotation": None}],
+            "classifications": [
+                {"template_id": None, "template_page": None, "confidence": 1.0, "rotation": None, "major": None}
+            ],
         }
     ]
 
 
 def test_a_document_with_no_page_has_no_classification(classifier):
     assert classifier.classify(["t1"], []) == []
+
+
+def test_a_model_is_looked_for_in_every_x_it_has_and_the_x_that_matched_is_said(client):
+    # The model t3 has had two example documents: a red one (X = 1), then a blue one (X = 2).
+    store = {"t3/a": png("red"), "t3/b": png("blue")}
+    index = TemplateIndex(client, ColourEmbedder(), store.__getitem__, COLLECTION)
+    for major, key in ((1, "t3/a"), (2, "t3/b")):
+        index.index(
+            {
+                "template_id": "t3",
+                "major": major,
+                "version": f"{major}.0.0",
+                "document_id": f"d{major}",
+                "pages": [{"page": 1, "key": key, "name": "", "description": ""}],
+                "entities": [],
+            }
+        )
+    classifier = PageClassifier(client, ColourEmbedder(), COLLECTION)
+
+    red, blue = classifier.classify(["t3"], [png("red"), png("blue")])
+
+    assert (red["classifications"][0]["template_id"], red["classifications"][0]["major"]) == ("t3", 1)
+    assert (blue["classifications"][0]["template_id"], blue["classifications"][0]["major"]) == ("t3", 2)
+    # One class for the model page, not one for each X: the confidences still add up to 1.
+    assert len([c for c in red["classifications"] if c["template_id"] == "t3"]) == 1
+    assert sum(c["confidence"] for c in red["classifications"]) == pytest.approx(1)

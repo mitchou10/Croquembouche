@@ -38,6 +38,7 @@ async def finish(
                 page=answer.page,
                 template_id=_uuid(c.template_id),
                 template_page=c.template_page,
+                template_version=c.template_version,
                 confidence=c.confidence,
             )
             for answer in result.pages

@@ -33,19 +33,22 @@ def match_document(
     read: Callable[[str], bytes],
     message: dict,
 ) -> dict:
-    """`message` is `{run_id, templates: [{template_id, pages: [{page, key}], entities: [{id, page, points}]}],
-    page_keys}`. Returns `{status, pages, found}`: what each page could be, and the elements found in them. A page whose
+    """`message` is `{run_id, templates: [{template_id, major, version, pages: [{page, key}], entities: [{id, page,
+    points}]}], page_keys}`: a model comes once for each X it has (the last version of it). Returns `{status, pages,
+    found}`: what each page could be (and in which version of the model), and the elements found in them. A page whose
     zones cannot be carried over is classified all the same: it loses its elements, not the other pages."""
-    templates = {t["template_id"]: t for t in message["templates"] if t.get("pages")}
+    variants = {(t["template_id"], t.get("major", 1)): t for t in message["templates"] if t.get("pages")}
     pages = [read(key) for key in message["page_keys"]]
-    classified = classifier.classify(list(templates), pages)
+    classified = classifier.classify(list(dict.fromkeys(template_id for template_id, _ in variants)), pages)
 
     found: list[dict] = []
     for result in classified:
         top = result["classifications"][0]
         if top["template_id"] is None:
             continue
-        template = templates[top["template_id"]]
+        template = variants.get((top["template_id"], top.get("major", 1)))
+        if template is None:  # indexed in an X this use does not know: nothing to carry over
+            continue
         entities = _zones(template, top["template_page"])
         if not entities:
             continue
@@ -70,6 +73,7 @@ def match_document(
                     {
                         "template_id": c["template_id"],
                         "template_page": c["template_page"],
+                        "template_version": (variants.get((c["template_id"], c.get("major", 1))) or {}).get("version"),
                         "confidence": c["confidence"],
                     }
                     for c in r["classifications"]

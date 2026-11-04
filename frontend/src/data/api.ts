@@ -12,6 +12,7 @@ import type {
   Template,
   TemplateDocument,
   TemplateQuality,
+  TemplateVersion,
   Zone,
 } from './mock'
 
@@ -108,6 +109,13 @@ export const postTemplate = (body: TemplateBody) => call('POST', base, body)
 export const putTemplate = (id: string, body: TemplateBody) => call('PUT', `${base}/${id}`, body)
 /** Deletes a model: its owner only, and not one an analysis looks for. */
 export const deleteTemplate = (id: string) => request<void>('DELETE', `${base}/${id}`)
+/** The versions of a model, the newest first. */
+export const fetchVersions = async (id: string): Promise<TemplateVersion[]> =>
+  (await request<(Omit<TemplateVersion, 'document'> & { document: DocumentAnswer | null })[]>('GET', `${base}/${id}/versions`)).map(
+    ({ document, ...version }) => ({ ...version, ...(document && { document: fromAnswer(document) }) }),
+  )
+/** Goes back to a version: its owner only. It makes a new version. */
+export const restoreVersion = (id: string, version: string) => call('POST', `${base}/${id}/versions/${version}/restore`)
 export const putTemplateStar = (id: string) => call('PUT', `${base}/${id}/star`)
 export const putEntityStar = (id: string, entityId: string) => call('PUT', `${base}/${id}/entities/${entityId}/star`)
 export const postSuggestion = (id: string, fields: TemplateBody, message: string) =>

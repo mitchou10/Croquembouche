@@ -6,6 +6,7 @@ import DocumentViewer from '../components/DocumentViewer.vue'
 import EntitiesPane from '../components/EntitiesPane.vue'
 import PagerControls from '../components/PagerControls.vue'
 import QualityPanel from '../components/QualityPanel.vue'
+import VersionsPanel from '../components/VersionsPanel.vue'
 import TemplateLayout from '../components/TemplateLayout.vue'
 import { changedFields, MAX_COMMENT_LENGTH, useCatalogue } from '../composables/useCatalogue'
 import { useSession } from '../composables/useSession'
@@ -16,7 +17,7 @@ import type { SuggestionStatus } from '../data/mock'
 const route = useRoute()
 const router = useRouter()
 const { userId } = useSession()
-const { find, isOwner, canDecide, isStarred, toggleStar, toggleSuggestionStar, resolveSuggestion, addComment, actionError, remove } =
+const { find, isOwner, canDecide, isStarred, toggleStar, restoreVersion, toggleSuggestionStar, resolveSuggestion, addComment, actionError, remove } =
   useCatalogue()
 const wide = useWideScreen()
 
@@ -25,7 +26,7 @@ const owner = computed(() => !!template.value && isOwner(template.value))
 // The owner, or an administrator: they accept or refuse the suggestions.
 const decides = computed(() => !!template.value && canDecide(template.value))
 
-type Tab = 'entities' | 'suggestions' | 'quality'
+type Tab = 'entities' | 'suggestions' | 'quality' | 'versions'
 const tab = ref<Tab>(route.query.onglet === 'suggestions' ? 'suggestions' : 'entities')
 const entityIndex = ref(0)
 // The page of the document shown (from 1): what is said of it is shown under the heading.
@@ -166,6 +167,16 @@ async function comment() {
         >
           Qualité
         </button>
+        <button
+          type="button"
+          role="tab"
+          class="template-view__tab"
+          :aria-selected="tab === 'versions'"
+          data-testid="versions-tab"
+          @click="tab = 'versions'"
+        >
+          Versions
+        </button>
       </div>
 
       <!-- Entities: one at a time, like the form. -->
@@ -176,6 +187,16 @@ async function comment() {
       <!-- Quality: how right the analysis has been, from what people decided. -->
       <div v-else-if="tab === 'quality'" role="tabpanel" class="template-view__panel">
         <QualityPanel :template-id="template.id" />
+      </div>
+
+      <!-- Versions: the history of the model, and going back to one. -->
+      <div v-else-if="tab === 'versions'" role="tabpanel" class="template-view__panel">
+        <VersionsPanel
+          :template-id="template.id"
+          :current="template.version"
+          :can-restore="owner"
+          :restore="(version) => restoreVersion(template!.id, version)"
+        />
       </div>
 
       <!-- Suggestions: one at a time too, with their discussion. -->

@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.analysis import Analysis, Run
 from app.models.base import utcnow
-from app.models.catalogue import Template, TemplateEntity
+from app.models.catalogue import Template, TemplateEntity, TemplateVersion
 from app.models.document import Document
 
 
@@ -31,6 +31,21 @@ class AnalysisRepository:
 
     async def existing_templates(self, template_ids: list[uuid.UUID]) -> set[uuid.UUID]:
         return set((await self._session.scalars(select(Template.id).where(Template.id.in_(template_ids)))).all())
+
+    async def last_versions(self, template_ids: list[uuid.UUID]) -> list[TemplateVersion]:
+        """The last version of each X of these models: a model is looked for in every X it has had."""
+        query = (
+            select(TemplateVersion)
+            .where(TemplateVersion.template_id.in_(template_ids))
+            .distinct(TemplateVersion.template_id, TemplateVersion.major)
+            .order_by(
+                TemplateVersion.template_id,
+                TemplateVersion.major,
+                TemplateVersion.minor.desc(),
+                TemplateVersion.patch.desc(),
+            )
+        )
+        return list((await self._session.scalars(query)).all())
 
     async def existing_entities(self, entity_ids: set[uuid.UUID]) -> set[uuid.UUID]:
         if not entity_ids:
