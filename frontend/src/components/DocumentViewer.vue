@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { canPreview } from '../composables/useCatalogue'
 import { pageUrl } from '../data/api'
 import { type Handle, pointsOf, type Rect, rectOf, resizeRect } from '../composables/zoneRect'
+import { insertVertex, midpoints, movePolygon, moveVertex, removeVertex } from '../composables/zonePolygon'
 import type { Point, TemplateDocument, TemplateEntity, Zone } from '../data/mock'
 
 const props = defineProps<{
@@ -147,6 +148,7 @@ const shapes = computed(() =>
         // The name as it is typed (the zone follows the form); a number until there is one.
         label: entity.name.trim() || `Entité ${index + 1}`,
         highlighted: entity.id === props.highlightId,
+        points,
         rect: rectOf(points),
         polygon: points.map((p) => `${p.x * 100},${p.y * 100}`).join(' '),
         labelStyle: { left: `${corner.x * 100}%`, top: `${corner.y * 100}%` },
@@ -175,7 +177,48 @@ const editing = computed(() => {
   }
 })
 
+/** The polygon that can be edited: the same rule as the rectangle, for a zone that is not one. */
+const editingPoly = computed(() => {
+  if (!props.editable || props.drawing) return null
+  const shape = shapes.value.find((s) => s.highlighted && !s.rect)
+  return shape ? { id: shape.id, label: shape.label, points: shape.points } : null
+})
+
+const editTarget = computed(() => editing.value ?? editingPoly.value)
+
 let grab: { id: string; handle: Handle; from: Point; start: Rect } | null = null
+// A polygon: the whole shape (index -1) or one of its points.
+let pgrab: { id: string; index: number; from: Point; start: Point[] } | null = null
+
+function emitPoints(id: string, points: Point[]) {
+  emit('update', id, { page: page.value, points })
+}
+
+/** Starts a drag of the polygon (index -1) or of its point at `index`. */
+function onGrabPoly(event: PointerEvent, index: number) {
+  const target = editingPoly.value
+  if (!target || event.button !== 0) return
+  event.stopPropagation()
+  event.preventDefault()
+  ;(event.currentTarget as Element).closest<HTMLElement>('.doc-viewer__stage')?.querySelector<HTMLElement>('.doc-viewer__edit-poly')?.focus()
+  viewport.value!.setPointerCapture?.(event.pointerId)
+  pgrab = { id: target.id, index, from: toPoint(event), start: target.points }
+}
+
+/** Pulling the middle of an edge adds a point there and carries it along. */
+function onGrabMidpoint(event: PointerEvent, edge: number) {
+  const target = editingPoly.value
+  if (!target || event.button !== 0) return
+  const points = insertVertex(target.points, edge)
+  emitPoints(target.id, points)
+  onGrabPoly(event, edge + 1)
+  if (pgrab) pgrab.start = points
+}
+
+function onRemoveVertex(index: number) {
+  const target = editingPoly.value
+  if (target) emitPoints(target.id, removeVertex(target.points, index))
+}
 
 function onGrab(event: PointerEvent, handle: Handle) {
   const shape = shapes.value.find((s) => s.id === editing.value?.id)
@@ -188,6 +231,12 @@ function onGrab(event: PointerEvent, handle: Handle) {
 }
 
 function onGrabMove(event: PointerEvent) {
+  if (pgrab) {
+    const here = toPoint(event)
+    const { id, index, from, start } = pgrab
+    emitPoints(id, index < 0 ? movePolygon(start, here.x - from.x, here.y - from.y) : moveVertex(start, index, here))
+    return true
+  }
   if (!grab) return false
   const here = toPoint(event)
   const next = resizeRect(grab.start, grab.handle, here.x - grab.from.x, here.y - grab.from.y)
@@ -196,9 +245,9 @@ function onGrabMove(event: PointerEvent) {
 }
 
 function onEditKey(event: KeyboardEvent) {
-  if (!editing.value || (event.key !== 'Delete' && event.key !== 'Backspace')) return
+  if (!editTarget.value || (event.key !== 'Delete' && event.key !== 'Backspace')) return
   event.preventDefault()
-  emit('remove', editing.value.id)
+  emit('remove', editTarget.value.id)
 }
 
 // ---------------------------------------------------------------- drawing
@@ -268,6 +317,7 @@ function onPointerMove(event: PointerEvent) {
 
 function onPointerUp(event: PointerEvent) {
   grab = null
+  pgrab = null
   const current = press
   press = null
   if (!current || current.pan || !props.drawing) return
@@ -426,7 +476,7 @@ const hint = computed(() =>
         @wheel="onWheel"
         @pointermove="onPointerMove"
         @pointerup="onPointerUp"
-        @pointercancel="((press = null), (grab = null))"
+        @pointercancel="((press = null), (grab = null), (pgrab = null))"
       >
         <div
           ref="stage"
@@ -444,11 +494,45 @@ const hint = computed(() =>
               :key="shape.id"
               :points="shape.polygon"
               class="doc-viewer__polygon"
-              :class="{ 'doc-viewer__polygon--highlight': shape.highlighted }"
+              :class="{
+                'doc-viewer__polygon--highlight': shape.highlighted,
+                'doc-viewer__polygon--grab': editingPoly?.id === shape.id,
+              }"
               data-testid="entity-zone"
+              @pointerdown="editingPoly?.id === shape.id && onGrabPoly($event, -1)"
             />
             <polyline v-if="draftLine" :points="draftLine" class="doc-viewer__draft" />
           </svg>
+
+          <div
+            v-if="editingPoly"
+            class="doc-viewer__edit-poly"
+            tabindex="0"
+            role="group"
+            :aria-label="`Zone de ${editingPoly.label} : Suppr pour la supprimer`"
+            data-testid="poly-edit"
+            @keydown="onEditKey"
+          >
+            <span
+              v-for="(point, index) in midpoints(editingPoly.points)"
+              :key="`m${index}`"
+              class="doc-viewer__midpoint"
+              :style="{ left: `${point.x * 100}%`, top: `${point.y * 100}%` }"
+              title="Tirer pour ajouter un point"
+              data-testid="poly-midpoint"
+              @pointerdown="onGrabMidpoint($event, index)"
+            />
+            <span
+              v-for="(point, index) in editingPoly.points"
+              :key="`v${index}`"
+              class="doc-viewer__handle doc-viewer__handle--vertex"
+              :style="{ left: `${point.x * 100}%`, top: `${point.y * 100}%` }"
+              title="Glisser pour déplacer · double-clic pour retirer"
+              data-testid="poly-vertex"
+              @pointerdown="onGrabPoly($event, index)"
+              @dblclick="onRemoveVertex(index)"
+            />
+          </div>
 
           <div
             v-if="editing"
@@ -591,6 +675,39 @@ const hint = computed(() =>
   stroke: var(--border-action-high-blue-france);
   stroke-width: 2;
   vector-effect: non-scaling-stroke;
+}
+
+.doc-viewer__polygon--grab {
+  pointer-events: all;
+  cursor: move;
+}
+
+.doc-viewer__edit-poly {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  outline: none;
+}
+
+.doc-viewer__edit-poly > * {
+  pointer-events: auto;
+}
+
+.doc-viewer__handle--vertex {
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.doc-viewer__midpoint {
+  position: absolute;
+  width: 0.5rem;
+  height: 0.5rem;
+  border: 1px solid var(--border-action-high-blue-france);
+  border-radius: 50%;
+  background: #fff;
+  opacity: 0.8;
+  transform: translate(-50%, -50%);
+  cursor: copy;
 }
 
 .doc-viewer__polygon--highlight {
