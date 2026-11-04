@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.10.0](https://github.com/mitchou10/Croquembouche/compare/v1.9.0...v1.10.0) (2026-11-04)
+
+
+### Features
+
+* **templates:** sub-models, promoting one, and searching them with their model ([3a941d5](https://github.com/mitchou10/Croquembouche/commit/3a941d592f46994a36537c40cc04b44f54f14230)), closes [#36](https://github.com/mitchou10/Croquembouche/issues/36) [#37](https://github.com/mitchou10/Croquembouche/issues/37)
+
 ## [1.9.0](https://github.com/mitchou10/Croquembouche/compare/v1.8.0...v1.9.0) (2026-11-04)
 
 
