@@ -126,6 +126,16 @@ function addSuggestions() {
   suggestions.value = []
 }
 
+function onUpdateZone(id: string, zone: Zone) {
+  const entity = entities.value.find((e) => e.id === id)
+  if (entity) entity.zone = zone
+}
+
+function onRemoveZone(id: string) {
+  const entity = entities.value.find((e) => e.id === id)
+  if (entity) delete entity.zone
+}
+
 function onDraw(zone: Zone) {
   const entity = entities.value.find((e) => e.id === drawingId.value)
   if (entity) entity.zone = zone
@@ -300,9 +310,12 @@ async function submit() {
             :entities="entities"
             :highlight-id="drawingId ?? currentEntityId ?? undefined"
             :drawing="drawingId !== null"
+            editable
             :fit="wide"
             @draw="onDraw"
             @cancel="drawingId = null"
+            @update="onUpdateZone"
+            @remove="onRemoveZone"
           />
         </div>
         <p v-else-if="mode !== 'suggest'" class="template-form__empty">Aucun document : le modèle se définira par ses entités seulement.</p>
