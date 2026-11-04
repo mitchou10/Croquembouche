@@ -124,6 +124,7 @@ interface Body {
   categories: string[]
   entities: (TemplateEntity & { zone?: TemplateEntity['zone'] | null })[]
   documentId?: string | null
+  parentId?: string
   pages?: PageFields[]
 }
 
@@ -211,9 +212,17 @@ export async function fakeFetch(path: string, init: RequestInit = {}): Promise<A
   if (parts.length === 1) {
     if (method === 'GET') return reply(200, templates)
     const fields = clean(body as Body)
+    const parentId = (body as Body).parentId
+    const parent = parentId ? templates.find((t) => t.id === parentId) : undefined
+    if (parentId && !parent) return refuse(422, 'Le modèle parent n’existe pas.')
+    if (parent?.parentId) return refuse(422, 'Un sous-modèle ne peut pas avoir de sous-modèle.')
+    if (parent && parent.ownerId !== user) return refuse(403, 'Seul le propriétaire du modèle lui ajoute un sous-modèle.')
     const created: Stored = {
       id: newId('t'),
       version: '1.0.0',
+      parentId: parent?.id ?? null,
+      parentName: parent?.name ?? null,
+      children: [],
       ownerId: user,
       ownerName: user,
       stars: [],
@@ -227,6 +236,7 @@ export async function fakeFetch(path: string, init: RequestInit = {}): Promise<A
     if (document) created.document = uploads.get(document.id) ?? document
     buildPages(created, fields.pages)
     templates = [created, ...templates]
+    parent?.children.push({ id: created.id, name: created.name, version: created.version })
     return reply(201, created)
   }
 
@@ -256,7 +266,24 @@ export async function fakeFetch(path: string, init: RequestInit = {}): Promise<A
     if (!owner) return refuse(403, 'Seul le propriétaire supprime le modèle.')
     const used = analyses.filter((a) => a.templateIds.includes(template.id)).length
     if (used) return refuse(409, `Ce modèle est utilisé par ${used} analyse${used > 1 ? 's' : ''} : supprimez-la${used > 1 ? 's' : ''} d’abord.`)
+    if (template.children.length) {
+      const promote = url.searchParams.get('promote')
+      if (!promote) return refuse(409, 'Ce modèle a des sous-modèles : choisissez celui qui prend sa place.')
+      const chosen = templates.find((t) => t.id === promote && t.parentId === template.id)
+      if (!chosen) return refuse(422, 'Choisissez un des sous-modèles de ce modèle.')
+      // It becomes a root, and the others go under it.
+      const others = template.children.filter((c) => c.id !== chosen.id)
+      chosen.parentId = null
+      chosen.parentName = null
+      chosen.children = others
+      for (const other of others) {
+        const child = templates.find((t) => t.id === other.id)
+        if (child) Object.assign(child, { parentId: chosen.id, parentName: chosen.name })
+      }
+    }
     templates = templates.filter((t) => t.id !== template.id)
+    const parent = templates.find((t) => t.id === template.parentId)
+    if (parent) parent.children = parent.children.filter((c) => c.id !== template.id)
     return reply(204)
   }
   if (parts.length === 2 && method === 'PUT') {
@@ -271,6 +298,15 @@ export async function fakeFetch(path: string, init: RequestInit = {}): Promise<A
       else delete template.document
     }
     buildPages(template, fields.pages)
+    return reply(200, template)
+  }
+  if (sub === 'promote' && method === 'POST') {
+    if (!owner) return refuse(403, 'Seul le propriétaire promeut le modèle.')
+    if (!template.parentId) return refuse(422, 'Ce modèle n’est pas un sous-modèle.')
+    const parent = templates.find((t) => t.id === template.parentId)
+    if (parent) parent.children = parent.children.filter((c) => c.id !== template.id)
+    template.parentId = null
+    template.parentName = null
     return reply(200, template)
   }
   if (sub === 'star') {

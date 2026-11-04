@@ -2,6 +2,7 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import ConfirmButton from '../components/ConfirmButton.vue'
+import DeleteWithPromotion from '../components/DeleteWithPromotion.vue'
 import DocumentViewer from '../components/DocumentViewer.vue'
 import EntitiesPane from '../components/EntitiesPane.vue'
 import PagerControls from '../components/PagerControls.vue'
@@ -17,7 +18,7 @@ import type { SuggestionStatus } from '../data/mock'
 const route = useRoute()
 const router = useRouter()
 const { userId } = useSession()
-const { find, isOwner, canDecide, isStarred, toggleStar, restoreVersion, toggleSuggestionStar, resolveSuggestion, addComment, actionError, remove } =
+const { find, isOwner, canDecide, isStarred, toggleStar, restoreVersion, promote, toggleSuggestionStar, resolveSuggestion, addComment, actionError, remove } =
   useCatalogue()
 const wide = useWideScreen()
 
@@ -60,8 +61,8 @@ const statusBadges: Record<SuggestionStatus, { label: string; type: 'info' | 'su
 }
 
 /** Deletes the model, once the owner has said they are sure; the catalogue says why when it cannot (an analysis uses it). */
-async function deleteTemplate() {
-  if (template.value && (await remove(template.value.id))) await router.push({ name: 'catalogue' })
+async function deleteTemplate(promote?: string) {
+  if (template.value && (await remove(template.value.id, promote))) await router.push({ name: 'catalogue' })
 }
 
 async function comment() {
@@ -98,11 +99,21 @@ async function comment() {
           {{ owner ? 'Modifier' : 'Suggérer une modification' }}
         </RouterLink>
         <ConfirmButton
-          v-if="owner"
+          v-if="owner && template.parentId"
+          label="Promouvoir en modèle"
+          question="Promouvoir en modèle à part entière ?"
+          confirm-label="Oui, promouvoir"
+          icon="fr-icon-arrow-up-line"
+          @confirm="promote(template.id)"
+        />
+        <!-- A model with sub-models says which of them takes its place. -->
+        <DeleteWithPromotion v-if="owner && template.children.length" :children="template.children" @confirm="deleteTemplate" />
+        <ConfirmButton
+          v-else-if="owner"
           label="Supprimer"
           question="Supprimer ce modèle ?"
           confirm-label="Oui, supprimer"
-          @confirm="deleteTemplate"
+          @confirm="deleteTemplate()"
         />
       </div>
     </template>
@@ -132,9 +143,34 @@ async function comment() {
       <p class="template-view__meta fr-mb-0">
         Par <strong data-testid="template-owner">{{ template.ownerName }}</strong>
         <DsfrBadge :label="`v${template.version}`" type="info" small no-icon data-testid="template-version" title="Version du modèle" />
+        <span v-if="template.parentId" data-testid="parent-link">
+          · Sous-modèle de
+          <RouterLink :to="{ name: 'catalogue-detail', params: { id: template.parentId } }">{{ template.parentName }}</RouterLink>
+        </span>
         <DsfrTag v-for="category in template.categories" :key="category" :label="category" small />
       </p>
       <p class="template-view__description fr-mb-0" data-testid="description">{{ template.description }}</p>
+      <div v-if="template.children.length || (owner && !template.parentId)" class="template-view__children" data-testid="sub-models">
+        <template v-if="template.children.length">
+          <strong>Sous-modèles :</strong>
+          <RouterLink
+            v-for="child in template.children"
+            :key="child.id"
+            :to="{ name: 'catalogue-detail', params: { id: child.id } }"
+            data-testid="sub-model-link"
+          >
+            {{ child.name }} <span class="template-view__child-version">v{{ child.version }}</span>
+          </RouterLink>
+        </template>
+        <RouterLink
+          v-if="owner && !template.parentId"
+          class="fr-btn fr-btn--sm fr-btn--tertiary fr-icon-add-line fr-btn--icon-left"
+          :to="{ name: 'catalogue-new', query: { parent: template.id } }"
+          data-testid="add-sub-model"
+        >
+          Ajouter un sous-modèle
+        </RouterLink>
+      </div>
       <p v-if="actionError" class="fr-error-text fr-mb-0" role="alert" data-testid="action-error">{{ actionError }}</p>
 
       <div class="template-view__tabs" role="tablist" aria-label="Entités, suggestions et qualité">
@@ -267,6 +303,18 @@ async function comment() {
 <style scoped>
 .template-view__title {
   margin-right: auto;
+}
+
+.template-view__children {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.75rem;
+}
+
+.template-view__child-version {
+  color: var(--text-mention-grey);
+  font-size: 0.75rem;
 }
 
 .template-view__actions {

@@ -1,5 +1,7 @@
 import uuid
 
+from sqlalchemy import Row
+
 from app.core.indexing import TemplateIndexer
 from app.core.security.factory import RequestContext
 from app.models.catalogue import (
@@ -19,6 +21,7 @@ from app.schemas.catalogue import (
     MAX_EXAMPLES,
     DocumentOut,
     EntityOut,
+    SubModelOut,
     SuggestionOut,
     TemplateFields,
     TemplateOut,
@@ -224,7 +227,7 @@ class CatalogueService:
         reloaded = await self._repository.reload(template)
         if reindex:
             self._reindex(reloaded)
-        return self._view(reloaded)
+        return await self._view(reloaded)
 
     def _reindex(self, template: Template) -> None:
         """Asks the worker to index the model as it is now, in its X: its pages and the zones of its entities. A model
@@ -244,21 +247,28 @@ class CatalogueService:
     async def search(self, query: str = "", mine: bool = False) -> list[TemplateOut]:
         needle = query.strip().lower()
         templates = await self._repository.list_templates(self._user.user_id if mine else None)
-        return [
-            self._view(t)
+        found = [
+            t
             for t in templates
             if not needle or any(needle in f.lower() for f in (t.name, t.description, *(c.name for c in t.categories)))
         ]
+        links = await self._links(found)
+        return [self._view_with(t, links) for t in found]
 
     async def get(self, template_id: str) -> TemplateOut:
-        return self._view(await self._template(template_id))
+        return await self._view(await self._template(template_id))
 
     # --- writing a template
 
-    async def create(self, fields: TemplateFields, document_id: str | None) -> TemplateOut:
+    async def create(
+        self, fields: TemplateFields, document_id: str | None, parent_id: str | None = None
+    ) -> TemplateOut:
+        """Makes a model, or a sub-model of `parent_id` (one level): the owner of the parent adds those, or an admin."""
         template = Template(
             id=uuid.uuid4(), owner_id=self._user.user_id, name="", description="", major=1, minor=0, patch=0
         )
+        if parent_id is not None:
+            template.parent_id = await self._parent(parent_id)
         await self._apply(template, fields, document_id, replace_document=True)
         self._repository.add(template)
         await self._repository.flush()  # the model comes first: its first version points to it
@@ -274,6 +284,49 @@ class CatalogueService:
         await self._change(template, fields, document[1], replace_document=document[0])
         await self._repository.commit()
         return await self._saved(template, reindex=True)
+
+    async def promote(self, template_id: str) -> TemplateOut:
+        """Makes a sub-model a root. Nothing else changes (entities, version, history, stars, uses): it only stands on
+        its own in the catalogue. Its owner only."""
+        template = await self._template(template_id)
+        if not self._is_owner(template):
+            raise ForbiddenError("Seul le propriétaire promeut le modèle.")
+        if template.parent_id is None:
+            raise InvalidError("Ce modèle n’est pas un sous-modèle.")
+        template.parent_id = None
+        await self._repository.commit()
+        return await self._saved(template)
+
+    async def _promote_a_child(self, template: Template, promote: str | None) -> None:
+        """A model with sub-models is not deleted without saying which of them takes its place: that one becomes a root
+        and the others go under it (there is one level only)."""
+        children = await self._repository.children_of([template.id])
+        if not children:
+            return
+        if promote is None:
+            plural = "s" if len(children) > 1 else ""
+            raise ConflictError(
+                f"Ce modèle a {len(children)} sous-modèle{plural} : choisissez celui qui prend sa place (il devient un "
+                "modèle à part entière)."
+            )
+        chosen = next((c for c in children if str(c.id) == promote), None)
+        if chosen is None:
+            raise InvalidError("Choisissez un des sous-modèles de ce modèle.")
+        chosen.parent_id = None
+        for child in children:
+            if child is not chosen:
+                child.parent_id = chosen.id
+        await self._repository.flush()  # before the model goes: nothing points to it any more
+
+    async def _parent(self, parent_id: str) -> uuid.UUID:
+        parent = await self._repository.get_template(parent_id)
+        if parent is None:
+            raise InvalidError("Le modèle parent n’existe pas.")
+        if parent.parent_id is not None:
+            raise InvalidError("Un sous-modèle ne peut pas avoir de sous-modèle.")
+        if not (self._is_owner(parent) or self._user.is_admin):
+            raise ForbiddenError("Seul le propriétaire du modèle lui ajoute un sous-modèle.")
+        return parent.id
 
     async def _change(
         self, template: Template, fields: TemplateFields, document_id: str | None, replace_document: bool
@@ -354,7 +407,7 @@ class CatalogueService:
             ),
         )
 
-    async def delete(self, template_id: str) -> None:
+    async def delete(self, template_id: str, promote: str | None = None) -> None:
         """Only the owner deletes a model; one an analysis looks for stays, or that analysis would look for nothing. Its
         example document goes with it, unless another model uses the same one."""
         template = await self._template(template_id)
@@ -364,6 +417,7 @@ class CatalogueService:
         if used:
             plural = "s" if used > 1 else ""
             raise ConflictError(f"Ce modèle est utilisé par {used} analyse{plural} : supprimez-la{plural} d’abord.")
+        await self._promote_a_child(template, promote)
         # The documents of every version go too, except those another model still has.
         kept = {d.id: d for d in [template.document] if d is not None}
         for version in await self._repository.list_versions(template.id):
@@ -449,7 +503,7 @@ class CatalogueService:
         else:
             template.stars.append(TemplateStar(user_id=self._user.user_id))
         await self._repository.commit()
-        return self._view(await self._repository.reload(template))
+        return await self._view(await self._repository.reload(template))
 
     async def toggle_entity_star(self, template_id: str, entity_id: str) -> TemplateOut:
         template = await self._template(template_id)
@@ -462,7 +516,7 @@ class CatalogueService:
         else:
             entity.stars.append(EntityStar(user_id=self._user.user_id))
         await self._repository.commit()
-        return self._view(await self._repository.reload(template))
+        return await self._view(await self._repository.reload(template))
 
     # --- suggestions
 
@@ -476,7 +530,7 @@ class CatalogueService:
             raise InvalidError("Modifiez au moins un champ pour envoyer une suggestion.")
         template.suggestions.append(Suggestion(author_id=self._user.user_id, fields=cleaned, message=message))
         await self._repository.commit()
-        return self._view(await self._repository.reload(template))
+        return await self._view(await self._repository.reload(template))
 
     async def decide(self, template_id: str, suggestion_id: str, accept: bool) -> TemplateOut:
         """The owner, or an administrator, accepts (the proposed fields are applied) or refuses a pending suggestion."""
@@ -503,14 +557,14 @@ class CatalogueService:
         else:
             suggestion.stars.append(SuggestionStar(user_id=self._user.user_id))
         await self._repository.commit()
-        return self._view(await self._repository.reload(template))
+        return await self._view(await self._repository.reload(template))
 
     async def comment(self, template_id: str, suggestion_id: str, text: str) -> TemplateOut:
         template = await self._template(template_id)
         suggestion = self._suggestion(template, suggestion_id)
         suggestion.comments.append(SuggestionComment(author_id=self._user.user_id, text=text))
         await self._repository.commit()
-        return self._view(await self._repository.reload(template))
+        return await self._view(await self._repository.reload(template))
 
     # --- helpers
 
@@ -547,13 +601,28 @@ class CatalogueService:
             for number in range(1, total + 1)
         ]
 
-    def _view(self, template: Template) -> TemplateOut:
+    async def _links(self, templates: list[Template]) -> dict[uuid.UUID, Row]:
+        """Name and version of every model that one of these is the parent or a sub-model of, by id."""
+        return {row.id: row for row in await self._repository.links_of([t.id for t in templates])}
+
+    async def _view(self, template: Template, links: dict[uuid.UUID, Row] | None = None) -> TemplateOut:
+        return self._view_with(template, links if links is not None else await self._links([template]))
+
+    def _view_with(self, template: Template, links: dict[uuid.UUID, Row]) -> TemplateOut:
         document = template.document
+        parent = links.get(template.parent_id) if template.parent_id else None
         return TemplateOut(
             id=str(template.id),
             owner_id=template.owner_id,
             owner_name=_display_name(template.owner),
             version=template.version,
+            parent_id=None if template.parent_id is None else str(template.parent_id),
+            parent_name=None if parent is None else parent.name,
+            children=[
+                SubModelOut(id=str(row.id), name=row.name, version=f"{row.major}.{row.minor}.{row.patch}")
+                for row in links.values()
+                if row.parent_id == template.id
+            ],
             name=template.name,
             description=template.description,
             categories=[c.name for c in template.categories],

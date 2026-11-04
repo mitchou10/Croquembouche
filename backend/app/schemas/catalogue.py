@@ -58,6 +58,8 @@ class TemplateFields(CamelModel):
 
 class TemplateCreate(TemplateFields):
     document_id: str | None = None
+    # The model this one is a sub-model of; absent for a root. A sub-model has no sub-model.
+    parent_id: str | None = None
 
 
 class TemplateUpdate(TemplateFields):
@@ -132,9 +134,22 @@ class TemplateVersionDetail(TemplateVersionOut):
     fields: TemplateFields
 
 
+class SubModelOut(CamelModel):
+    """A sub-model, as its parent lists it."""
+
+    id: str
+    name: str
+    version: str
+
+
 class TemplateOut(CamelModel):
     id: str
     version: str
+    # The model it is a sub-model of (and its name), or none for a root.
+    parent_id: str | None = None
+    parent_name: str | None = None
+    # The sub-models of a root, by name; always empty for a sub-model.
+    children: list[SubModelOut] = []
     owner_id: str
     owner_name: str
     name: str

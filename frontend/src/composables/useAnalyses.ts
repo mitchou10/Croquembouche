@@ -144,6 +144,11 @@ export function useAnalyses() {
       if (analysis) keep({ ...analysis, views })
     })
 
+  /** The models an analysis looks for: the ones it was made of and, with each, its sub-models. */
+  const searchedIds = (analysis: Pick<Analysis, 'templateIds'>) => [
+    ...new Set(analysis.templateIds.flatMap((id) => [id, ...(findTemplate(id)?.children.map((c) => c.id) ?? [])])),
+  ]
+
   const modelNames = (analysis: Pick<Analysis, 'templateIds'>) =>
     analysis.templateIds.map((id) => findTemplate(id)?.name ?? 'Modèle inconnu')
 
@@ -239,6 +244,7 @@ export function useAnalyses() {
     accessible,
     registerView,
     modelNames,
+    searchedIds,
     createAnalysis,
     remove,
     ownsRun,

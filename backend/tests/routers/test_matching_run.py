@@ -244,3 +244,41 @@ async def test_a_model_is_given_to_the_worker_once_for_each_x_it_has_had_and_the
     run = (await db_client.get(f"/api/analyses/{analysis['id']}/runs/{started['id']}")).json()
     assert run["pages"][0]["classifications"][0]["templateVersion"] == "2.0.1"
     assert run["pages"][0]["classifications"][-1]["templateVersion"] is None  # « other »
+
+
+async def test_an_analysis_looks_for_the_sub_models_of_its_models_too(db_client, as_user, dispatcher):
+    form, analysis = await analysis_of_a_form(db_client, as_user)
+    document = (await db_client.post("/api/documents", files={"file": ("annex.pdf", pdf(1))})).json()
+    entity = {"name": "Date", "type": "date", "zone": SQUARE}
+    annex = (
+        await db_client.post(
+            "/api/templates",
+            json={"name": "Annexe", "entities": [entity], "documentId": document["id"], "parentId": form["id"]},
+        )
+    ).json()
+
+    # The analysis was made of the form alone: its use looks for the annex as well, in its version.
+    started = await start(db_client, analysis)
+    searched = {t["template_id"] for t in dispatcher.messages[-1]["templates"]}
+    assert searched == {form["id"], annex["id"]}
+    run = (await db_client.get(f"/api/analyses/{analysis['id']}/runs/{started['id']}")).json()
+    assert run["templateVersions"] == {form["id"]: "1.0.0", annex["id"]: "1.0.0"}
+
+    # What is found can be the annex, and a decision can name it.
+    result = one_element(form)
+    result["pages"][0]["classifications"][0] = {"template_id": annex["id"], "template_page": 1, "confidence": 0.9}
+    result["found"][0]["classifications"][0]["template_id"] = annex["id"]
+    await hand_back(db_client, dispatcher.messages[-1], result)
+    detail = (await db_client.get(f"/api/analyses/{analysis['id']}/runs/{started['id']}")).json()
+    assert detail["detections"][0]["classifications"][0]["templateId"] == annex["id"]
+    reviewed = await db_client.put(
+        f"/api/analyses/{analysis['id']}/runs/{started['id']}/detections/{detail['detections'][0]['id']}/review",
+        json={"status": "annotated", "templateId": annex["id"]},
+    )
+    assert reviewed.status_code == 200, reviewed.text
+    outsider = (await db_client.post("/api/templates", json={"name": "Hors analyse"})).json()
+    refused = await db_client.put(
+        f"/api/analyses/{analysis['id']}/runs/{started['id']}/detections/{detail['detections'][0]['id']}/review",
+        json={"status": "annotated", "templateId": outsider["id"]},
+    )
+    assert refused.status_code == 422
