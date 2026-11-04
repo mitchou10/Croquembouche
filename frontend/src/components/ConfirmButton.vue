@@ -5,7 +5,7 @@ import { ref } from 'vue'
  * A button for what cannot be undone: the first click asks « sure? », and only the second does it. Leaving the question
  * puts the button back as it was.
  */
-defineProps<{ label: string; question: string; confirmLabel?: string }>()
+defineProps<{ label: string; question: string; confirmLabel?: string; icon?: string }>()
 const emit = defineEmits<{ confirm: [] }>()
 
 const asking = ref(false)
@@ -19,7 +19,7 @@ const asking = ref(false)
     </button>
     <button type="button" class="fr-btn fr-btn--sm fr-btn--tertiary" data-testid="confirm-no" @click="asking = false">Annuler</button>
   </div>
-  <button v-else type="button" class="fr-btn fr-btn--tertiary fr-icon-delete-line fr-btn--icon-left" data-testid="delete" @click="asking = true">
+  <button v-else type="button" class="fr-btn fr-btn--tertiary fr-btn--icon-left" :class="icon ?? 'fr-icon-delete-line'" data-testid="delete" @click="asking = true">
     {{ label }}
   </button>
 </template>

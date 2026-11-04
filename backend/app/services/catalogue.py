@@ -111,32 +111,77 @@ def _template_fields_dict(template: Template) -> dict:
     }
 
 
-def index_message(template: Template) -> dict | None:
-    """What the worker needs to index a model: where the image of each page of its document is (and what was said of the
-    page), and the zone of each entity that has one. None for a model with no document."""
-    document = template.document
-    if document is None:
-        return None
-    notes = {note.page: note for note in template.page_notes}
+def _message(
+    template_id: uuid.UUID,
+    name: str,
+    major: int,
+    version: str,
+    document,
+    notes: dict[int, dict],
+    entities: list[dict],
+) -> dict:
+    """What the worker needs of a model in one X: where the image of each page of its document is (and what was said
+    of the page), and the zone of each entity that has one. `notes`: by page, its `name` and `description`; `entities`:
+    `{id, name, zone: {page, points} | None}`."""
     return {
-        "template_id": str(template.id),
-        "name": template.name,
+        "template_id": str(template_id),
+        "name": name,
+        "major": major,
+        "version": version,
         "document_id": str(document.id),
         "pages": [
             {
                 "page": number,
                 "key": documents.page_key(document, number),
-                "name": (notes[number].name or "") if number in notes else "",
-                "description": (notes[number].description or "") if number in notes else "",
+                "name": notes.get(number, {}).get("name") or "",
+                "description": notes.get(number, {}).get("description") or "",
             }
             for number in range(1, document.pages + 1)
         ],
         "entities": [
-            {"id": str(e.id), "name": e.name, "page": e.zone_page, "points": e.zone_points}
-            for e in template.entities
-            if e.zone_page is not None and e.zone_points
+            {"id": str(e["id"]), "name": e["name"], "page": e["zone"]["page"], "points": e["zone"]["points"]}
+            for e in entities
+            if e["zone"] and e["zone"]["points"]
         ],
     }
+
+
+def index_message(template: Template) -> dict | None:
+    """What the worker needs to index a model, in the X it is in now. None for a model with no document."""
+    if template.document is None:
+        return None
+    return _message(
+        template.id,
+        template.name,
+        template.major,
+        template.version,
+        template.document,
+        {note.page: {"name": note.name, "description": note.description} for note in template.page_notes},
+        [
+            {
+                "id": e.id,
+                "name": e.name,
+                "zone": None if e.zone_page is None else {"page": e.zone_page, "points": e.zone_points},
+            }
+            for e in template.entities
+        ],
+    )
+
+
+def version_message(version: TemplateVersion) -> dict | None:
+    """The same for a version kept (the last of an X): None when that version had no document."""
+    if version.document is None:
+        return None
+    fields = version.snapshot
+    return _message(
+        version.template_id,
+        fields["name"],
+        version.major,
+        version.version,
+        version.document,
+        {page["page"]: page for page in fields["pages"]},
+        fields["entities"],
+    )
 
 
 def bump_for(before: dict, before_document: uuid.UUID | None, after: dict, after_document: uuid.UUID | None):
@@ -182,12 +227,10 @@ class CatalogueService:
         return self._view(reloaded)
 
     def _reindex(self, template: Template) -> None:
-        """Asks the worker to index the model as it is now: its pages and the zones of its entities. A model with no
-        document has nothing to see, so it is taken out of the index."""
+        """Asks the worker to index the model as it is now, in its X: its pages and the zones of its entities. A model
+        with no document has nothing to add; the X it had before stay in the index, as they are still looked for."""
         message = index_message(template)
-        if message is None:
-            self._indexer.remove(str(template.id))
-        else:
+        if message is not None:
             self._indexer.index(message)
 
     # --- reading

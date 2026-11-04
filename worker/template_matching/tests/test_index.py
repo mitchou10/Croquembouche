@@ -74,6 +74,10 @@ def template(pages=3, entities=None, template_id="t1", **changes):
     }
 
 
+def version(major, **changes):
+    return template(major=major, version=f"{major}.0.0", **changes)
+
+
 def points(client, **match):
     found, _ = client.scroll(COLLECTION, limit=100, with_payload=True, with_vectors=True)
     return [p for p in found if all(p.payload.get(k) == v for k, v in match.items())]
@@ -262,3 +266,47 @@ class TestCropZone:
     def test_is_nothing_for_what_is_not_a_zone(self):
         assert crop_zone(self.image, SQUARE[:2]) is None
         assert crop_zone(self.image, []) is None
+
+
+def test_a_new_x_adds_to_the_others_and_the_same_x_replaces_itself(index, client):
+    index.index(version(1, pages=2))
+    index.index(version(2, pages=3))
+
+    assert len(points(client, kind="page", major=1)) == 8
+    assert len(points(client, kind="page", major=2)) == 12
+    assert {p.payload["version"] for p in points(client, kind="page", major=2)} == {"2.0.0"}
+
+    # Saved again in X = 1, with one page less: only that X changes.
+    index.index(version(1, pages=1))
+    assert len(points(client, kind="page", major=1)) == 4
+    assert len(points(client, kind="page", major=2)) == 12
+
+
+def test_what_was_indexed_before_the_x_was_kept_is_replaced_by_the_first_x(index, client):
+    client.create_collection(
+        COLLECTION, vectors_config=models.VectorParams(size=DIMENSION, distance=models.Distance.COSINE)
+    )
+    client.upsert(
+        COLLECTION,
+        points=[
+            models.PointStruct(
+                id=point_id("page", "t1", 1, 0, 99),  # an identifier of its own: it is not one of the new ones
+                vector=[0.0] * DIMENSION,
+                payload={"kind": "page", "template_id": "t1", "page": 1, "rotation": 0},
+            )
+        ],
+    )
+
+    index.index(version(1, pages=1))
+
+    assert [p for p in points(client, kind="page") if "major" not in p.payload] == []
+    assert len(points(client, kind="page", major=1)) == 4
+
+
+def test_removing_a_model_removes_every_x_of_it(index, client):
+    index.index(version(1, pages=1))
+    index.index(version(2, pages=1))
+
+    index.remove("t1")
+
+    assert points(client) == []

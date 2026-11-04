@@ -11,6 +11,8 @@ from app.schemas.catalogue import Point
 class PageClass(BaseModel):
     template_id: str | None = None
     template_page: int | None = None
+    # The version (X.Y.Z) of the model that the page looks like: a model is looked for in every X it has had.
+    template_version: str | None = None
     confidence: float = Field(ge=0, le=1)
 
 

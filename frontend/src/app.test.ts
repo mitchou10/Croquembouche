@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import App from './App.vue'
 import { loadAnalyses, resetAnalyses, useAnalyses } from './composables/useAnalyses'
-import { uploadDocument } from './data/api'
+import { restoreVersion, uploadDocument } from './data/api'
 import { simulatePage, simulateTest } from './test/simulate'
 import { newEntity, resetCatalogue, useCatalogue } from './composables/useCatalogue'
 import { loadGroups, resetGroups } from './composables/useGroups'
@@ -2361,6 +2361,39 @@ describe('app', () => {
 
     const tabs = (wrapper: ReturnType<typeof mount>) => wrapper.findAll('[role="tab"]').map((t) => t.text())
 
+    it('shows the version of the model and its history, and the owner goes back to one', async () => {
+      useSession().setUser('alice.martin')
+      const { wrapper } = await mountAt('/catalogue/t1')
+      expect(wrapper.get('[data-testid="template-version"]').text()).toBe('v1.0.0')
+
+      await wrapper.get('[data-testid="versions-tab"]').trigger('click')
+      await vi.waitFor(() => expect(wrapper.findAll('[data-testid="version-number"]').map((v) => v.text())).toEqual(['v1.0.0']))
+      expect(wrapper.find('[data-testid="versions"] [data-testid="confirm"]').exists()).toBe(false) // it is the current one
+      expect(wrapper.get('[data-testid="versions"]').text()).toContain('Courante')
+    })
+
+    it('goes back to an old version, which makes a new one on top', async () => {
+      useSession().setUser('alice.martin')
+      await restoreVersion('t1', '1.0.0') // the model is at 1.1.0 now, with 1.0.0 in its history
+      const { wrapper } = await mountAt('/catalogue/t1')
+      await wrapper.get('[data-testid="versions-tab"]').trigger('click')
+      await vi.waitFor(() => expect(wrapper.findAll('[data-testid="version-number"]').map((v) => v.text())).toEqual(['v1.1.0', 'v1.0.0']))
+
+      await wrapper.get('[data-testid="versions"] [data-testid="delete"]').trigger('click')
+      await wrapper.get('[data-testid="confirm-yes"]').trigger('click')
+
+      await vi.waitFor(() => expect(wrapper.findAll('[data-testid="version-number"]').map((v) => v.text())).toEqual(['v1.2.0', 'v1.1.0', 'v1.0.0']))
+      expect(wrapper.get('[data-testid="template-version"]').text()).toBe('v1.2.0')
+    })
+
+    it('does not offer to go back to someone who does not own the model', async () => {
+      useSession().setUser('dana')
+      const { wrapper } = await mountAt('/catalogue/t1')
+      await wrapper.get('[data-testid="versions-tab"]').trigger('click')
+      await vi.waitFor(() => expect(wrapper.findAll('[data-testid="version"]')).toHaveLength(1))
+      expect(wrapper.text()).not.toContain('Revenir à cette version')
+    })
+
     it('has the layout of the form, read-only, with the document and the entities', async () => {
       useSession().setUser('dana')
       const { wrapper } = await mountAt('/catalogue/t1')
@@ -2388,7 +2421,7 @@ describe('app', () => {
     it('shows the entities one at a time', async () => {
       useSession().setUser('dana')
       const { wrapper } = await mountAt('/catalogue/t1')
-      expect(tabs(wrapper)).toEqual(['Entités (2)', 'Suggestions (1)', 'Qualité'])
+      expect(tabs(wrapper)).toEqual(['Entités (2)', 'Suggestions (1)', 'Qualité', 'Versions'])
       expect(entityCount(wrapper)).toBe('1 / 2')
       expect(wrapper.findAll('[data-testid="entity"]')).toHaveLength(1)
       expect(wrapper.get('[data-testid="entity"]').text()).toContain('Emblème')

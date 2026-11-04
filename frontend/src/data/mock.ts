@@ -127,6 +127,16 @@ export interface Template extends TemplateFields {
   suggestions: Suggestion[]
 }
 
+/** A version of a model, as it was saved: the list of them is its history. */
+export interface TemplateVersion {
+  version: string
+  date: string
+  authorId: string
+  authorName: string
+  /** The example document it had (versions with the same X have the same one). */
+  document?: TemplateDocument
+}
+
 export type AnalysisStatus = 'done' | 'running' | 'failed'
 
 /** A group of people an analysis can be shared with: the signed-in user's own (see data/api.ts). */
@@ -159,6 +169,8 @@ export interface Classification {
   templateId: string | null
   /** For the classification of a page of a document: the page of the model it looks like (« form X, page 3 »). */
   templatePage?: number | null
+  /** And the version (X.Y.Z) of the model it is a page of: a model is looked for in every X it has had. */
+  templateVersion?: string | null
   /** 0 to 1. */
   confidence: number
 }

@@ -35,6 +35,13 @@ describe('DetectionCard', () => {
     expect(rows[1].classes()).not.toContain('classes__row--best')
   })
 
+  it('says in which version of a model a page was recognised, when it knows', () => {
+    const wrapper = mountCard([{ templateId: 't1', templateVersion: '2.0.1', confidence: 0.7 }, { templateId: null, confidence: 0.3 }])
+    const rows = wrapper.findAll('[data-testid="classification"]')
+    expect(rows[0].get('.classes__name').text()).toBe('Logo Marianne · v2.0.1')
+    expect(rows[1].get('.classes__name').text()).toBe('Autre, non reconnu')
+  })
+
   it('draws each confidence as a bar a screen reader can read as a meter', () => {
     const wrapper = mountCard([{ templateId: 't2', confidence: 0.64 }, { templateId: null, confidence: 0.36 }])
     const meter = wrapper.findAll('[role="meter"]')[0]

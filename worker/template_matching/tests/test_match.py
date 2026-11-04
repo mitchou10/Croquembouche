@@ -68,7 +68,12 @@ def test_a_page_is_classified_and_the_zones_of_its_model_page_are_carried_over(c
     assert calls == [(b"t1/2", b"d/1", [SQUARE])]  # the page classified as page 2 of t1: its zones, and no other
     assert result["status"] == "done"
     assert [p["page"] for p in result["pages"]] == [1, 2]
-    assert result["pages"][0]["classifications"][0] == {"template_id": "t1", "template_page": 2, "confidence": 0.9}
+    assert result["pages"][0]["classifications"][0] == {
+        "template_id": "t1",
+        "template_page": 2,
+        "template_version": None,
+        "confidence": 0.9,
+    }
     assert "rotation" not in result["pages"][0]["classifications"][0]
     assert result["found"] == [
         {
@@ -173,3 +178,46 @@ def test_the_result_goes_to_the_backend_with_the_key(monkeypatch):
     assert request.full_url == "http://backend:8000/internal/runs/r1/result" and request.method == "POST"
     assert request.get_header("X-internal-key") == "secret"
     assert json.loads(request.data) == {"status": "failed"}
+
+
+def test_the_zones_come_from_the_x_of_the_model_that_matched_and_the_version_is_said(monkeypatch):
+    # t1 has two X: the page looks like the second one, whose entity is another.
+    sent = message()
+    sent["templates"] = [
+        {
+            "template_id": "t1",
+            "major": 1,
+            "version": "1.4.2",
+            "pages": [{"page": 1, "key": "old/1"}],
+            "entities": [{"id": "old", "page": 1, "points": SQUARE}],
+        },
+        {
+            "template_id": "t1",
+            "major": 2,
+            "version": "2.0.1",
+            "pages": [{"page": 1, "key": "new/1"}],
+            "entities": [{"id": "new", "page": 1, "points": SQUARE}],
+        },
+    ]
+    classifier = MagicMock()
+    top = {"template_id": "t1", "template_page": 1, "confidence": 0.9, "rotation": 0, "major": 2}
+    other = {"template_id": None, "template_page": None, "confidence": 0.1, "rotation": None, "major": None}
+    classifier.classify.return_value = [
+        {"page": 1, "classifications": [top, other]},
+        {"page": 2, "classifications": [other]},
+    ]
+    calls = []
+
+    def locate(template_page, page, zones):
+        calls.append(template_page)
+        return [Located(confidence=0.8, inliers=40, zones=[MOVED])]
+
+    monkeypatch.setattr(match, "locate", locate)
+
+    result = match_document(classifier, lambda key: key.encode(), sent)
+
+    assert classifier.classify.call_args.args[0] == ["t1"]  # a model once, whatever its X
+    assert calls == [b"new/1"]
+    assert [f["entity_id"] for f in result["found"]] == ["new"]
+    assert result["pages"][0]["classifications"][0]["template_version"] == "2.0.1"
+    assert result["pages"][0]["classifications"][1]["template_version"] is None  # « other »

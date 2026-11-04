@@ -2,8 +2,9 @@
 that is, « other » being one of the answers.
 
 A page is embedded and its nearest neighbours are looked up among the pages of the models of the analysis. A model
-page is indexed turned four ways, so a neighbour is a (model, page, rotation): the best score of each (model, page) is
-kept, whatever the rotation, and the rotation that gave it is said."""
+page is indexed turned four ways, and in every X of the model (each X is another example document), so a neighbour is a
+(model, X, page, rotation): the best score of each (model, page) is kept, whatever the X and the rotation, and the X and
+the rotation that gave it are said."""
 
 import io
 import math
@@ -45,8 +46,9 @@ class PageClassifier:
 
     def classify(self, template_ids: list[str], pages: list[bytes]) -> list[dict]:
         """For each page of the document (from 1), what it could be, the likeliest first:
-        `{page, classifications: [{template_id, template_page, confidence, rotation}]}`. « other » has no model, no page
-        and no rotation. With no model to compare to, every page is « other »."""
+        `{page, classifications: [{template_id, template_page, confidence, rotation, major}]}`: `major` is the X of the
+        model that the page looks like, `template_page` a page of it. « other » has no model, no page, no X and no
+        rotation. With no model to compare to, every page is « other »."""
         images = [Image.open(io.BytesIO(data)).convert("RGB") for data in pages]
         vectors = self._embedder.embed(images) if images and template_ids else [[] for _ in images]
         return [
@@ -55,7 +57,7 @@ class PageClassifier:
         ]
 
     def _classes(self, template_ids: list[str], vector: list[float]) -> list[dict]:
-        best: dict[tuple[str, int], tuple[float, int]] = {}
+        best: dict[tuple[str, int], tuple[float, int, int]] = {}
         if template_ids:
             found = self._client.query_points(
                 self._collection,
@@ -72,12 +74,21 @@ class PageClassifier:
             for point in found:
                 key = (point.payload["template_id"], point.payload["page"])
                 if key not in best or point.score > best[key][0]:
-                    best[key] = (point.score, point.payload["rotation"])
+                    # An entry indexed before the X was kept is the first X.
+                    best[key] = (point.score, point.payload["rotation"], point.payload.get("major", 1))
         keys = list(best)
         confidences, other = calibrate([best[k][0] for k in keys], self._other_score, self._temperature)
         classes = [
-            {"template_id": t, "template_page": p, "confidence": c, "rotation": best[(t, p)][1]}
+            {
+                "template_id": t,
+                "template_page": p,
+                "confidence": c,
+                "rotation": best[(t, p)][1],
+                "major": best[(t, p)][2],
+            }
             for (t, p), c in zip(keys, confidences, strict=True)
         ]
-        classes.append({"template_id": None, "template_page": None, "confidence": other, "rotation": None})
+        classes.append(
+            {"template_id": None, "template_page": None, "confidence": other, "rotation": None, "major": None}
+        )
         return sorted(classes, key=lambda c: -c["confidence"])

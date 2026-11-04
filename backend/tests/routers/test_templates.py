@@ -449,12 +449,12 @@ async def test_the_page_of_an_image_is_the_image_itself(db_client, as_user, inde
     ]
 
 
-async def test_a_model_with_no_document_has_nothing_to_index_and_is_taken_out(db_client, as_user, indexer):
+async def test_a_model_with_no_document_has_nothing_to_index(db_client, as_user, indexer):
     as_user("alice")
 
-    model = await create(db_client)
+    await create(db_client)
 
-    assert indexer.calls == [("remove", model["id"])]
+    assert indexer.calls == []
 
 
 async def test_a_change_to_a_model_is_indexed_again_and_a_star_or_a_comment_is_not(db_client, as_user, indexer):
@@ -469,9 +469,11 @@ async def test_a_change_to_a_model_is_indexed_again_and_a_star_or_a_comment_is_n
     await db_client.put(url, json=fields(name="Formulaire X", pages=[{"page": 1, "name": "Couverture"}]))
     assert [a for a, _ in indexer.calls] == ["index"]
     assert indexer.calls[0][1]["pages"][0]["name"] == "Couverture"
+    assert (indexer.calls[0][1]["major"], indexer.calls[0][1]["version"]) == (1, "1.1.0")  # indexed in its X
 
     await db_client.put(url, json=fields(name="Formulaire X", documentId=None))  # the document is taken off
-    assert [a for a, _ in indexer.calls] == ["index", "remove"]
+    # Nothing to add, and the X it had before are still looked for: they stay in the index.
+    assert [a for a, _ in indexer.calls] == ["index"]
 
 
 async def test_an_accepted_suggestion_is_indexed_and_a_refused_one_is_not(db_client, as_user, indexer):

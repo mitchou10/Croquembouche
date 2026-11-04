@@ -27,7 +27,7 @@ from app.schemas.analysis import (
 from app.schemas.catalogue import DocumentOut, Zone
 from app.schemas.matching import MatchingResult
 from app.services import documents, matching_results
-from app.services.catalogue import ForbiddenError, InvalidError, NotFoundError, index_message
+from app.services.catalogue import ForbiddenError, InvalidError, NotFoundError, index_message, version_message
 
 __all__ = ["AnalysisService", "ForbiddenError", "InvalidError", "NotFoundError", "group_name"]
 
@@ -65,6 +65,7 @@ def _classes(rows) -> list[ClassificationOut]:
         ClassificationOut(
             template_id=None if c.template_id is None else str(c.template_id),
             template_page=getattr(c, "template_page", None),
+            template_version=getattr(c, "template_version", None),
             confidence=c.confidence,
         )
         for c in rows
@@ -233,10 +234,7 @@ class AnalysisService:
             "run_id": str(run.id),
             # What each model is made of: where its pages are, and the zones of its entities. A model with no document
             # has no page to be compared to.
-            "templates": [
-                index_message(m.template) or {"template_id": str(m.template_id), "pages": [], "entities": []}
-                for m in analysis.models
-            ],
+            "templates": await self._template_messages(analysis),
             "page_keys": [documents.page_key(saved, number) for number in range(1, saved.pages + 1)],
         }
         try:
@@ -248,6 +246,18 @@ class AnalysisService:
         run_id = run.id
         analysis = await self._repository.reload(analysis)
         return next(self._run(r, True) for r in analysis.runs if r.id == run_id)
+
+    async def _template_messages(self, analysis: Analysis) -> list[dict]:
+        """What each model is made of, once for each X it has had (its last version): a document is looked for in all
+        the images a model has had. A model with no document has no page to be compared to; one with no kept version
+        (made before they were) is what it is now."""
+        kept = await self._repository.last_versions([m.template_id for m in analysis.models])
+        messages = []
+        for model in analysis.models:
+            found = [message for v in kept if v.template_id == model.template_id if (message := version_message(v))]
+            found = found or [m for m in [index_message(model.template)] if m]
+            messages.extend(found or [{"template_id": str(model.template_id), "pages": [], "entities": []}])
+        return messages
 
     async def get_run(self, analysis_id: str, run_id: str) -> RunOut:
         analysis = await self._analysis(analysis_id)

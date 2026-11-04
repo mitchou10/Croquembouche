@@ -212,3 +212,35 @@ async def test_a_model_with_no_document_has_no_page_for_the_worker(db_client, as
     await start(db_client, analysis, data=png())
 
     assert dispatcher.messages[0]["templates"] == [{"template_id": bare["id"], "pages": [], "entities": []}]
+
+
+async def test_a_model_is_given_to_the_worker_once_for_each_x_it_has_had_and_the_answer_says_which(
+    db_client, as_user, dispatcher
+):
+    form, analysis = await analysis_of_a_form(db_client, as_user)
+    old_document = form["document"]
+    # The model changes: a name (1.1.0), then another example document (2.0.0), then an entity (2.0.1).
+    renamed = {"name": "Formulaire Y", "entities": form["entities"], "documentId": old_document["id"]}
+    assert (await db_client.put(f"/api/templates/{form['id']}", json=renamed)).json()["version"] == "1.1.0"
+    new_document = (await db_client.post("/api/documents", files={"file": ("new.pdf", pdf(1))})).json()
+    body = {"name": "Formulaire Y", "entities": [], "documentId": new_document["id"]}
+    assert (await db_client.put(f"/api/templates/{form['id']}", json=body)).json()["version"] == "2.0.0"
+    body["entities"] = [{"name": "Nouveau", "type": "text", "zone": {**SQUARE, "page": 1}}]
+    assert (await db_client.put(f"/api/templates/{form['id']}", json=body)).json()["version"] == "2.0.1"
+
+    started = await start(db_client, analysis)
+
+    [first_x, second_x] = sorted(dispatcher.messages[-1]["templates"], key=lambda t: t["major"])
+    # Each X comes with its last version: its document, its pages, its entities.
+    assert (first_x["major"], first_x["version"], first_x["document_id"]) == (1, "1.1.0", old_document["id"])
+    assert [p["page"] for p in first_x["pages"]] == [1, 2] and [e["page"] for e in first_x["entities"]] == [2]
+    assert (second_x["major"], second_x["version"], second_x["document_id"]) == (2, "2.0.1", new_document["id"])
+    assert [p["page"] for p in second_x["pages"]] == [1] and [e["name"] for e in second_x["entities"]] == ["Nouveau"]
+
+    # The worker says in which version the page was matched; it is kept and shown.
+    result = one_element(form)
+    result["pages"][0]["classifications"][0].update(template_page=1, template_version="2.0.1")
+    await hand_back(db_client, dispatcher.messages[-1], result)
+    run = (await db_client.get(f"/api/analyses/{analysis['id']}/runs/{started['id']}")).json()
+    assert run["pages"][0]["classifications"][0]["templateVersion"] == "2.0.1"
+    assert run["pages"][0]["classifications"][-1]["templateVersion"] is None  # « other »

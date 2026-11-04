@@ -410,7 +410,9 @@ async def test_an_element_the_analysis_missed_is_added_by_hand_and_taken_away(db
         "templateId": models[0],
         "templatePage": None,
     }  # a decision from the start
-    assert element["classifications"] == [{"templateId": models[0], "templatePage": None, "confidence": 1.0}]
+    assert element["classifications"] == [
+        {"templateId": models[0], "templatePage": None, "templateVersion": None, "confidence": 1.0}
+    ]
     again = (await db_client.post(f"{base}/elements", json={"zone": SQUARE, "templateId": models[1]})).json()
     assert len(again["detections"]) == len(made["detections"]) + 2
 
