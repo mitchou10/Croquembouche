@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.0](https://github.com/mitchou10/Croquembouche/compare/v1.6.2...v1.7.0) (2026-11-04)
+
+
+### Features
+
+* **templates:** move, resize and delete a rectangle already drawn ([7b5f70a](https://github.com/mitchou10/Croquembouche/commit/7b5f70ac77cbfe52cc983714163c693731b11fc7)), closes [#38](https://github.com/mitchou10/Croquembouche/issues/38)
+
 ## [1.6.2](https://github.com/mitchou10/Croquembouche/compare/v1.6.1...v1.6.2) (2026-11-03)
 
 
