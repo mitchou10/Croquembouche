@@ -91,6 +91,8 @@ class RunOut(CamelModel):
     date: date
     status: Literal["running", "done", "failed"]
     matches: int
+    # The version (X.Y.Z) of each model of the analysis, by id, when the use started.
+    template_versions: dict[str, str] = {}
     # Whether the use was tried on a document, so has a result: said to everyone, shown to its person alone.
     has_result: bool
     file_name: str | None = None

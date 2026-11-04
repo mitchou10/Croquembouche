@@ -65,6 +65,8 @@ class Run(UUIDMixin, Base):
     matching_document_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("documents.id", ondelete="SET NULL"))
     keep_screenshot: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     file_decision: Mapped[str | None] = mapped_column(String(8))  # kept, deleted
+    # The version of each model of the analysis (by id of the model) when the use started.
+    template_versions: Mapped[dict[str, str]] = mapped_column(JSONB, default=dict, server_default="{}")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), default=utcnow)
 
     user: Mapped[UserProfile] = relationship(lazy="selectin")

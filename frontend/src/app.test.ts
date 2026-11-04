@@ -107,6 +107,7 @@ describe('app', () => {
     await landsOn(router, 'catalogue-detail')
     await vi.waitFor(() => expect(wrapper.get('h1').text()).toBe('Tampon préfecture'))
     expect(wrapper.get('[data-testid="template-owner"]').text()).toBe('dana')
+    expect(wrapper.get('[data-testid="template-version"]').text()).toBe('v1.0.0') // a new model starts at 1.0.0
     expect(wrapper.text()).toContain('Modifier')
 
     await router.push('/analyses/nouvelle')

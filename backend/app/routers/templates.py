@@ -8,6 +8,8 @@ from app.schemas.catalogue import (
     TemplateCreate,
     TemplateOut,
     TemplateUpdate,
+    TemplateVersionDetail,
+    TemplateVersionOut,
 )
 from app.schemas.metrics import TemplateMetrics
 from app.services.catalogue import ConflictError, ForbiddenError, InvalidError, NotFoundError
@@ -54,6 +56,21 @@ async def update(template_id: str, body: TemplateUpdate, service: Catalogue) -> 
 @router.delete("/{template_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete a model: its owner only")
 async def delete(template_id: str, service: Catalogue) -> None:
     await _run(service.delete(template_id))
+
+
+@router.get("/{template_id}/versions", summary="The versions of a model, the newest first")
+async def versions(template_id: str, service: Catalogue) -> list[TemplateVersionOut]:
+    return await _run(service.versions(template_id))
+
+
+@router.get("/{template_id}/versions/{version}", summary="A version of a model, as it was")
+async def get_version(template_id: str, version: str, service: Catalogue) -> TemplateVersionDetail:
+    return await _run(service.get_version(template_id, version))
+
+
+@router.post("/{template_id}/versions/{version}/restore", summary="Go back to a version: its owner only")
+async def restore(template_id: str, version: str, service: Catalogue) -> TemplateOut:
+    return await _run(service.restore(template_id, version))
 
 
 @router.put("/{template_id}/star", summary="Star a model, or take the star back")

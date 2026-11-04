@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -35,6 +35,11 @@ class Template(UUIDMixin, TimestampMixin, Base):
     name: Mapped[str] = mapped_column(String(200))
     description: Mapped[str] = mapped_column(Text, default="")
     document_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("documents.id", ondelete="SET NULL"))
+    # X.Y.Z: X goes up when the example document changes, Y when what describes the model does (name, description,
+    # categories, notes of pages), Z when its entities do. Each bump keeps a snapshot (see `TemplateVersion`).
+    major: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    minor: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    patch: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
 
     owner: Mapped[UserProfile] = relationship(lazy="selectin")
     document: Mapped[Document | None] = relationship(lazy="selectin")
@@ -51,6 +56,35 @@ class Template(UUIDMixin, TimestampMixin, Base):
     suggestions: Mapped[list["Suggestion"]] = relationship(
         order_by="Suggestion.created_at.desc()", cascade="all, delete-orphan", lazy="selectin"
     )
+
+    @property
+    def version(self) -> str:
+        return f"{self.major}.{self.minor}.{self.patch}"
+
+
+class TemplateVersion(UUIDMixin, Base):
+    """The model as it became at a version, kept whole: to read an old version, to go back to it, and to look in the
+    image it had. The versions that share an X share one stored document."""
+
+    __tablename__ = "template_versions"
+    __table_args__ = (UniqueConstraint("template_id", "major", "minor", "patch"),)
+
+    template_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("templates.id", ondelete="CASCADE"), index=True)
+    major: Mapped[int] = mapped_column(Integer)
+    minor: Mapped[int] = mapped_column(Integer)
+    patch: Mapped[int] = mapped_column(Integer)
+    # The fields as `TemplateFields` has them (entities with their ids and zones, pages that were given something).
+    snapshot: Mapped[dict] = mapped_column(JSONB)
+    document_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("documents.id", ondelete="SET NULL"), index=True)
+    author_id: Mapped[str] = mapped_column(ForeignKey("user_profiles.user_id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), default=utcnow)
+
+    author: Mapped[UserProfile] = relationship(lazy="selectin")
+    document: Mapped[Document | None] = relationship(lazy="selectin")
+
+    @property
+    def version(self) -> str:
+        return f"{self.major}.{self.minor}.{self.patch}"
 
 
 class TemplateCategory(Base):

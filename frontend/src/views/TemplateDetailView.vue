@@ -130,6 +130,7 @@ async function comment() {
     <div class="template-view__side">
       <p class="template-view__meta fr-mb-0">
         Par <strong data-testid="template-owner">{{ template.ownerName }}</strong>
+        <DsfrBadge :label="`v${template.version}`" type="info" small no-icon data-testid="template-version" title="Version du modèle" />
         <DsfrTag v-for="category in template.categories" :key="category" :label="category" small />
       </p>
       <p class="template-view__description fr-mb-0" data-testid="description">{{ template.description }}</p>

@@ -48,6 +48,7 @@ function onClick(event: MouseEvent) {
           <h2 id="preview-title" class="fr-h4 fr-mb-0">{{ template.name }}</h2>
           <p class="fr-mb-0">
             Par <strong>{{ template.ownerName }}</strong>
+            <DsfrBadge :label="`v${template.version}`" type="info" small no-icon title="Version du modèle" />
             <DsfrTag v-for="category in template.categories" :key="category" :label="category" small />
           </p>
         </div>
