@@ -187,6 +187,8 @@ export interface Detection {
   classifications: Classification[]
   /** Which entity of the model it is, when known: what the quality of each entity is measured on. */
   entityId?: string | null
+  /** The text read in the zone, once the analysis reads them (OCR): absent until then. */
+  text?: string | null
 }
 
 /** What the person who ran the analysis decided of a prediction: still to look at, right, wrong, or corrected by hand. */
