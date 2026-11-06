@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.11.0](https://github.com/mitchou10/Croquembouche/compare/v1.10.0...v1.11.0) (2026-11-06)
+
+
+### Features
+
+* **analyses:** a button to copy the text of an element, waiting for the zones to be read ([d857060](https://github.com/mitchou10/Croquembouche/commit/d857060b896bae5f4124a66280a6805afbd1fd0d))
+* **analyses:** name the entity and show the crop of an element found ([6695341](https://github.com/mitchou10/Croquembouche/commit/6695341b8260c64336c001bcc024c5f2d5d195c2))
+
 ## [1.10.0](https://github.com/mitchou10/Croquembouche/compare/v1.9.0...v1.10.0) (2026-11-04)
 
 
