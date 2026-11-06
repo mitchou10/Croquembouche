@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.12.0](https://github.com/mitchou10/Croquembouche/compare/v1.11.1...v1.12.0) (2026-11-06)
+
+
+### Features
+
+* **analyses:** cancel a use that is running ([3ef2bc0](https://github.com/mitchou10/Croquembouche/commit/3ef2bc0201c0bc6b15f293bb977dff19e3359e45))
+
 ## [1.11.1](https://github.com/mitchou10/Croquembouche/compare/v1.11.0...v1.11.1) (2026-11-06)
 
 
