@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.11.1](https://github.com/mitchou10/Croquembouche/compare/v1.11.0...v1.11.1) (2026-11-06)
+
+
+### Bug Fixes
+
+* **settings:** remove the e-mail notification toggle ([0d85505](https://github.com/mitchou10/Croquembouche/commit/0d855053e8eda1bb3bdaebc5b1b0219caadf0a1f))
+
 ## [1.11.0](https://github.com/mitchou10/Croquembouche/compare/v1.10.0...v1.11.0) (2026-11-06)
 
 
