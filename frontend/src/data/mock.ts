@@ -223,6 +223,14 @@ export interface RunPage {
 }
 
 /** One use of an analysis: who ran it, when, how it went, and (for a document tried) what was found in it. */
+/** What computing something consumed: electricity (Wh), CO2 (g), water (mL, estimated from the electricity), time (s). */
+export interface Consumption {
+  durationS: number
+  energyWh: number
+  co2G: number
+  waterMl: number
+}
+
 export interface AnalysisRun {
   id: string
   userId: string
@@ -230,6 +238,8 @@ export interface AnalysisRun {
   userName: string
   /** Whether it was tried on a document, so has a result (which is for whoever ran it to see). */
   hasResult: boolean
+  /** What it consumed, once it has ended: absent when it was not measured. */
+  consumption?: Consumption | null
   date: string
   status: RunStatus
   matches: number
@@ -265,6 +275,8 @@ export interface Analysis {
   date: string
   status: AnalysisStatus
   matches: number
+  /** What all its measured uses consumed. */
+  consumption?: Consumption
 }
 
 // A made-up letter, drawn as an SVG so the demo model has an example document without shipping a file.

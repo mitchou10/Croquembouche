@@ -58,6 +58,10 @@ async def finish(
             )
             for position, f in enumerate(_in_reading_order(result))
         ]
+    if result.consumption is not None:
+        run.energy_kwh = result.consumption.energy_kwh
+        run.co2_kg = result.consumption.co2_kg
+        run.duration_s = result.consumption.duration_s
     run.status = result.status
     await _let_go(run, documents_repository)
 

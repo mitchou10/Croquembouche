@@ -66,6 +66,16 @@ class ReviewOut(CamelModel):
     template_page: int | None = None
 
 
+class ConsumptionOut(CamelModel):
+    """What computing something consumed: the electricity (Wh), the CO2 it made (g), the water it cost (mL, estimated
+    from the electricity) and the time it took (s)."""
+
+    duration_s: float = 0
+    energy_wh: float = 0
+    co2_g: float = 0
+    water_ml: float = 0
+
+
 class DetectionOut(CamelModel):
     id: str
     zone: Zone
@@ -93,6 +103,8 @@ class RunOut(CamelModel):
     date: date
     status: Literal["running", "done", "failed", "cancelled"]
     matches: int
+    # Absent when the use was not measured (or has not ended).
+    consumption: ConsumptionOut | None = None
     # The version (X.Y.Z) of each model of the analysis, by id, when the use started.
     template_versions: dict[str, str] = {}
     # Whether the use was tried on a document, so has a result: said to everyone, shown to its person alone.
@@ -123,6 +135,8 @@ class AnalysisOut(CamelModel):
     date: date
     status: Literal["running", "done", "failed"]
     matches: int
+    # What all its measured uses consumed.
+    consumption: ConsumptionOut = ConsumptionOut()
 
 
 class ViewsOut(CamelModel):

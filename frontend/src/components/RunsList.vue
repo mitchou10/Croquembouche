@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { statusLabels, type AnalysisRun } from '../data/mock'
+import { formatCo2, formatEnergy, hasConsumption } from '../composables/consumption'
 import PagerControls from './PagerControls.vue'
 
 /**
@@ -36,6 +37,9 @@ watch(() => props.runs.length, () => (page.value = 0))
         <span class="runs__user">{{ run.userName }}</span>
         <DsfrBadge :label="statusLabels[run.status].label" :type="statusLabels[run.status].type" small />
         <span class="runs__matches">{{ run.matches }} correspondance{{ run.matches > 1 ? 's' : '' }}</span>
+        <span v-if="hasConsumption(run.consumption)" class="runs__consumption" data-testid="run-consumption-line">
+          {{ formatEnergy(run.consumption.energyWh) }} · {{ formatCo2(run.consumption.co2G) }} de CO₂
+        </span>
         <button
           v-if="canCancel?.(run)"
           type="button"
@@ -98,6 +102,11 @@ watch(() => props.runs.length, () => (page.value = 0))
 
 .runs__user {
   font-weight: 700;
+}
+
+.runs__consumption {
+  color: var(--text-mention-grey);
+  font-size: 0.875rem;
 }
 
 .runs__matches {

@@ -33,7 +33,16 @@ class FoundElement(BaseModel):
     classifications: list[FoundClass]
 
 
+class Consumption(BaseModel):
+    """What computing a use consumed: the electricity, the CO2 that made in the country, and how long it took."""
+
+    energy_kwh: float = Field(ge=0)
+    co2_kg: float = Field(ge=0)
+    duration_s: float = Field(ge=0)
+
+
 class MatchingResult(BaseModel):
     status: Literal["done", "failed"]
+    consumption: Consumption | None = None
     pages: list[PageAnswer] = []
     found: list[FoundElement] = []

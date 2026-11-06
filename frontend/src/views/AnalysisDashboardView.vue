@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import ConfirmButton from '../components/ConfirmButton.vue'
+import ConsumptionSummary from '../components/ConsumptionSummary.vue'
 import DetectionCard from '../components/DetectionCard.vue'
 import DocumentViewer from '../components/DocumentViewer.vue'
 import FixedPage from '../components/FixedPage.vue'
@@ -11,6 +12,7 @@ import ReviewControls from '../components/ReviewControls.vue'
 import RunsList from '../components/RunsList.vue'
 import StatTile from '../components/StatTile.vue'
 import TabList from '../components/TabList.vue'
+import { hasConsumption } from '../composables/consumption'
 import { describeShares } from '../composables/shares'
 import { loadAnalyses, statsOf, useAnalyses } from '../composables/useAnalyses'
 import { ACCEPTED_DOCUMENT_TYPES, documentError, useCatalogue } from '../composables/useCatalogue'
@@ -394,6 +396,13 @@ const sharing = computed(() => {
         <TabList v-model="tab" :tabs="tabs" label="Résultat et utilisations" />
 
         <div v-if="tab === 'runs'" role="tabpanel" class="side__panel" data-testid="runs">
+          <ConsumptionSummary
+            v-if="hasConsumption(analysis.consumption)"
+            :consumption="analysis.consumption"
+            heading="Consommation de toutes les utilisations mesurées"
+            compact
+            data-testid="analysis-consumption"
+          />
           <p v-if="statusFilter" class="fr-text--sm fr-mb-0" data-testid="runs-filter">
             Utilisations « {{ statusLabels[statusFilter].label }} » :
             <button type="button" class="fr-link fr-link--sm" data-testid="runs-filter-clear" @click="statusFilter = null">Tout afficher</button>
@@ -452,6 +461,7 @@ const sharing = computed(() => {
             <strong v-else data-testid="nothing-found">Aucun élément trouvé dans ce document.</strong>
             · <span data-testid="progress">{{ progress.reviewed }} / {{ progress.total }} vérifiée{{ progress.reviewed > 1 ? 's' : '' }}</span>
           </p>
+          <ConsumptionSummary v-if="hasConsumption(run.consumption)" :consumption="run.consumption" heading="Cette analyse a consommé" compact data-testid="run-consumption" />
 
           <!-- The page: which model it corresponds to. -->
           <template v-if="tab === 'page' && pageResult">

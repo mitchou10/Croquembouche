@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import FixedPage from '../components/FixedPage.vue'
+import ConsumptionSummary from '../components/ConsumptionSummary.vue'
 import StatTile from '../components/StatTile.vue'
+import { hasConsumption, totalConsumption } from '../composables/consumption'
 import { statsOf, useAnalyses } from '../composables/useAnalyses'
 import { statusLabels, type Analysis } from '../data/mock'
 
@@ -12,6 +14,7 @@ const LIST_SIZE = 5
 const { analyses } = useAnalyses()
 
 const stats = computed(() => statsOf(analyses.value))
+const consumption = computed(() => totalConsumption(analyses.value))
 const visibility = computed(() => ({
   public: analyses.value.filter((a) => a.isPublic).length,
   shared: analyses.value.filter((a) => !a.isPublic && a.shares.length).length,
@@ -64,6 +67,13 @@ const route = (a: Analysis) => ({ name: 'analysis-detail', params: { id: a.id } 
         {{ visibility.private }} privée{{ visibility.private > 1 ? 's' : '' }}
       </p>
     </section>
+
+    <ConsumptionSummary
+      v-if="hasConsumption(consumption)"
+      :consumption="consumption"
+      heading="Consommation de l’ensemble des utilisations mesurées"
+      data-testid="overview-consumption"
+    />
 
     <div class="overview__lists">
       <section class="overview__panel" aria-labelledby="top-title">

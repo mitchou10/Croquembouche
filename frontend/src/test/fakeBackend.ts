@@ -395,6 +395,9 @@ function canOpen(analysis: Analysis, user: string, admin: boolean): boolean {
 const answers = new Map<string, () => void>()
 const asked = new Map<string, number>()
 
+/** What a use that was measured consumed, as the backend would say it. */
+const CONSUMED = { durationS: 3.2, energyWh: 2.4, co2G: 0.12, waterMl: 4.3 }
+
 function answer(run: AnalysisRun, analysis: Analysis, detections: ReviewedDetection[], pages: NonNullable<AnalysisRun['pages']>, broken: boolean) {
   answers.delete(run.id)
   if (broken) {
@@ -402,6 +405,7 @@ function answer(run: AnalysisRun, analysis: Analysis, detections: ReviewedDetect
     return
   }
   run.status = 'done'
+  run.consumption = CONSUMED
   run.matches = detections.length
   run.detections = detections
   run.pages = pages
@@ -530,7 +534,10 @@ function analysisView(analysis: Analysis, user: string, admin: boolean) {
     return { id: analysis.id, canOpen: false, name: analysis.name, description: '', ownerId: '', ownerName: '', views: 0, runs: [], templateIds: [], isPublic: false, shares: [], date: analysis.date, status: analysis.status, matches: 0 }
   }
   const sees = analysis.ownerId === user || admin
-  return { ...analysis, shares: sees ? analysis.shares : [], runs: analysis.runs.map((r) => runView(r, user)) }
+  const measured = analysis.runs.map((r) => r.consumption).filter((c): c is NonNullable<typeof c> => !!c)
+  const sum = (key: 'durationS' | 'energyWh' | 'co2G' | 'waterMl') => measured.reduce((total, c) => total + c[key], 0)
+  const consumption = { durationS: sum('durationS'), energyWh: sum('energyWh'), co2G: sum('co2G'), waterMl: sum('waterMl') }
+  return { ...analysis, consumption, shares: sees ? analysis.shares : [], runs: analysis.runs.map((r) => runView(r, user)) }
 }
 
 /** How many pages a model's document has, 0 when it has none: what a page of a document can be classified as. */
@@ -624,6 +631,7 @@ function analysesRoute(user: string, admin: boolean, method: string, parts: stri
       date: today(),
       status: later ? 'running' : 'done',
       matches: later ? 0 : detections.length,
+      consumption: later ? null : CONSUMED,
       fileName: file.name,
       detections: later ? [] : detections,
       pages: later ? undefined : pages,
