@@ -198,24 +198,30 @@ const pageModels = computed(() =>
 )
 const percent = (confidence: number) => Math.round(confidence * 100)
 
-// What is said on the document of each element: what it is, and what has been decided of it.
-const labelOf = (d: NonNullable<typeof shown.value>) => {
-  const best = d.classifications[0]
-  if (d.source === 'manual') return `✎ ${nameOf(d.review.templateId ?? null)}`
+// The entity an element is, when known: looked for in the models of the analysis and their sub-models.
+const entityOf = (d: NonNullable<typeof shown.value>) =>
+  d.entityId ? searched.value.flatMap((id) => findTemplate(id)?.entities ?? []).find((e) => e.id === d.entityId) : undefined
+const entityName = (d: NonNullable<typeof shown.value>) => entityOf(d)?.name
+
+// What is said on the document of each element: what it is called (its entity, else its number) and what has been decided
+// of it. The model it matches is not written there, the card beside says it.
+const labelOf = (d: NonNullable<typeof shown.value>, index: number) => {
+  const name = entityName(d) ?? `Élément ${index + 1}`
+  if (d.source === 'manual') return `✎ ${name}`
   switch (d.review.status) {
     case 'validated':
-      return `✓ ${nameOf(best.templateId)}`
+      return `✓ ${name}`
     case 'invalidated':
-      return `✗ ${nameOf(best.templateId)} (invalidée)`
+      return `✗ ${name} (invalidée)`
     case 'annotated':
-      return `✎ ${nameOf(d.review.templateId ?? null)}`
+      return `✎ ${name}`
     default:
-      return `${nameOf(best.templateId)} · ${percent(best.confidence)} %`
+      return `${name} · ${percent(d.classifications[0].confidence)} %`
   }
 }
 // The viewer outlines the zones of « entities »: each element found is one.
 const outlined = computed<TemplateEntity[]>(() =>
-  detections.value.map((d) => ({ id: d.id, name: labelOf(d), definition: '', type: 'text', examples: [], stars: [], zone: d.zone })),
+  detections.value.map((d, index) => ({ id: d.id, name: labelOf(d, index), definition: '', type: 'text', examples: [], stars: [], zone: d.zone })),
 )
 
 const foundModels = computed(() => new Set(detections.value.map((d) => d.classifications[0].templateId).filter((t) => t !== null)).size)
@@ -449,7 +455,7 @@ const sharing = computed(() => {
 
             <template v-if="shown && !adding">
               <ManualElementCard v-if="shown.source === 'manual'" :key="shown.id" :element="shown" :position="current + 1" :model-name="nameOf" @remove="remove(shown.id)" />
-              <DetectionCard v-else :key="shown.id" :detection="shown" :position="current + 1" :name-of="nameOf">
+              <DetectionCard v-else :key="shown.id" :detection="shown" :position="current + 1" :name-of="nameOf" :entity-name="entityName(shown)" :document="run?.screenshot">
                 <ReviewControls :review="shown.review" :models="models" :model-name="nameOf" @review="review(shown.id, $event)" />
               </DetectionCard>
             </template>
