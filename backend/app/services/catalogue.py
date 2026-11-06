@@ -19,6 +19,7 @@ from app.repositories.catalogue import CatalogueRepository
 from app.repositories.document import DocumentRepository
 from app.schemas.catalogue import (
     MAX_EXAMPLES,
+    MAX_TAGS,
     DocumentOut,
     EntityOut,
     SubModelOut,
@@ -70,7 +71,14 @@ def _fields_dict(fields: TemplateFields) -> dict:
         "name": dumped["name"],
         "description": dumped["description"],
         "categories": clean_list(dumped["categories"], ignore_case=True),
-        "entities": [{**e, "examples": clean_list(e["examples"])[:MAX_EXAMPLES]} for e in dumped["entities"]],
+        "entities": [
+            {
+                **e,
+                "examples": clean_list(e["examples"])[:MAX_EXAMPLES],
+                "tags": clean_list(e["tags"], ignore_case=True)[:MAX_TAGS],
+            }
+            for e in dumped["entities"]
+        ],
         "pages": _given_pages(dumped["pages"]),
     }
 
@@ -102,6 +110,7 @@ def _template_fields_dict(template: Template) -> dict:
                 "definition": e.definition,
                 "type": e.type,
                 "examples": list(e.examples),
+                "tags": list(e.tags or []),
                 "zone": None if e.zone_page is None else {"page": e.zone_page, "points": e.zone_points},
             }
             for e in template.entities
@@ -471,6 +480,7 @@ class CatalogueService:
             entity.definition = data["definition"]
             entity.type = data["type"]
             entity.examples = data["examples"]
+            entity.tags = data["tags"]
             zone = data["zone"]
             entity.zone_page = zone["page"] if zone else None
             entity.zone_points = zone["points"] if zone else None
@@ -633,6 +643,7 @@ class CatalogueService:
                     definition=e.definition,
                     type=e.type,
                     examples=list(e.examples),
+                    tags=list(e.tags or []),
                     zone=None if e.zone_page is None else {"page": e.zone_page, "points": e.zone_points},
                     stars=[s.user_id for s in e.stars],
                 )

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { canPreview, MAX_EXAMPLE_LENGTH, MAX_EXAMPLES, newEntity } from '../composables/useCatalogue'
+import { canPreview, MAX_EXAMPLE_LENGTH, MAX_EXAMPLES, MAX_TAG_LENGTH, MAX_TAGS, newEntity } from '../composables/useCatalogue'
 import { entityTypeDefinition, entityTypeLabel, useEntityTypes } from '../composables/useEntityTypes'
 import type { TemplateDocument, TemplateEntity } from '../data/mock'
 import InfoTip from './InfoTip.vue'
@@ -207,6 +207,15 @@ defineExpose({ validate, incomplete })
           :max-items="MAX_EXAMPLES"
         />
       </div>
+      <TagsInput
+        v-model="entity.tags"
+        class="entity__tags"
+        ignore-case
+        label="Détails (facultatif)"
+        placeholder="Ex. verso, écrit à la main"
+        :max-length="MAX_TAG_LENGTH"
+        :max-items="MAX_TAGS"
+      />
     </div>
   </section>
 </template>

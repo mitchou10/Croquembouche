@@ -14,7 +14,7 @@ import type {
 } from '../data/mock'
 import { analyses as analysisSeed, entityTypeSeed, groupSeed, sampleLetter, templates as seed } from '../data/mock'
 import { simulatePage, simulateTest } from './simulate'
-import { changedFields, cleanCategories, cleanList, MAX_EXAMPLES } from '../composables/useCatalogue'
+import { changedFields, cleanCategories, cleanList, MAX_EXAMPLES, MAX_TAGS } from '../composables/useCatalogue'
 import { useSession } from '../composables/useSession'
 
 /**
@@ -139,6 +139,7 @@ function clean(body: Body): TemplateFields {
       definition: e.definition.trim(),
       type: e.type,
       examples: cleanList(e.examples).slice(0, MAX_EXAMPLES),
+      tags: cleanList(e.tags ?? [], true).slice(0, MAX_TAGS),
       ...(e.zone && { zone: e.zone }),
       stars: [],
     })),

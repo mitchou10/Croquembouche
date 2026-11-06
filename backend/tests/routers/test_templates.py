@@ -101,6 +101,41 @@ async def test_only_the_owner_edits_and_keeps_the_stars_of_the_entities(db_clien
     assert updated["entities"][0]["stars"] == [] and updated["entities"][0]["zone"] is None
 
 
+async def test_an_entity_can_be_an_image_or_a_table(db_client, alice):
+    types = {t["value"] for t in (await db_client.get("/api/entity-types")).json()}
+    assert {"image", "table"} <= types
+
+    entities = [
+        {"name": "Signature", "type": "image", "zone": SQUARE},
+        {"name": "Lignes", "type": "table", "zone": SQUARE},
+    ]
+    template = await create(db_client, entities=entities)
+
+    assert [e["type"] for e in template["entities"]] == ["image", "table"]
+
+
+async def test_an_entity_has_optional_tags_which_are_cleaned_and_versioned(db_client, alice):
+    template = await create(db_client)
+    assert template["entities"][0]["tags"] == []  # optional
+    assert template["version"] == "1.0.0"
+
+    tagged = {**template["entities"][0], "tags": [" Verso ", "verso", "à la main", "", "x" * 30]}
+    updated = (await db_client.put(f"/api/templates/{template['id']}", json=fields(entities=[tagged]))).json()
+
+    assert updated["entities"][0]["tags"] == ["Verso", "à la main", "x" * 30]  # trimmed, no blank, no duplicate
+    assert updated["version"] == "1.0.1"  # the entities changed
+    assert (await db_client.get(f"/api/templates/{template['id']}")).json()["entities"][0]["tags"] == updated[
+        "entities"
+    ][0]["tags"]
+
+    too_long = {**tagged, "tags": ["x" * 31]}
+    assert (
+        await db_client.put(f"/api/templates/{template['id']}", json=fields(entities=[too_long]))
+    ).status_code == 422
+    many = {**tagged, "tags": [f"t{i}" for i in range(40)]}
+    assert (await db_client.put(f"/api/templates/{template['id']}", json=fields(entities=[many]))).status_code == 422
+
+
 async def test_the_document_of_a_model(db_client, as_user):
     as_user("alice", name="Alice")
     upload = (await db_client.post("/api/documents", files={"file": ("scan.png", png())})).json()

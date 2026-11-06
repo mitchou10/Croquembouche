@@ -105,6 +105,8 @@ class TemplateEntity(UUIDMixin, Base):
     definition: Mapped[str] = mapped_column(Text, default="")
     type: Mapped[str] = mapped_column(ForeignKey("entity_types.value"))
     examples: Mapped[list[str]] = mapped_column(JSONB, default=list)
+    # Optional words that say more of what it is (« signature », « verso »...): free, like the examples.
+    tags: Mapped[list[str]] = mapped_column(JSONB, default=list, server_default="[]")
     # Where it appears on the example document: the page (from 1) and a polygon, in fractions (0 to 1) of the page.
     zone_page: Mapped[int | None] = mapped_column(Integer)
     zone_points: Mapped[list[dict[str, float]] | None] = mapped_column(JSONB)

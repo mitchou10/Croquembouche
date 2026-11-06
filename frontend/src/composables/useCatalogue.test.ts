@@ -192,7 +192,7 @@ describe('useCatalogue', () => {
     const entity = { ...newEntity(), id: 'e1', name: 'Date', examples: ['a'], zone: { page: 2, points: [] } }
     const body = toBody(fields({ entities: [entity] }), 'doc-1')
     expect(body.entities).toEqual([
-      { id: 'e1', name: 'Date', definition: '', type: 'text', examples: ['a'], zone: { page: 2, points: [] } },
+      { id: 'e1', name: 'Date', definition: '', type: 'text', examples: ['a'], tags: [], zone: { page: 2, points: [] } },
     ])
     expect(body.documentId).toBe('doc-1')
     expect('documentId' in toBody(fields())).toBe(false) // absent: the document is kept
@@ -247,7 +247,7 @@ describe('cleanCategories', () => {
 })
 
 describe('changedFields on entities', () => {
-  const entity = { id: 'e', stars: [] as string[], type: 'date' as const, examples: [] as string[], name: 'Date', definition: 'La date', zone: { page: 1, points: [{ x: 0, y: 0 }, { x: 0.5, y: 0 }, { x: 0.5, y: 0.5 }] } }
+  const entity = { id: 'e', stars: [] as string[], type: 'date' as const, examples: [] as string[], tags: [] as string[], name: 'Date', definition: 'La date', zone: { page: 1, points: [{ x: 0, y: 0 }, { x: 0.5, y: 0 }, { x: 0.5, y: 0.5 }] } }
 
   it('reports added, removed or moved entities by name', () => {
     expect(changedFields(fields(), fields({ entities: [entity] }))).toEqual([
@@ -340,7 +340,7 @@ describe('stars on entities', () => {
   })
 
   it('does not count stars as part of what a suggestion changes', () => {
-    const entity = { id: 'e', name: 'Date', definition: 'La date', type: 'date' as const, examples: [], stars: ['a'] }
+    const entity = { id: 'e', name: 'Date', definition: 'La date', type: 'date' as const, examples: [], tags: [], stars: ['a'] }
     expect(changedFields(fields({ entities: [entity] }), fields({ entities: [{ ...entity, stars: ['a', 'b'] }] }))).toEqual([])
   })
 
@@ -447,7 +447,7 @@ describe('stars on suggestions', () => {
 describe('type and examples of an entity', () => {
   beforeAll(loadEntityTypes) // the labels of the types, as the backend gives them
 
-  const entity = { id: 'e', stars: [] as string[], type: 'date' as const, examples: ['12/03/2026'], name: 'Date', definition: 'La date' }
+  const entity = { id: 'e', stars: [] as string[], type: 'date' as const, examples: ['12/03/2026'], tags: [] as string[], name: 'Date', definition: 'La date' }
 
   beforeEach(() => signIn())
 
@@ -511,7 +511,7 @@ describe('the types of entity, as the backend gives them', () => {
     expect(entityTypeDefinition('amount')).toMatch(/somme d’argent/)
     const { types, loaded } = useEntityTypes()
     expect(loaded.value).toBe(true)
-    expect(types.value.map((t) => t.value)).toEqual(['text', 'date', 'integer', 'decimal', 'amount', 'percentage', 'yes_no'])
+    expect(types.value.map((t) => t.value)).toEqual(['text', 'date', 'integer', 'decimal', 'amount', 'percentage', 'yes_no', 'image', 'table'])
     expect(types.value.every((t) => t.label && t.definition)).toBe(true)
   })
 

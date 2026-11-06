@@ -227,7 +227,7 @@ const labelOf = (d: NonNullable<typeof shown.value>, index: number) => {
 }
 // The viewer outlines the zones of « entities »: each element found is one.
 const outlined = computed<TemplateEntity[]>(() =>
-  detections.value.map((d, index) => ({ id: d.id, name: labelOf(d, index), definition: '', type: 'text', examples: [], stars: [], zone: d.zone })),
+  detections.value.map((d, index) => ({ id: d.id, name: labelOf(d, index), definition: '', type: 'text', examples: [], tags: [], stars: [], zone: d.zone })),
 )
 
 const foundModels = computed(() => new Set(detections.value.map((d) => d.classifications[0].templateId).filter((t) => t !== null)).size)
