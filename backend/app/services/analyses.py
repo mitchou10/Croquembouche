@@ -16,6 +16,7 @@ from app.schemas.analysis import (
     AnalysisCreate,
     AnalysisOut,
     ClassificationOut,
+    ConsumptionOut,
     DetectionOut,
     ElementCreate,
     GroupOut,
@@ -44,6 +45,24 @@ def group_name(path: str) -> str:
 
 def _fingerprint(kind: str, value: str) -> str:
     return blind_index(f"{kind}:{value}")
+
+
+def _consumed(energy_kwh: float, co2_kg: float, duration_s: float) -> ConsumptionOut:
+    """What a use (or all of them) consumed, in the units people read: Wh, g of CO2, mL of water, seconds. The water is
+    estimated from the electricity."""
+    water_liters = energy_kwh * MatchingSettings().WATER_LITERS_PER_KWH
+    return ConsumptionOut(
+        duration_s=duration_s, energy_wh=energy_kwh * 1000, co2_g=co2_kg * 1000, water_ml=water_liters * 1000
+    )
+
+
+def _consumption_of(runs: list[Run]) -> ConsumptionOut:
+    measured = [r for r in runs if r.energy_kwh is not None]
+    return _consumed(
+        sum(r.energy_kwh or 0 for r in measured),
+        sum(r.co2_kg or 0 for r in measured),
+        sum(r.duration_s or 0 for r in measured),
+    )
 
 
 def _status(analysis: Analysis) -> str:
@@ -419,6 +438,9 @@ class AnalysisService:
             date=run.created_at.date(),
             status=run.status,  # type: ignore[arg-type]
             matches=run.matches,
+            consumption=None
+            if run.energy_kwh is None
+            else _consumed(run.energy_kwh, run.co2_kg or 0, run.duration_s or 0),
             template_versions=run.template_versions or {},
             has_result=run.file_name is not None,
             file_name=run.file_name if mine else None,
@@ -490,4 +512,5 @@ class AnalysisService:
             date=analysis.created_at.date(),
             status=_status(analysis),  # type: ignore[arg-type]
             matches=sum(r.matches for r in analysis.runs if r.status == "done"),
+            consumption=_consumption_of(analysis.runs),
         )

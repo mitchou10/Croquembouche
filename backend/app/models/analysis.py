@@ -58,6 +58,10 @@ class Run(UUIDMixin, Base):
     user_id: Mapped[str] = mapped_column(ForeignKey("user_profiles.user_id"), index=True)
     status: Mapped[str] = mapped_column(String(16), default="running")  # running, done, failed, cancelled
     matches: Mapped[int] = mapped_column(Integer, default=0)
+    # What computing it consumed, as the worker measured it (CodeCarbon): none when it was not measured.
+    energy_kwh: Mapped[float | None] = mapped_column(Float)
+    co2_kg: Mapped[float | None] = mapped_column(Float)
+    duration_s: Mapped[float | None] = mapped_column(Float)
     file_name: Mapped[str | None] = mapped_column("file_name_encrypted", EncryptedText)
     screenshot_document_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("documents.id", ondelete="SET NULL"))
     # The document while the worker reads its pages: kept as the screenshot of the use if asked to, else deleted as soon

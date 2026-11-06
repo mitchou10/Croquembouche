@@ -35,3 +35,10 @@ NEIGHBOURS = int(os.environ.get("CLASSIFY_NEIGHBOURS", "256"))
 # Where a result is handed back to, and the key that proves it is the worker's (the backend refuses any without it).
 BACKEND_URL = os.environ.get("BACKEND_URL", "http://localhost:8000")
 INTERNAL_API_KEY = os.environ.get("INTERNAL_API_KEY", "")
+
+# What a use consumed is measured with CodeCarbon, around the matching of the document: the electricity of the process
+# that did it and the CO2 that electricity made in the country. A measure that fails never fails the use.
+MEASURE_CONSUMPTION = os.environ.get("MEASURE_CONSUMPTION", "1") != "0"
+COUNTRY_ISO_CODE = os.environ.get("COUNTRY_ISO_CODE", "FRA")
+# « process » is the power of the worker's process; « machine » the whole host's, which is too much when it is shared.
+CONSUMPTION_TRACKING_MODE = os.environ.get("CONSUMPTION_TRACKING_MODE", "process")

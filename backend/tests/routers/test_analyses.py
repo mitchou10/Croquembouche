@@ -2,7 +2,7 @@ import pytest
 from sqlalchemy import text
 
 from tests.documents import image, pdf, png
-from tests.worker import hand_back
+from tests.worker import answer, hand_back
 
 SQUARE = {"page": 1, "points": [{"x": 0.1, "y": 0.1}, {"x": 0.4, "y": 0.1}, {"x": 0.4, "y": 0.3}]}
 
@@ -303,6 +303,49 @@ async def test_a_use_is_cancelled_even_when_the_worker_cannot_be_reached(db_clie
     cancelled = await db_client.post(f"/api/analyses/{analysis['id']}/runs/{started['id']}/cancel")
 
     assert cancelled.status_code == 200 and cancelled.json()["status"] == "cancelled"
+
+
+async def test_what_a_use_consumed_is_kept_and_summed_for_the_analysis(db_client, as_user, models, dispatcher):
+    as_user("alice")
+    analysis = await create(db_client, models)
+    url = f"/api/analyses/{analysis['id']}"
+    assert analysis["consumption"] == {"durationS": 0, "energyWh": 0, "co2G": 0, "waterMl": 0}  # nothing measured yet
+
+    first = await start(db_client, analysis)
+    used = {"energy_kwh": 0.002, "co2_kg": 0.0001, "duration_s": 4.0}
+    answered = await hand_back(
+        db_client, dispatcher.messages[-1], {**answer(dispatcher.messages[-1]), "consumption": used}
+    )
+    assert answered.status_code == 204, answered.text
+
+    run = (await db_client.get(f"{url}/runs/{first['id']}")).json()
+    # In the units people read: Wh, g of CO2, seconds, and mL of water estimated from the electricity (1.8 L a kWh).
+    assert run["consumption"] == pytest.approx({"durationS": 4.0, "energyWh": 2.0, "co2G": 0.1, "waterMl": 3.6})
+
+    second = await start(db_client, analysis)
+    await hand_back(db_client, dispatcher.messages[-1], {**answer(dispatcher.messages[-1]), "consumption": used})
+    third = await start(db_client, analysis)
+    await hand_back(db_client, dispatcher.messages[-1])  # answered without a measure
+    assert (await db_client.get(f"{url}/runs/{third['id']}")).json()["consumption"] is None
+    assert (await db_client.get(f"{url}/runs/{second['id']}")).json()["consumption"]["energyWh"] == pytest.approx(2.0)
+
+    # The analysis sums those that were measured.
+    total = (await db_client.get(url)).json()["consumption"]
+    assert total == pytest.approx({"durationS": 8.0, "energyWh": 4.0, "co2G": 0.2, "waterMl": 7.2})
+    # It is said to whoever can open the analysis (it is not a result): the analysis here is private to alice.
+    as_user("bob")
+    assert (await db_client.get(url)).status_code == 404
+
+
+async def test_a_consumption_that_makes_no_sense_is_refused(db_client, as_user, models, dispatcher):
+    as_user("alice")
+    analysis = await create(db_client, models)
+    await start(db_client, analysis)
+    message = dispatcher.messages[-1]
+
+    bad = {**answer(message), "consumption": {"energy_kwh": -1, "co2_kg": 0, "duration_s": 1}}
+
+    assert (await hand_back(db_client, message, bad)).status_code == 422
 
 
 async def test_a_file_that_is_not_an_image_or_a_pdf_is_refused(db_client, as_user, models):

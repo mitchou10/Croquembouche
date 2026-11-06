@@ -1,8 +1,10 @@
+from contextlib import contextmanager
 from unittest.mock import MagicMock
 
 import pytest
 
 from app import config, tasks
+from app.consumption import Measure
 
 
 def test_ping():
@@ -76,3 +78,23 @@ def test_the_classifier_is_built_once_from_the_settings(monkeypatch):
 
     assert tasks.get_classifier() is first
     monkeypatch.setattr(tasks, "_classifier", None)
+
+
+def test_what_a_use_consumed_goes_with_its_answer(monkeypatch):
+    reported = []
+    monkeypatch.setattr(tasks, "get_classifier", lambda: MagicMock())
+    monkeypatch.setattr(tasks, "match", lambda *args: {"status": "done", "pages": [], "found": []})
+    monkeypatch.setattr(tasks.backend, "report", lambda run_id, result: reported.append((run_id, result)))
+    used = {"energy_kwh": 0.001, "co2_kg": 0.00005, "duration_s": 2.5}
+
+    @contextmanager
+    def measured(name):
+        measure = Measure()
+        measure.value = used
+        yield measure
+
+    monkeypatch.setattr(tasks, "measured", measured)
+
+    tasks.match_document({"run_id": "r1"})
+
+    assert reported == [("r1", {"status": "done", "pages": [], "found": [], "consumption": used})]

@@ -752,6 +752,26 @@ describe('app', () => {
         expect(useAnalyses().analyses.value.find((a) => a.id === 'a1')!.runs).toHaveLength(5)
       })
 
+      it('says what the use consumed, on the result and on the list of uses, with the total of the analysis', async () => {
+        const { wrapper } = await open('a1')
+        await sendShow(wrapper, image(nameWith(models, 1)))
+        const own = wrapper.get('[data-testid="run-consumption"]').text().replace(/[\u202f\u00a0]/g, ' ')
+        expect(own).toContain('Cette analyse a consommé')
+        expect(own).toContain('2,4 Wh')
+        expect(own).toContain('0,12 g')
+        expect(own).toContain('4,3 mL')
+        await showRuns(wrapper)
+        expect(wrapper.get('[data-testid="analysis-consumption"]').text()).toContain('2,4 Wh') // the only one measured
+        expect(wrapper.get('[data-testid="run-consumption-line"]').text().replace(/[\u202f\u00a0]/g, ' ')).toBe('2,4 Wh · 0,12 g de CO₂')
+      })
+
+      it('says nothing of the consumption of a use that was not measured', async () => {
+        const { wrapper } = await open('a1')
+        await showRuns(wrapper)
+        expect(wrapper.find('[data-testid="analysis-consumption"]').exists()).toBe(false)
+        expect(wrapper.find('[data-testid="run-consumption-line"]').exists()).toBe(false)
+      })
+
       it('says the analysis is running while the worker computes, then shows the result', async () => {
         vi.useFakeTimers()
         try {
@@ -1623,6 +1643,22 @@ describe('app', () => {
       expect(wrapper.get('h1').text()).toBe('Vue d’ensemble')
       expect(values(wrapper)).toEqual({ Analyses: '8', Vues: '251', Utilisations: '20', Terminées: '12', 'En cours': '3', 'En erreur': '5' })
       expect(wrapper.get('[data-testid="visibility"]').text()).toBe('1 publique · 4 partagées · 3 privées')
+    })
+
+    it('says what the uses consumed all together, when some were measured', async () => {
+      useSession().setUser('admin', { isAdmin: true })
+      const none = await mountAt('/vue-d-ensemble')
+      expect(none.wrapper.find('[data-testid="overview-consumption"]').exists()).toBe(false)
+      backendAnalysis('a1')!.runs[0].consumption = { durationS: 5, energyWh: 1500, co2G: 120, waterMl: 2700 }
+      backendAnalysis('a5')!.runs[0].consumption = { durationS: 5, energyWh: 500, co2G: 80, waterMl: 900 }
+      resetAnalyses()
+      const { wrapper } = await mountAt('/vue-d-ensemble')
+      const text = wrapper.get('[data-testid="overview-consumption"]').text().replace(/[\u202f\u00a0]/g, ' ')
+      expect(text).toContain('2 kWh') // 2 000 Wh
+      expect(text).toContain('200 g')
+      expect(text).toContain('3,6 L')
+      expect(text).toContain('muffins cuits')
+      expect(text).toContain('bouteilles d’eau')
     })
 
     it('spreads the uses over their three states', async () => {

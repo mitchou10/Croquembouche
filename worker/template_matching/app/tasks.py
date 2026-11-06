@@ -6,6 +6,7 @@ from qdrant_client import QdrantClient
 from app import backend, config, embeddings, storage
 from app.celery_app import celery_app
 from app.classify import PageClassifier
+from app.consumption import measured
 from app.index import TemplateIndex
 from app.match import match_document as match
 
@@ -78,4 +79,7 @@ class _ReportsFailure(Task):
 def match_document(message: dict) -> None:
     """Classifies the pages of a document tried on an analysis and finds the elements of its models in them (see
     `match.match_document`), then hands the result back to the backend, which keeps the runs."""
-    backend.report(message["run_id"], match(get_classifier(), storage.get_bytes, message))
+    with measured(message["run_id"]) as used:
+        result = match(get_classifier(), storage.get_bytes, message)
+    # What it consumed goes with the answer, when it could be measured.
+    backend.report(message["run_id"], {**result, **({"consumption": used.value} if used.value else {})})
