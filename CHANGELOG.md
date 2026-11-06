@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.15.0](https://github.com/mitchou10/Croquembouche/compare/v1.14.0...v1.15.0) (2026-11-06)
+
+
+### Features
+
+* point to the element of a zone that is clicked, and filter the uses by their state ([86e8dbe](https://github.com/mitchou10/Croquembouche/commit/86e8dbe9dda16f196b6219d4475ebf495755d559))
+
 ## [1.14.0](https://github.com/mitchou10/Croquembouche/compare/v1.13.0...v1.14.0) (2026-11-06)
 
 
