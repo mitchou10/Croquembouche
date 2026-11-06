@@ -30,6 +30,8 @@ export const entityTypeSeed: EntityTypeInfo[] = [
   { value: 'amount', label: 'Montant', definition: 'Une somme d’argent, avec ou sans devise (1 250,00 €). Le montant et la devise sont extraits séparément.' },
   { value: 'percentage', label: 'Pourcentage', definition: 'Un taux exprimé en pourcentage (20 %). La valeur est rendue sous forme de nombre, 20 pour 20 %.' },
   { value: 'yes_no', label: 'Oui / non', definition: 'Une réponse à deux issues : une case cochée ou non, « oui » ou « non ». Rendue sous forme de booléen.' },
+  { value: 'image', label: 'Image', definition: 'Une image sans texte à lire : une signature, un tampon, un logo, une photo. La zone en est recadrée et gardée telle quelle.' },
+  { value: 'table', label: 'Tableau', definition: 'Des lignes et des colonnes de valeurs (lignes d’une facture, d’une commande…). La zone entoure tout le tableau.' },
 ]
 
 /**
@@ -44,6 +46,8 @@ export interface TemplateEntity {
   type: string
   /** Samples of what it looks like in a document: « 12/03/2026 », « 1 250,00 € »... a few are enough to show the form. */
   examples: string[]
+  /** Optional words that say more of what it is (« verso », « à la main »...). */
+  tags: string[]
   zone?: Zone
   /** Identifiers of the users who starred it: an entity can be worth keeping even when the model is not. */
   stars: string[]
@@ -280,8 +284,8 @@ export const sampleLetter = `data:image/svg+xml,${encodeURIComponent(
 export const defaultCategories = ['Identité', 'Tampon', 'Signature', 'Code', 'Formulaire', 'Autre']
 
 const letterEntities = (): TemplateEntity[] => [
-  { id: 'e1', stars: ['bob.durand', 'chloe.petit'], type: 'text', examples: ['RÉPUBLIQUE FRANÇAISE'], name: 'Emblème', definition: 'Le drapeau tricolore et la mention « République française ».', zone: { page: 1, points: [{ x: 0.06, y: 0.06 }, { x: 0.36, y: 0.06 }, { x: 0.36, y: 0.22 }, { x: 0.06, y: 0.22 }] } },
-  { id: 'e2', stars: [], type: 'text', examples: ['Liberté Égalité Fraternité'], name: 'Devise', definition: 'La devise « Liberté, Égalité, Fraternité » sous le bloc-marque.' },
+  { id: 'e1', stars: ['bob.durand', 'chloe.petit'], type: 'text', examples: ['RÉPUBLIQUE FRANÇAISE'], tags: [], name: 'Emblème', definition: 'Le drapeau tricolore et la mention « République française ».', zone: { page: 1, points: [{ x: 0.06, y: 0.06 }, { x: 0.36, y: 0.06 }, { x: 0.36, y: 0.22 }, { x: 0.06, y: 0.22 }] } },
+  { id: 'e2', stars: [], type: 'text', examples: ['Liberté Égalité Fraternité'], tags: [], name: 'Devise', definition: 'La devise « Liberté, Égalité, Fraternité » sous le bloc-marque.' },
 ]
 
 type RawComment = Omit<Comment, 'authorName'>
@@ -326,7 +330,7 @@ const rawTemplates: RawTemplate[] = [
     categories: ['Tampon'],
     ownerId: 'bob.durand',
     stars: ['alice.martin'],
-    entities: [{ id: 'e3', stars: ['alice.martin'], type: 'date', examples: ['12/03/2026', '1 novembre 2026'], name: 'Date de réception', definition: 'La date inscrite au centre du tampon, au format JJ/MM/AAAA.' }],
+    entities: [{ id: 'e3', stars: ['alice.martin'], type: 'date', examples: ['12/03/2026', '1 novembre 2026'], tags: [], name: 'Date de réception', definition: 'La date inscrite au centre du tampon, au format JJ/MM/AAAA.' }],
     suggestions: [],
   },
   {
@@ -346,7 +350,7 @@ const rawTemplates: RawTemplate[] = [
     categories: ['Code'],
     ownerId: 'chloe.petit',
     stars: ['alice.martin', 'bob.durand', 'chloe.petit'],
-    entities: [{ id: 'e4', stars: [], type: 'integer', examples: ['20260142', '20259871'], name: 'Numéro de dossier', definition: 'Le numéro encodé dans le code QR de suivi.' }],
+    entities: [{ id: 'e4', stars: [], type: 'integer', examples: ['20260142', '20259871'], tags: [], name: 'Numéro de dossier', definition: 'Le numéro encodé dans le code QR de suivi.' }],
     suggestions: [],
   },
   {

@@ -66,6 +66,7 @@ export interface TemplateBody {
     definition: string
     type: string
     examples: string[]
+    tags: string[]
     zone?: { page: number; points: { x: number; y: number }[] }
   }[]
   /** Absent keeps the document; null removes it. */

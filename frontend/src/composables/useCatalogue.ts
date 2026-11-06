@@ -63,11 +63,14 @@ export const newEntity = (): TemplateEntity => ({
   definition: '',
   type: 'text',
   examples: [],
+  tags: [],
   stars: [],
 })
 
 export const MAX_EXAMPLES = 5
 export const MAX_EXAMPLE_LENGTH = 60
+export const MAX_TAGS = 10
+export const MAX_TAG_LENGTH = 30
 
 
 /** A document is an image or a PDF, nothing else, and not an unreasonable size. */
@@ -94,12 +97,12 @@ const textFieldLabels = { name: 'Nom', description: 'Description' } as const
 const withoutStars = ({ stars: _stars, ...rest }: TemplateEntity) => rest
 
 const describeList = (items: string[]) => (items.length ? items.join(', ') : 'Aucune')
-// Name, then what else sets one entity apart from another: its type, a zone, its examples.
+// Name, then what else sets one entity apart from another: its type, a zone, its examples, its tags.
 const describeEntities = (entities: TemplateEntity[]) =>
   describeList(
     entities.map((e) => {
       const details = [entityTypeLabel(e.type).toLowerCase(), ...(e.zone ? ['zone'] : [])].join(', ')
-      return `${e.name} (${details})${e.examples.length ? ` ex. ${e.examples.join(' / ')}` : ''}`
+      return `${e.name} (${details})${e.examples.length ? ` ex. ${e.examples.join(' / ')}` : ''}${e.tags.length ? ` #${e.tags.join(' #')}` : ''}`
     }),
   )
 
@@ -170,6 +173,7 @@ export function toBody(fields: TemplateFields, documentId?: string | null): api.
       definition: e.definition,
       type: e.type,
       examples: e.examples,
+      tags: e.tags,
       ...(e.zone && { zone: e.zone }),
     })),
     ...(documentId !== undefined && { documentId }),

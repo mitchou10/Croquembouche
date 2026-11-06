@@ -2070,6 +2070,8 @@ describe('app', () => {
         'Montant',
         'Pourcentage',
         'Oui / non',
+        'Image',
+        'Tableau',
       ])
       expect((typeSelect(wrapper).element as HTMLSelectElement).value).toBe('text')
     })
@@ -2115,6 +2117,23 @@ describe('app', () => {
       await wrapper.get('.entity__examples .tags-input__tags button').trigger('click')
       expect(examples(wrapper)).toEqual(['a', 'A', 'd', 'e'])
       expect(wrapper.get('.entity__examples input').attributes('disabled')).toBeUndefined()
+    })
+
+    it('takes optional tags, apart from the examples: added with Enter, one for « Verso » and « verso », taken back', async () => {
+      useSession().setUser('dana')
+      const { wrapper } = await mountAt('/catalogue/nouveau')
+      await addEntity(wrapper)
+      const tags = () => wrapper.findAll('.entity__tags .tags-input__tags button').map((b) => b.text())
+      expect(tags()).toEqual([]) // optional
+      const input = wrapper.get('.entity__tags input')
+      for (const value of ['Verso', 'verso', '  ', 'à la main']) {
+        await input.setValue(value)
+        await input.trigger('keydown.enter')
+      }
+      expect(tags()).toHaveLength(2)
+      expect(examples(wrapper)).toEqual([]) // the examples are not the tags
+      await wrapper.get('.entity__tags .tags-input__tags button').trigger('click')
+      expect(tags()).toHaveLength(1)
     })
 
     it('has them of its own for each entity', async () => {

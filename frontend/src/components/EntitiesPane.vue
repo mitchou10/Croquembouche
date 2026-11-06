@@ -56,6 +56,10 @@ const starred = computed(() => !!entity.value && userId.value !== null && entity
         <span class="fr-text--sm">Exemples :</span>
         <DsfrTag v-for="example in entity.examples" :key="example" :label="example" small />
       </p>
+      <p v-if="entity.tags.length" class="entity-card__examples fr-mb-0" data-testid="entity-tags">
+        <span class="fr-text--sm">Détails :</span>
+        <DsfrTag v-for="tag in entity.tags" :key="tag" :label="tag" small />
+      </p>
     </div>
   </div>
 </template>

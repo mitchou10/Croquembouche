@@ -6,6 +6,7 @@ from pydantic import Field, StringConstraints
 from app.schemas.base import CamelModel
 
 MAX_EXAMPLES = 5
+MAX_TAGS = 10
 MAX_COMMENT_LENGTH = 500
 
 Coordinate = Annotated[float, Field(ge=0, le=1)]
@@ -33,6 +34,10 @@ class EntityFields(CamelModel):
     type: str
     examples: Annotated[
         list[Annotated[str, StringConstraints(strip_whitespace=True, max_length=60)]], Field(max_length=50)
+    ] = []
+    # Optional: what more the person has to say of the entity. A model that predates them has none.
+    tags: Annotated[
+        list[Annotated[str, StringConstraints(strip_whitespace=True, max_length=30)]], Field(max_length=MAX_TAGS * 3)
     ] = []
     zone: Zone | None = None
 
