@@ -16,4 +16,14 @@ La confiance affichée est celle de la classification, pas celle de la lecture d
 Le bouton **Copier le texte** attend la lecture du texte de la zone (OCR), pas encore faite : il est désactivé tant que
 `text` est vide (carte du haut), puis copie le texte affiché (carte du bas).
 
+## Une zone sur un document penché
+
+![Une zone penchée, avant et après redressement](zone-straightened.png)
+
+Le worker reporte les coins de chaque zone du modèle sur le document (homographie), **dans le même ordre** : haut gauche,
+haut droite, bas droite, bas gauche. Quand une zone de quatre coins n'est pas droite sur la page (document scanné de
+travers ou à l'envers), la vignette la **redresse** avec une transformation de perspective CSS (`matrix3d`, voir
+`composables/perspective.ts`), sans rien changer au backend. Une zone droite est simplement découpée par sa boîte, et
+une zone qui n'a pas quatre coins (polygone libre) aussi : elle n'a pas de « haut » défini.
+
 La capture est faite avec des données fictives.
