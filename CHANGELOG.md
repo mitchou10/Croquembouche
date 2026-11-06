@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.14.0](https://github.com/mitchou10/Croquembouche/compare/v1.13.0...v1.14.0) (2026-11-06)
+
+
+### Features
+
+* **analyses:** put the crop of a turned zone straight ([79d378d](https://github.com/mitchou10/Croquembouche/commit/79d378dd38cbacdd9e35fe8c439f2f4da4fcfaed))
+
 ## [1.13.0](https://github.com/mitchou10/Croquembouche/compare/v1.12.0...v1.13.0) (2026-11-06)
 
 
