@@ -94,4 +94,16 @@ describe('RunsList', () => {
       expect(wrapper.emitted('open')).toEqual([['r2']])
     })
   })
+
+  it('has a button to cancel only the uses the person can stop', async () => {
+    const wrapper = mountList(3, { canCancel: (r: AnalysisRun) => r.status === 'running' }) // done, running, failed
+    const buttons = wrapper.findAll('[data-testid="run-cancel"]')
+    expect(buttons).toHaveLength(1)
+    await buttons[0].trigger('click')
+    expect(wrapper.emitted('cancel')).toEqual([['r1']])
+  })
+
+  it('has none when nothing says a use can be stopped', () => {
+    expect(mountList(3).find('[data-testid="run-cancel"]').exists()).toBe(false)
+  })
 })

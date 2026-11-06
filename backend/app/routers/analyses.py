@@ -72,6 +72,11 @@ async def get_run(analysis_id: str, run_id: str, service: Analyses) -> RunOut:
     return await _run(service.get_run(analysis_id, run_id))
 
 
+@router.post("/{analysis_id}/runs/{run_id}/cancel", summary="Stop a use that is running: its own person's alone")
+async def cancel_run(analysis_id: str, run_id: str, service: Analyses) -> RunOut:
+    return await _run(service.cancel_run(analysis_id, run_id))
+
+
 @router.put("/{analysis_id}/runs/{run_id}/detections/{detection_id}/review", summary="Validate, invalidate or annotate")
 async def review_detection(analysis_id: str, run_id: str, detection_id: str, body: Review, service: Analyses) -> RunOut:
     return await _run(service.review_detection(analysis_id, run_id, detection_id, body))

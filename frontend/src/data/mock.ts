@@ -143,6 +143,8 @@ export interface TemplateVersion {
 }
 
 export type AnalysisStatus = 'done' | 'running' | 'failed'
+/** A use can also have been stopped by its person, which an analysis as a whole is never. */
+export type RunStatus = AnalysisStatus | 'cancelled'
 
 /** A group of people an analysis can be shared with: the signed-in user's own (see data/api.ts). */
 export interface Group {
@@ -223,7 +225,7 @@ export interface AnalysisRun {
   /** Whether it was tried on a document, so has a result (which is for whoever ran it to see). */
   hasResult: boolean
   date: string
-  status: AnalysisStatus
+  status: RunStatus
   matches: number
   /** The document the analysis was tried on. */
   fileName?: string
@@ -516,10 +518,11 @@ export const analyses: Analysis[] = rawAnalyses.map((a) => ({
   runs: a.runs.map((r) => ({ ...r, userName: r.userId, hasResult: !!r.fileName })),
 }))
 
-export const statusLabels: Record<AnalysisStatus, { label: string; type: 'success' | 'info' | 'error' }> = {
+export const statusLabels: Record<RunStatus, { label: string; type: 'success' | 'info' | 'error' | 'warning' }> = {
   done: { label: 'Terminée', type: 'success' },
   running: { label: 'En cours', type: 'info' },
   failed: { label: 'En échec', type: 'error' },
+  cancelled: { label: 'Annulée', type: 'warning' },
 }
 
 /**

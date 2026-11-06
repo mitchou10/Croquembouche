@@ -644,6 +644,13 @@ function analysesRoute(user: string, admin: boolean, method: string, parts: stri
     if (seen >= 2) answers.get(run.id)?.()
     return reply(200, runView(run, user))
   }
+  if (parts[4] === 'cancel' && method === 'POST') {
+    if (run.status === 'running') {
+      run.status = 'cancelled'
+      answers.delete(run.id)
+    }
+    return reply(200, runView(run, user))
+  }
   const detection = run.detections?.find((d) => d.id === parts[5])
 
   if (parts[4] === 'detections' && parts[6] === 'review') {

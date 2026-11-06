@@ -258,5 +258,7 @@ export const postElement = (id: string, runId: string, element: { zone: Zone; te
   runCall('POST', id, runId, '/elements', element)
 export const deleteElement = (id: string, runId: string, detectionId: string) =>
   runCall('DELETE', id, runId, `/elements/${detectionId}`)
+/** Stops a use that is running. One that has ended is answered as it is. */
+export const postRunCancel = (id: string, runId: string) => runCall('POST', id, runId, '/cancel')
 export const putFileDecision = (id: string, runId: string, decision: 'kept' | 'deleted') =>
   runCall('PUT', id, runId, '/file', { decision })

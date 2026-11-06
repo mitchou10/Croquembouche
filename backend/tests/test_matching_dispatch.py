@@ -15,7 +15,18 @@ def test_the_worker_is_asked_to_match_by_name_on_its_queue(monkeypatch):
     dispatcher.dispatch({"run_id": "r1"})
 
     assert send.call_args.args == (MATCH_TASK,)
-    assert send.call_args.kwargs == {"args": [{"run_id": "r1"}], "queue": QUEUE}
+    # The task is the run's, which is what is revoked to cancel it.
+    assert send.call_args.kwargs == {"args": [{"run_id": "r1"}], "queue": QUEUE, "task_id": "r1"}
+
+
+def test_the_task_of_a_run_is_revoked_to_cancel_it(monkeypatch):
+    dispatcher = CeleryDispatcher("redis://localhost:1/0")
+    revoke = MagicMock()
+    monkeypatch.setattr(dispatcher._app.control, "revoke", revoke)
+
+    dispatcher.revoke("r1")
+
+    revoke.assert_called_once_with("r1", terminate=True)
 
 
 def test_a_broker_that_is_down_is_not_hidden(monkeypatch):

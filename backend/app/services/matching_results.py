@@ -71,12 +71,24 @@ def _in_reading_order(result: MatchingResult):
     return sorted(result.found, key=lambda f: (f.page, min(p.y for p in f.points), min(p.x for p in f.points)))
 
 
+async def cancel(run: Run, documents_repository: DocumentRepository) -> bool:
+    """Ends a use that was running as cancelled, which leaves nothing found. The caller commits. False when it had
+    already ended: it is left as it is."""
+    if run.status != "running":
+        return False
+    run.status = "cancelled"
+    await _let_go(run, documents_repository)
+    return True
+
+
 async def apply(
     repository: AnalysisRepository, documents_repository: DocumentRepository, run_id: str, result: MatchingResult
 ) -> bool:
     """What the worker handed back for a use. False when there is no such use or it already ended (a result that comes
     twice, or after the timeout, changes nothing)."""
     run = await repository.get_run(run_id)
+    if run is not None and run.status == "cancelled":
+        return True  # what the worker finished after the person cancelled: heard, and ignored
     if run is None or run.status != "running":
         return False
     wanted = {f.entity_id for f in result.found if f.entity_id}
