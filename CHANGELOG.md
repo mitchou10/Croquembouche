@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.16.0](https://github.com/mitchou10/Croquembouche/compare/v1.15.0...v1.16.0) (2026-11-06)
+
+
+### Features
+
+* **analyses:** say what a use consumed: electricity, CO2 and water ([58290e0](https://github.com/mitchou10/Croquembouche/commit/58290e0bf63ea7cb8e9bfed51bf3ea1bc5f35fe7))
+
 ## [1.15.0](https://github.com/mitchou10/Croquembouche/compare/v1.14.0...v1.15.0) (2026-11-06)
 
 

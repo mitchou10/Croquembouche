@@ -529,7 +529,7 @@ wheels = [
 
 [[package]]
 name = "croquembouche-backend"
-version = "1.15.0"
+version = "1.16.0"
 source = { editable = "." }
 dependencies = [
     { name = "alembic" },
