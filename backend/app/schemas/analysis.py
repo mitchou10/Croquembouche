@@ -91,7 +91,7 @@ class RunOut(CamelModel):
     user_id: str
     user_name: str
     date: date
-    status: Literal["running", "done", "failed"]
+    status: Literal["running", "done", "failed", "cancelled"]
     matches: int
     # The version (X.Y.Z) of each model of the analysis, by id, when the use started.
     template_versions: dict[str, str] = {}

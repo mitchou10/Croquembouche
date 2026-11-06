@@ -56,7 +56,7 @@ class Run(UUIDMixin, Base):
 
     analysis_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("analyses.id", ondelete="CASCADE"), index=True)
     user_id: Mapped[str] = mapped_column(ForeignKey("user_profiles.user_id"), index=True)
-    status: Mapped[str] = mapped_column(String(16), default="running")  # running, done, failed
+    status: Mapped[str] = mapped_column(String(16), default="running")  # running, done, failed, cancelled
     matches: Mapped[int] = mapped_column(Integer, default=0)
     file_name: Mapped[str | None] = mapped_column("file_name_encrypted", EncryptedText)
     screenshot_document_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("documents.id", ondelete="SET NULL"))

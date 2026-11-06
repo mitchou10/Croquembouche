@@ -725,6 +725,27 @@ describe('app', () => {
         }
       })
 
+      it('cancels a use that is running: it stops, and what the worker would answer is not waited for', async () => {
+        vi.useFakeTimers()
+        try {
+          const { wrapper } = await open('a1')
+          await send(wrapper, image('slow.png'))
+          expect(figures(wrapper)).toMatchObject({ 'En cours': '1' })
+          await wrapper.get('[data-testid="cancel-run"]').trigger('click')
+          await flushPromises()
+          expect(wrapper.find('[data-testid="run-running"]').exists()).toBe(false)
+          expect(wrapper.get('[data-testid="run-cancelled"]').text()).toContain('annulée')
+          expect(figures(wrapper)).toMatchObject({ 'En cours': '0' })
+          expect(useAnalyses().analyses.value.find((a) => a.id === 'a1')!.runs[0].status).toBe('cancelled')
+          // Nothing is asked for any more: the use stays cancelled.
+          await vi.advanceTimersByTimeAsync(4000)
+          await flushPromises()
+          expect(wrapper.find('[data-testid="run-cancelled"]').exists()).toBe(true)
+        } finally {
+          vi.useRealTimers()
+        }
+      })
+
       it('says so when the worker fails, and lets the person try again', async () => {
         vi.useFakeTimers()
         try {

@@ -14,13 +14,22 @@ class MatchingDispatcher(Protocol):
         """Raises when the worker cannot be asked: the use is then ended as failed instead of waiting for nothing."""
         ...
 
+    def revoke(self, run_id: str) -> None:
+        """Asks the worker to stop the matching of a run, if it has not ended. Only an attempt: what the worker would
+        hand back for a cancelled run is ignored anyway."""
+        ...
+
 
 class CeleryDispatcher:
     def __init__(self, broker_url: str) -> None:
         self._app = make_client(broker_url)
 
     def dispatch(self, message: dict) -> None:
-        self._app.send_task(MATCH_TASK, args=[message], queue=QUEUE)
+        # The task is the run's: that is what is revoked to cancel it.
+        self._app.send_task(MATCH_TASK, args=[message], queue=QUEUE, task_id=message["run_id"])
+
+    def revoke(self, run_id: str) -> None:
+        self._app.control.revoke(run_id, terminate=True)
 
 
 _dispatcher: MatchingDispatcher | None = None

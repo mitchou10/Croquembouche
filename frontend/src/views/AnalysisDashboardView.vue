@@ -16,7 +16,7 @@ import { loadAnalyses, statsOf, useAnalyses } from '../composables/useAnalyses'
 import { ACCEPTED_DOCUMENT_TYPES, documentError, useCatalogue } from '../composables/useCatalogue'
 import { useSession } from '../composables/useSession'
 import { useWideScreen } from '../composables/useWideScreen'
-import { statusLabels, type Review, type TemplateEntity, type Zone } from '../data/mock'
+import { statusLabels, type AnalysisRun, type Review, type TemplateEntity, type Zone } from '../data/mock'
 
 // The page of an analysis, for whoever can open it. What one comes to do is try it: a document is dropped, which is a use
 // of the analysis, and what it finds is shown on the document itself, element by element, with what each could be and how
@@ -34,6 +34,8 @@ const {
   startRun,
   follow,
   reviewDetection,
+  cancelRun,
+  ownsRun,
   reviewPage,
   addElement,
   removeElement,
@@ -94,6 +96,10 @@ const progress = computed(() => (run.value ? reviewProgress(run.value) : { total
 const allReviewed = computed(() => progress.value.total > 0 && progress.value.reviewed === progress.value.total)
 // Once everything is looked at, the person is asked what to do with the document: unless they said already, or none was kept.
 const askAboutFile = computed(() => allReviewed.value && !!run.value?.screenshot && !run.value.fileDecision)
+
+// Only its person stops a use, and only while it runs.
+const canCancel = (r: AnalysisRun) => r.status === 'running' && ownsRun(r)
+const cancel = (runId: string) => analysis.value && cancelRun(analysis.value.id, runId)
 
 function open(runId: string) {
   selectedRunId.value = runId
@@ -368,7 +374,7 @@ const sharing = computed(() => {
         <TabList v-model="tab" :tabs="tabs" label="Résultat et utilisations" />
 
         <div v-if="tab === 'runs'" role="tabpanel" class="side__panel" data-testid="runs">
-          <RunsList :runs="analysis.runs" :can-see="canSeeResult" :selected-id="run?.id" @open="open" />
+          <RunsList :runs="analysis.runs" :can-see="canSeeResult" :can-cancel="canCancel" :selected-id="run?.id" @open="open" @cancel="cancel" />
         </div>
 
         <div v-else-if="!run" role="tabpanel" class="side__panel" data-testid="results">
@@ -387,6 +393,15 @@ const sharing = computed(() => {
         <div v-else-if="run.status === 'running'" role="tabpanel" class="side__panel" data-testid="results">
           <p class="fr-mb-0" role="status" data-testid="run-running">
             <strong>Analyse en cours…</strong> Le résultat s’affichera ici dès qu’il sera prêt.
+          </p>
+          <div>
+            <button type="button" class="fr-btn fr-btn--sm fr-btn--secondary" data-testid="cancel-run" @click="cancel(run.id)">Annuler l’analyse</button>
+          </div>
+        </div>
+
+        <div v-else-if="run.status === 'cancelled'" role="tabpanel" class="side__panel" data-testid="results">
+          <p class="fr-mb-0" role="status" data-testid="run-cancelled">
+            Cette analyse a été annulée. Vous pouvez recommencer avec « Nouveau test ».
           </p>
         </div>
 

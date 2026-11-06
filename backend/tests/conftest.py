@@ -128,12 +128,18 @@ class RecordingDispatcher:
 
     def __init__(self) -> None:
         self.messages: list[dict] = []
+        self.revoked: list[str] = []
         self.fail = False
 
     def dispatch(self, message: dict) -> None:
         if self.fail:
             raise ConnectionError("broker down")
         self.messages.append(message)
+
+    def revoke(self, run_id: str) -> None:
+        if self.fail:
+            raise ConnectionError("broker down")
+        self.revoked.append(run_id)
 
 
 @pytest.fixture(autouse=True)

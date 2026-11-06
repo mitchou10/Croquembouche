@@ -225,6 +225,16 @@ export function useAnalyses() {
     return { total: all.length, reviewed: all.filter((r) => r.status !== 'pending').length }
   }
 
+  /**
+   * Stops a use that is running, which is then « cancelled ». Its person's alone. The analysis, which counts what its uses
+   * found, is read again.
+   */
+  const cancelRun = (analysisId: string, runId: string) =>
+    attempt(async () => {
+      keepRun(analysisId, await api.postRunCancel(analysisId, runId))
+      keep(await api.fetchAnalysis(analysisId))
+    })
+
   /** Deletes the screenshots of the document kept with a use: what was found and decided stays. */
   const deleteScreenshot = (analysisId: string, runId: string) =>
     attempt(async () => keepRun(analysisId, await api.putFileDecision(analysisId, runId, 'deleted')))
@@ -252,6 +262,7 @@ export function useAnalyses() {
     startRun,
     follow,
     reviewDetection,
+    cancelRun,
     reviewPage,
     addElement,
     removeElement,

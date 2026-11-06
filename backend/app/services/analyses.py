@@ -47,10 +47,11 @@ def _fingerprint(kind: str, value: str) -> str:
 
 
 def _status(analysis: Analysis) -> str:
-    """Running while any use is; else how the latest went."""
+    """Running while any use is; else how the latest went, a cancelled use being no news of how it goes."""
     if any(r.status == "running" for r in analysis.runs):
         return "running"
-    return "failed" if analysis.runs and analysis.runs[0].status == "failed" else "done"
+    ended = [r for r in analysis.runs if r.status != "cancelled"]
+    return "failed" if ended and ended[0].status == "failed" else "done"
 
 
 def _review(status: str, template_id: uuid.UUID | None, template_page: int | None = None) -> ReviewOut:
@@ -273,6 +274,21 @@ class AnalysisService:
     async def get_run(self, analysis_id: str, run_id: str) -> RunOut:
         analysis = await self._analysis(analysis_id)
         return self._run(self._own_run(analysis, run_id), True)
+
+    async def cancel_run(self, analysis_id: str, run_id: str) -> RunOut:
+        """Stops a use that is running: its person's alone. One that has already ended is left as it is."""
+        analysis = await self._analysis(analysis_id)
+        run = self._own_run(analysis, run_id)
+        if await matching_results.cancel(run, self._documents):
+            await self._repository.commit()
+            try:
+                await run_in_threadpool(self._dispatcher.revoke, str(run.id))
+            except Exception:
+                # The use is cancelled anyway: what the worker hands back for it is ignored.
+                logger.warning("Could not ask the worker to stop the run %s", run.id, exc_info=True)
+        run_id_ = run.id
+        analysis = await self._repository.reload(analysis)
+        return next(self._run(r, True) for r in analysis.runs if r.id == run_id_)
 
     # --- looking at what it found
 

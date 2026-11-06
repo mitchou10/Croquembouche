@@ -12,8 +12,10 @@ const props = defineProps<{
   /** Whether the result of a use can be opened by the person looking. */
   canSee: (run: AnalysisRun) => boolean
   selectedId?: string | null
+  /** Whether the use can be stopped by the person looking: their own, and still running. */
+  canCancel?: (run: AnalysisRun) => boolean
 }>()
-const emit = defineEmits<{ open: [runId: string] }>()
+const emit = defineEmits<{ open: [runId: string]; cancel: [runId: string] }>()
 
 const PER_PAGE = 4
 const page = ref(0)
@@ -30,6 +32,15 @@ const visible = computed(() => props.runs.slice(page.value * PER_PAGE, (page.val
         <span class="runs__user">{{ run.userName }}</span>
         <DsfrBadge :label="statusLabels[run.status].label" :type="statusLabels[run.status].type" small />
         <span class="runs__matches">{{ run.matches }} correspondance{{ run.matches > 1 ? 's' : '' }}</span>
+        <button
+          v-if="canCancel?.(run)"
+          type="button"
+          class="fr-btn fr-btn--sm fr-btn--tertiary"
+          data-testid="run-cancel"
+          @click="emit('cancel', run.id)"
+        >
+          Annuler<span class="fr-sr-only"> l’utilisation du {{ run.date }}</span>
+        </button>
         <template v-if="run.hasResult">
           <button
             v-if="canSee(run)"

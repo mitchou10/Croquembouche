@@ -257,6 +257,54 @@ async def test_the_result_of_a_use_is_private_to_the_person_who_ran_it(db_client
     assert (await db_client.get(url)).json() == made
 
 
+async def test_a_use_that_is_running_is_cancelled_and_the_worker_is_asked_to_stop(
+    db_client, as_user, models, dispatcher, store
+):
+    as_user("alice")
+    analysis = await create(db_client, models, isPublic=True)
+    started = await start(db_client, analysis)
+    url = f"/api/analyses/{analysis['id']}/runs/{started['id']}"
+
+    # Only its person can: for anyone else the use is not even there.
+    as_user("bob")
+    assert (await db_client.post(f"{url}/cancel")).status_code == 404
+    as_user("alice")
+    cancelled = await db_client.post(f"{url}/cancel")
+
+    assert cancelled.status_code == 200 and cancelled.json()["status"] == "cancelled"
+    assert dispatcher.revoked == [started["id"]]
+    # The analysis lists it as cancelled (its first use, which no document was tried on, is the one still running).
+    listed = {r["id"]: r["status"] for r in (await db_client.get(f"/api/analyses/{analysis['id']}")).json()["runs"]}
+    assert listed[started["id"]] == "cancelled"
+    # What the worker hands back anyway (its pages are gone, so it may even say it failed) is heard and ignored.
+    for result in ({"status": "done"}, {"status": "failed"}):
+        assert (await hand_back(db_client, dispatcher.messages[-1], result)).status_code == 204
+    assert (await db_client.get(url)).json()["status"] == "cancelled"
+    assert (await db_client.get(url)).json()["matches"] == 0
+
+
+async def test_a_use_that_has_ended_is_not_cancelled(db_client, as_user, models, dispatcher, run):
+    as_user("alice")
+    analysis = await create(db_client, models)
+    made = await run(db_client, analysis)
+
+    again = await db_client.post(f"/api/analyses/{analysis['id']}/runs/{made['id']}/cancel")
+
+    assert again.status_code == 200 and again.json() == made
+    assert dispatcher.revoked == []
+
+
+async def test_a_use_is_cancelled_even_when_the_worker_cannot_be_reached(db_client, as_user, models, dispatcher):
+    as_user("alice")
+    analysis = await create(db_client, models)
+    started = await start(db_client, analysis)
+    dispatcher.fail = True
+
+    cancelled = await db_client.post(f"/api/analyses/{analysis['id']}/runs/{started['id']}/cancel")
+
+    assert cancelled.status_code == 200 and cancelled.json()["status"] == "cancelled"
+
+
 async def test_a_file_that_is_not_an_image_or_a_pdf_is_refused(db_client, as_user, models):
     as_user("alice")
     analysis = await create(db_client, models)
