@@ -6,7 +6,6 @@ const { displayName: accountName, logout } = useSession()
 
 const displayName = ref(accountName.value ?? '')
 const language = ref('fr')
-const notifications = ref(true)
 const saved = ref(false)
 
 // Nothing is persisted yet: the form only shows what the settings page will offer.
@@ -36,7 +35,6 @@ function signOut() {
       ]"
       class="fr-mb-3w"
     />
-    <DsfrToggleSwitch v-model="notifications" label="Recevoir un e-mail à la fin d’une analyse" class="fr-mb-3w" />
     <ul class="fr-btns-group fr-btns-group--inline-md">
       <li><DsfrButton type="submit" label="Enregistrer" /></li>
       <li><DsfrButton type="button" label="Se déconnecter" secondary @click="signOut" /></li>
