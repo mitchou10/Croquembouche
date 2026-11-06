@@ -1,6 +1,6 @@
 import VueDsfr from '@gouvminint/vue-dsfr'
-import { mount } from '@vue/test-utils'
-import { describe, expect, it } from 'vitest'
+import { flushPromises, mount } from '@vue/test-utils'
+import { describe, expect, it, vi } from 'vitest'
 import type { Detection } from '../composables/useAnalyses'
 import DetectionCard from './DetectionCard.vue'
 
@@ -97,5 +97,40 @@ describe('DetectionCard', () => {
       global: { plugins: [VueDsfr] },
     })
     expect(wrapper.get('.review-here').text()).toBe('Valider')
+  })
+
+  describe('copying the text of the zone', () => {
+    const withText = (text?: string) =>
+      mount(DetectionCard, {
+        props: { detection: { id: 'd1', zone, classifications: [{ templateId: 't1', confidence: 0.9 }], text }, position: 1, nameOf },
+        global: { plugins: [VueDsfr] },
+      })
+
+    it('has the button, waiting, while the zone has not been read', () => {
+      const wrapper = withText()
+      expect(wrapper.get('[data-testid="detection-copy"]').attributes('disabled')).toBeDefined()
+      expect(wrapper.find('[data-testid="detection-text-pending"]').exists()).toBe(true)
+    })
+
+    it('shows the text and copies it', async () => {
+      const writeText = vi.fn().mockResolvedValue(undefined)
+      vi.stubGlobal('navigator', { clipboard: { writeText } })
+      const wrapper = withText('12/03/2026')
+      expect(wrapper.get('[data-testid="detection-text"]').text()).toBe('12/03/2026')
+      await wrapper.get('[data-testid="detection-copy"]').trigger('click')
+      await flushPromises()
+      expect(writeText).toHaveBeenCalledWith('12/03/2026')
+      expect(wrapper.get('[data-testid="detection-copied"]').text()).toBe('Copié')
+      vi.unstubAllGlobals()
+    })
+
+    it('says so when the copy is refused', async () => {
+      vi.stubGlobal('navigator', { clipboard: { writeText: vi.fn().mockRejectedValue(new Error('denied')) } })
+      const wrapper = withText('abc')
+      await wrapper.get('[data-testid="detection-copy"]').trigger('click')
+      await flushPromises()
+      expect(wrapper.get('[data-testid="detection-copied"]').text()).toBe('Copie impossible')
+      vi.unstubAllGlobals()
+    })
   })
 })

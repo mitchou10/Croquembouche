@@ -1,6 +1,6 @@
 # Résultat d'une analyse : la carte d'un élément
 
-![Carte d'un élément trouvé](detection-card.png)
+![Carte d'un élément trouvé : sans texte lu, puis avec](detection-card.png)
 
 Chaque élément trouvé dans un document est montré à deux endroits.
 
@@ -12,5 +12,8 @@ Chaque élément trouvé dans un document est montré à deux endroits.
 
 L'entité vient de `entityId` : le backend ne la garde que si elle existe dans le modèle, sinon elle est vide.
 La confiance affichée est celle de la classification, pas celle de la lecture de la valeur.
+
+Le bouton **Copier le texte** attend la lecture du texte de la zone (OCR), pas encore faite : il est désactivé tant que
+`text` est vide (carte du haut), puis copie le texte affiché (carte du bas).
 
 La capture est faite avec des données fictives.

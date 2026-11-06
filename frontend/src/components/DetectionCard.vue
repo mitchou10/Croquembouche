@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 import type { Detection } from '../composables/useAnalyses'
 import type { TemplateDocument } from '../data/mock'
 import ZoneCrop from './ZoneCrop.vue'
@@ -25,6 +25,22 @@ const SHOWN = 4
 const percent = (confidence: number) => Math.round(confidence * 100)
 const best = computed(() => props.detection.classifications[0])
 const shown = computed(() => props.detection.classifications.slice(0, SHOWN))
+
+// The text read in the zone: not read yet by the analysis, so the button is there but waits for it.
+const text = computed(() => props.detection.text?.trim() ?? '')
+const copied = ref<'yes' | 'failed' | null>(null)
+let timer: ReturnType<typeof setTimeout> | undefined
+async function copy() {
+  try {
+    await navigator.clipboard.writeText(text.value)
+    copied.value = 'yes'
+  } catch {
+    copied.value = 'failed'
+  }
+  clearTimeout(timer)
+  timer = setTimeout(() => (copied.value = null), 2000)
+}
+onBeforeUnmount(() => clearTimeout(timer))
 const hidden = computed(() => props.detection.classifications.length - shown.value.length)
 </script>
 
@@ -37,6 +53,22 @@ const hidden = computed(() => props.detection.classifications.length - shown.val
     </div>
 
     <ZoneCrop v-if="document && detection.zone.points.length >= 3" :document="document" :zone="detection.zone" />
+
+    <div class="text" data-testid="detection-text-block">
+      <p v-if="text" class="text__value fr-mb-0" data-testid="detection-text">{{ text }}</p>
+      <p v-else class="fr-hint-text fr-mb-0" data-testid="detection-text-pending">La lecture du texte de la zone n’est pas encore disponible.</p>
+      <button
+        type="button"
+        class="fr-btn fr-btn--sm fr-btn--tertiary fr-icon-clipboard-line fr-btn--icon-left"
+        :disabled="!text"
+        :title="text ? undefined : 'Disponible quand le texte de la zone sera lu.'"
+        data-testid="detection-copy"
+        @click="copy"
+      >
+        Copier le texte
+      </button>
+      <span class="fr-hint-text" role="status" data-testid="detection-copied">{{ copied === 'yes' ? 'Copié' : copied === 'failed' ? 'Copie impossible' : '' }}</span>
+    </div>
 
     <p class="fr-text--sm fr-mb-0">Classes possibles, de la plus à la moins probable :</p>
     <ul class="classes">
@@ -84,6 +116,19 @@ const hidden = computed(() => props.detection.classifications.length - shown.val
   font-size: 1.25rem;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
+}
+
+.text {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.text__value {
+  flex: 1 1 100%;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .classes {
