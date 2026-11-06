@@ -753,7 +753,7 @@ describe('app', () => {
         expect(wrapper.findAll('[data-testid="entity-zone"]')).toHaveLength(found.length)
         const labels = wrapper.findAll('[data-testid="entity-label"]').map((l) => l.text())
         expect(labels).toHaveLength(found.length)
-        for (const label of labels) expect(label).toMatch(/^(Logo Marianne|Filigrane « Copie »|Autre, non reconnu) · \d+ %$/)
+        for (const label of labels) expect(label).toMatch(/^Élément \d+ · \d+ %$/)
       })
 
       it('sums up what was found, and how many predictions have been looked at', async () => {
@@ -956,7 +956,7 @@ describe('app', () => {
           expect(options.map((o) => o.text())).toEqual(['Logo Marianne', 'Filigrane « Copie »']) // not « other », nor the others of the catalogue
           await wrapper.get('[data-testid="review-annotate"]').setValue('t6')
           expect(state(wrapper)).toBe('Annotée : Filigrane « Copie »')
-          expect(labels(wrapper)[0]).toBe('✎ Filigrane « Copie »')
+          expect(labels(wrapper)[0]).toBe('✎ Élément 1')
         })
 
         it('takes a decision back, or changes it', async () => {
@@ -1182,7 +1182,7 @@ describe('app', () => {
           expect(wrapper.get('[data-testid="manual-element"]').text()).toContain('Ajouté à la main')
           expect(wrapper.get('[data-testid="manual-model"]').text()).toBe('Logo Marianne')
           expect(zones(wrapper).at(-1)!.attributes('points')).toBe('10,10 60,10 60,60')
-          expect(wrapper.findAll('[data-testid="entity-label"]').at(-1)!.text()).toBe('✎ Logo Marianne')
+          expect(wrapper.findAll('[data-testid="entity-label"]').at(-1)!.text()).toBe('✎ Élément 4')
           rect.mockRestore()
         })
 
@@ -1208,7 +1208,7 @@ describe('app', () => {
           await wrapper.get('[data-testid="new-element-model"]').setValue('t6')
           await draw(wrapper)
           expect(wrapper.get('[data-testid="manual-model"]').text()).toBe('Filigrane « Copie »')
-          expect(wrapper.findAll('[data-testid="entity-label"]').at(-1)!.text()).toBe('✎ Filigrane « Copie »')
+          expect(wrapper.findAll('[data-testid="entity-label"]').at(-1)!.text()).toBe('✎ Élément 4')
           rect.mockRestore()
         })
 

@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { Detection } from '../composables/useAnalyses'
+import type { TemplateDocument } from '../data/mock'
+import ZoneCrop from './ZoneCrop.vue'
 
 /** One element an analysis found: what it is most likely, and every class it could be with how sure the analysis is. */
 const props = defineProps<{
@@ -9,6 +11,10 @@ const props = defineProps<{
   position?: number
   /** What it is called, when it is not « Élément n »: the page, for instance. */
   title?: string
+  /** The entity it is, when known: what the element is called, the model being a badge beside it. */
+  entityName?: string
+  /** The document it was found in, to show what the zone covers. */
+  document?: TemplateDocument | null
   /** The name of a class: a model's, or « other » for null. */
   nameOf: (templateId: string | null, templatePage?: number | null) => string
 }>()
@@ -25,10 +31,12 @@ const hidden = computed(() => props.detection.classifications.length - shown.val
 <template>
   <div class="detection" data-testid="detection">
     <div class="detection__head">
-      <h3 class="fr-h6 fr-mb-0">{{ title ?? `Élément ${position}` }}</h3>
+      <h3 class="fr-h6 fr-mb-0">{{ title ?? entityName ?? `Élément ${position}` }}</h3>
       <DsfrBadge :label="nameOf(best.templateId, best.templatePage)" :type="best.templateId === null ? 'warning' : 'success'" small data-testid="detection-best" />
       <span class="detection__confidence" data-testid="detection-confidence">{{ percent(best.confidence) }} %</span>
     </div>
+
+    <ZoneCrop v-if="document && detection.zone.points.length >= 3" :document="document" :zone="detection.zone" />
 
     <p class="fr-text--sm fr-mb-0">Classes possibles, de la plus à la moins probable :</p>
     <ul class="classes">
