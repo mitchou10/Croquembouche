@@ -106,4 +106,16 @@ describe('RunsList', () => {
   it('has none when nothing says a use can be stopped', () => {
     expect(mountList(3).find('[data-testid="run-cancel"]').exists()).toBe(false)
   })
+
+  it('says what it is given to say when there is no use to list', () => {
+    expect(mountList(0, { emptyText: 'Aucune utilisation « En cours ».' }).get('[data-testid="runs-empty"]').text()).toBe('Aucune utilisation « En cours ».')
+  })
+
+  it('goes back to its first page when the list changes', async () => {
+    const wrapper = mountList(9)
+    await wrapper.get('button[title="Page suivante"]').trigger('click')
+    expect(wrapper.get('[data-testid="pager-count"]').text()).toBe('2 / 3')
+    await wrapper.setProps({ runs: runs(6) })
+    expect(wrapper.get('[data-testid="pager-count"]').text()).toBe('1 / 2')
+  })
 })

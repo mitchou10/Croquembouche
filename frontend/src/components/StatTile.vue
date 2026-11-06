@@ -1,13 +1,29 @@
 <script setup lang="ts">
-/** One figure of a dashboard, with what it counts. `tone` colours it when it says something good or bad. */
-defineProps<{ value: number | string; label: string; tone?: 'success' | 'error' | 'info'; compact?: boolean }>()
+/**
+ * One figure of a dashboard, with what it counts. `tone` colours it when it says something good or bad. A `selectable`
+ * one is a button that says it was chosen (`select`): `selected` is whether its choice is on, as a toggle.
+ */
+const props = withDefaults(
+  defineProps<{ value: number | string; label: string; tone?: 'success' | 'error' | 'info'; compact?: boolean; selectable?: boolean; selected?: boolean }>(),
+  // Not given is not « off »: a button with no choice to make is not a toggle.
+  { selected: undefined },
+)
+const emit = defineEmits<{ select: [] }>()
 </script>
 
 <template>
-  <div class="stat" :class="[tone && `stat--${tone}`, { 'stat--compact': compact }]" data-testid="stat">
-    <p class="stat__value fr-mb-0" data-testid="stat-value">{{ value }}</p>
-    <p class="stat__label fr-mb-0" data-testid="stat-label">{{ label }}</p>
-  </div>
+  <component
+    :is="selectable ? 'button' : 'div'"
+    class="stat"
+    :class="[tone && `stat--${tone}`, { 'stat--compact': compact, 'stat--selectable': selectable, 'stat--selected': selected }]"
+    :type="selectable ? 'button' : undefined"
+    :aria-pressed="selectable && props.selected !== undefined ? selected : undefined"
+    data-testid="stat"
+    @click="selectable && emit('select')"
+  >
+    <span class="stat__value" data-testid="stat-value">{{ value }}</span>
+    <span class="stat__label" data-testid="stat-label">{{ label }}</span>
+  </component>
 </template>
 
 <style scoped>
@@ -17,6 +33,26 @@ defineProps<{ value: number | string; label: string; tone?: 'success' | 'error' 
   border-left-width: 4px;
   border-left-color: var(--border-action-high-blue-france);
   background: var(--background-default-grey);
+}
+
+.stat {
+  display: block;
+  width: 100%;
+  text-align: left;
+}
+
+.stat--selectable {
+  cursor: pointer;
+  font: inherit;
+}
+
+.stat--selectable:hover {
+  background: var(--background-default-grey-hover);
+}
+
+.stat--selected {
+  background: var(--background-contrast-info);
+  box-shadow: inset 0 0 0 2px var(--border-action-high-blue-france);
 }
 
 .stat--success {
@@ -29,6 +65,11 @@ defineProps<{ value: number | string; label: string; tone?: 'success' | 'error' 
 
 .stat--info {
   border-left-color: var(--border-plain-info);
+}
+
+.stat__value,
+.stat__label {
+  display: block;
 }
 
 .stat__value {

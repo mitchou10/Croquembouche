@@ -546,6 +546,50 @@ describe('app', () => {
       expect(wrapper.find('[data-testid="pager-count"]').exists()).toBe(false)
     })
 
+    describe('the cards at the top, which filter the uses', () => {
+      const tile = (wrapper: ReturnType<typeof mount>, label: string) =>
+        wrapper.findAll('[data-testid="stat"]').find((t) => t.get('[data-testid="stat-label"]').text() === label)!
+      const listed = (wrapper: ReturnType<typeof mount>) => wrapper.findAll('[data-testid="run"]').map((r) => r.text())
+
+      it('lists only the uses that ended in error, on the tab of the uses, and says which filter is on', async () => {
+        const { wrapper } = await open('a5') // five uses, one failed
+        expect(wrapper.find('[data-testid="runs"]').exists()).toBe(false)
+        await tile(wrapper, 'En erreur').trigger('click')
+        expect(wrapper.get('[role="tab"][aria-selected="true"]').text()).toMatch(/^Utilisations/)
+        expect(listed(wrapper)).toHaveLength(Number(figures(wrapper)['En erreur']))
+        for (const row of listed(wrapper)) expect(row).toContain('En échec')
+        expect(tile(wrapper, 'En erreur').attributes('aria-pressed')).toBe('true')
+        expect(tile(wrapper, 'En cours').attributes('aria-pressed')).toBe('false')
+        expect(wrapper.get('[data-testid="runs-filter"]').text()).toContain('En échec')
+      })
+
+      it('takes the filter off with the same card, with « Utilisations » or with the link', async () => {
+        const { wrapper } = await open('a5')
+        await tile(wrapper, 'Terminées').trigger('click')
+        expect(listed(wrapper).length).toBeLessThan(Number(figures(wrapper).Utilisations))
+        await tile(wrapper, 'Terminées').trigger('click') // again
+        expect(listed(wrapper)).toHaveLength(4) // the first page of all five
+        await tile(wrapper, 'En erreur').trigger('click')
+        await tile(wrapper, 'Utilisations').trigger('click')
+        expect(wrapper.find('[data-testid="runs-filter"]').exists()).toBe(false)
+        await tile(wrapper, 'En erreur').trigger('click')
+        await wrapper.get('[data-testid="runs-filter-clear"]').trigger('click')
+        expect(wrapper.find('[data-testid="runs-filter"]').exists()).toBe(false)
+        expect(wrapper.get('[data-testid="pager-count"]').text()).toBe('1 / 2')
+      })
+
+      it('says so when no use has that state', async () => {
+        const { wrapper } = await open('a1') // none is running
+        await tile(wrapper, 'En cours').trigger('click')
+        expect(wrapper.get('[data-testid="runs-empty"]').text()).toBe('Aucune utilisation « En cours ».')
+      })
+
+      it('does not make a button of the figure of the views', async () => {
+        const { wrapper } = await open('a1')
+        expect(tile(wrapper, 'Vues').element.tagName).toBe('DIV')
+      })
+    })
+
     it('says whether the analysis is public or shared', async () => {
       expect((await open('a5')).wrapper.get('[data-testid="sharing"]').text()).toBe('Publique')
       expect((await open('a4')).wrapper.get('[data-testid="sharing"]').text()).toBe('Partagée · 2')
@@ -744,6 +788,23 @@ describe('app', () => {
         } finally {
           vi.useRealTimers()
         }
+      })
+
+      it('brings the element of a zone up when it is clicked on the document, from any tab', async () => {
+        const { wrapper, name } = await open('a1').then(async (page) => {
+          const name = nameWith(models, 2)
+          await send(page.wrapper, image(name))
+          return { ...page, name }
+        })
+        const found = useAnalyses().find('a1')!.runs[0].detections!
+        expect(found.length).toBeGreaterThanOrEqual(2)
+        expect(wrapper.get('[role="tab"][aria-selected="true"]').text()).toBe('Page')
+        const viewer = wrapper.findComponent({ name: 'DocumentViewer' })
+        viewer.vm.$emit('select', found[1].id)
+        await flushPromises()
+        expect(wrapper.get('[role="tab"][aria-selected="true"]').text()).toMatch(/^Éléments/)
+        expect(wrapper.get('[data-testid="pager-count"]').text()).toBe(`2 / ${found.length}`)
+        expect(name).toBeTruthy()
       })
 
       it('says so when the worker fails, and lets the person try again', async () => {
@@ -2176,6 +2237,17 @@ describe('app', () => {
       await byTitle(noExample.wrapper, 'Entité suivante').trigger('click')
       expect(noExample.wrapper.get('[data-testid="entity-type"]').text()).toBe('Texte')
       expect(noExample.wrapper.get('[data-testid="entity-examples"]').text()).toContain('Liberté Égalité Fraternité')
+    })
+
+    it('brings the entity of a zone up when it is clicked on the document of a model', async () => {
+      useSession().setUser('dana')
+      const { wrapper } = await mountAt('/catalogue/t1')
+      await byTitle(wrapper, 'Entité suivante').trigger('click')
+      expect(wrapper.get('[data-testid="pager-count"]').text()).toBe('2 / 2')
+      wrapper.findComponent({ name: 'DocumentViewer' }).vm.$emit('select', 'e1')
+      await flushPromises()
+      expect(wrapper.get('[data-testid="pager-count"]').text()).toBe('1 / 2')
+      expect(wrapper.get('.entity-card').text()).toContain('Emblème')
     })
 
     it('is filled in when editing an existing model, and changed in place', async () => {

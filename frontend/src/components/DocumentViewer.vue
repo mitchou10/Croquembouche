@@ -18,7 +18,7 @@ const props = defineProps<{
   /** When true, the image is shown whole inside the space its parent gives it (no scrolling), keeping its ratio. */
   fit?: boolean
 }>()
-const emit = defineEmits<{ draw: [zone: Zone]; cancel: []; update: [id: string, zone: Zone]; remove: [id: string] }>()
+const emit = defineEmits<{ draw: [zone: Zone]; cancel: []; update: [id: string, zone: Zone]; remove: [id: string]; select: [id: string] }>()
 
 const MIN_ZOOM = 1
 const MAX_ZOOM = 8
@@ -315,13 +315,37 @@ function onPointerMove(event: PointerEvent) {
   else if (draft.value.length) cursor.value = point
 }
 
+const insidePolygon = (p: Point, polygon: Point[]) => {
+  let inside = false
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const [a, b] = [polygon[i], polygon[j]]
+    if (a.y > p.y !== b.y > p.y && p.x < ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y) + a.x) inside = !inside
+  }
+  return inside
+}
+const areaOf = (polygon: Point[]) =>
+  Math.abs(polygon.reduce((sum, a, i) => sum + (a.x * polygon[(i + 1) % polygon.length].y - polygon[(i + 1) % polygon.length].x * a.y), 0)) / 2
+
+/** A click on a zone says which one it is: the smallest when zones lie one in another. */
+function selectAt(point: Point) {
+  const hit = shapes.value.filter((s) => insidePolygon(point, s.points)).sort((a, b) => areaOf(a.points) - areaOf(b.points))[0]
+  if (hit) emit('select', hit.id)
+}
+
 function onPointerUp(event: PointerEvent) {
   grab = null
   pgrab = null
   const current = press
   press = null
-  if (!current || current.pan || !props.drawing) return
+  if (!current) return
   const travelled = Math.hypot(event.clientX - current.x, event.clientY - current.y)
+  // Outside of drawing, a short press (not a pan, not on the handles that edit a zone) is a click on a zone, if it is on one.
+  if (!props.drawing) {
+    const onHandle = (event.target as HTMLElement | null)?.closest?.('.doc-viewer__edit-poly, .doc-viewer__edit, [class*="doc-viewer__handle"]')
+    if (travelled < CLICK_SLOP && !onHandle) selectAt(current.at)
+    return
+  }
+  if (current.pan) return
 
   if (tool.value === 'rectangle') {
     const r = dragRect.value

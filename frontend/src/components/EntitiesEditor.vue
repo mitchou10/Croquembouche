@@ -42,6 +42,12 @@ watch(
   { immediate: true },
 )
 
+// The parent can bring another entity on show (a zone clicked on the document).
+watch(currentId, (id) => {
+  const found = entities.value.findIndex((e) => e.id === id)
+  if (found >= 0 && found !== index.value) index.value = found
+})
+
 // Moving to another entity ends a drawing under way for this one.
 watch(index, () => (drawingId.value = null))
 

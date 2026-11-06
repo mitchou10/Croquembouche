@@ -320,6 +320,7 @@ async function submit() {
             @cancel="drawingId = null"
             @update="onUpdateZone"
             @remove="onRemoveZone"
+            @select="currentEntityId = $event"
           />
         </div>
         <p v-else-if="mode !== 'suggest'" class="template-form__empty">Aucun document : le modèle se définira par ses entités seulement.</p>

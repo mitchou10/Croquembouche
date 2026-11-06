@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { statusLabels, type AnalysisRun } from '../data/mock'
 import PagerControls from './PagerControls.vue'
 
@@ -14,6 +14,8 @@ const props = defineProps<{
   selectedId?: string | null
   /** Whether the use can be stopped by the person looking: their own, and still running. */
   canCancel?: (run: AnalysisRun) => boolean
+  /** What to say when there is no use to list. */
+  emptyText?: string
 }>()
 const emit = defineEmits<{ open: [runId: string]; cancel: [runId: string] }>()
 
@@ -21,10 +23,12 @@ const PER_PAGE = 4
 const page = ref(0)
 const pageCount = computed(() => Math.max(1, Math.ceil(props.runs.length / PER_PAGE)))
 const visible = computed(() => props.runs.slice(page.value * PER_PAGE, (page.value + 1) * PER_PAGE))
+// A shorter or longer list starts again from its first page.
+watch(() => props.runs.length, () => (page.value = 0))
 </script>
 
 <template>
-  <p v-if="!runs.length" role="status">Cette analyse n’a pas encore été utilisée.</p>
+  <p v-if="!runs.length" role="status" data-testid="runs-empty">{{ emptyText ?? 'Cette analyse n’a pas encore été utilisée.' }}</p>
   <div v-else class="runs">
     <ul class="runs__list">
       <li v-for="run in visible" :key="run.id" class="runs__row" :class="{ 'runs__row--selected': run.id === selectedId }" data-testid="run">

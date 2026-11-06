@@ -101,6 +101,25 @@ const askAboutFile = computed(() => allReviewed.value && !!run.value?.screenshot
 const canCancel = (r: AnalysisRun) => r.status === 'running' && ownsRun(r)
 const cancel = (runId: string) => analysis.value && cancelRun(analysis.value.id, runId)
 
+// The cards at the top filter the uses: a click on one lists those uses, and on the same one again, or on « Utilisations »,
+// lists them all.
+type RunFilter = 'done' | 'running' | 'failed'
+const statusFilter = ref<RunFilter | null>(null)
+const shownRuns = computed(() => (analysis.value?.runs ?? []).filter((r) => !statusFilter.value || r.status === statusFilter.value))
+function filterRuns(status: RunFilter | null) {
+  statusFilter.value = status === statusFilter.value ? null : status
+  tab.value = 'runs'
+}
+watch(() => route.params.id, () => (statusFilter.value = null))
+
+// A zone clicked on the document is the element on show, in its tab.
+function selectElement(id: string) {
+  const index = detections.value.findIndex((d) => d.id === id)
+  if (index < 0 || adding.value) return
+  current.value = index
+  tab.value = 'elements'
+}
+
 function open(runId: string) {
   selectedRunId.value = runId
   // A use that is still running is asked for until the worker has answered.
@@ -284,10 +303,10 @@ const sharing = computed(() => {
 
     <section class="dashboard__stats" aria-label="Chiffres de l’analyse">
       <StatTile compact :value="stats.views" label="Vues" />
-      <StatTile compact :value="stats.uses" label="Utilisations" />
-      <StatTile compact :value="stats.done" label="Terminées" tone="success" />
-      <StatTile compact :value="stats.running" label="En cours" tone="info" />
-      <StatTile compact :value="stats.failed" label="En erreur" tone="error" />
+      <StatTile compact selectable :value="stats.uses" label="Utilisations" @select="filterRuns(null)" />
+      <StatTile compact selectable :selected="statusFilter === 'done'" :value="stats.done" label="Terminées" tone="success" @select="filterRuns('done')" />
+      <StatTile compact selectable :selected="statusFilter === 'running'" :value="stats.running" label="En cours" tone="info" @select="filterRuns('running')" />
+      <StatTile compact selectable :selected="statusFilter === 'failed'" :value="stats.failed" label="En erreur" tone="error" @select="filterRuns('failed')" />
     </section>
 
     <div class="dashboard__main">
@@ -344,6 +363,7 @@ const sharing = computed(() => {
             :fit="wide"
             @draw="onDraw"
             @cancel="adding = false"
+            @select="selectElement"
           />
         </div>
         <p v-else-if="run" class="tester__nofile" data-testid="no-screenshot">
@@ -374,7 +394,19 @@ const sharing = computed(() => {
         <TabList v-model="tab" :tabs="tabs" label="Résultat et utilisations" />
 
         <div v-if="tab === 'runs'" role="tabpanel" class="side__panel" data-testid="runs">
-          <RunsList :runs="analysis.runs" :can-see="canSeeResult" :can-cancel="canCancel" :selected-id="run?.id" @open="open" @cancel="cancel" />
+          <p v-if="statusFilter" class="fr-text--sm fr-mb-0" data-testid="runs-filter">
+            Utilisations « {{ statusLabels[statusFilter].label }} » :
+            <button type="button" class="fr-link fr-link--sm" data-testid="runs-filter-clear" @click="statusFilter = null">Tout afficher</button>
+          </p>
+          <RunsList
+            :runs="shownRuns"
+            :can-see="canSeeResult"
+            :can-cancel="canCancel"
+            :selected-id="run?.id"
+            :empty-text="statusFilter ? `Aucune utilisation « ${statusLabels[statusFilter].label} ».` : undefined"
+            @open="open"
+            @cancel="cancel"
+          />
         </div>
 
         <div v-else-if="!run" role="tabpanel" class="side__panel" data-testid="results">
