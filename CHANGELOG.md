@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.13.0](https://github.com/mitchou10/Croquembouche/compare/v1.12.0...v1.13.0) (2026-11-06)
+
+
+### Features
+
+* **templates:** image and table types, and optional tags on an entity ([ed76391](https://github.com/mitchou10/Croquembouche/commit/ed76391844ef2d67d8d3a593ede98407b54ee29f))
+
 ## [1.12.0](https://github.com/mitchou10/Croquembouche/compare/v1.11.1...v1.12.0) (2026-11-06)
 
 
