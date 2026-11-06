@@ -196,3 +196,53 @@ describe('DocumentViewer polygon editing', () => {
     expect(wrapper.emitted('remove')).toEqual([['p1']])
   })
 })
+
+describe('DocumentViewer click on a zone', () => {
+  const square = (x0: number, y0: number, x1: number, y1: number) => ({
+    page: 1,
+    points: [
+      { x: x0, y: y0 },
+      { x: x1, y: y0 },
+      { x: x1, y: y1 },
+      { x: x0, y: y1 },
+    ],
+  })
+  // One zone in another: the click inside the small one is the small one.
+  const entities = [
+    { id: 'big', name: 'Bloc', definition: '', type: 'text', examples: [], tags: [], stars: [], zone: square(0.1, 0.1, 0.9, 0.9) },
+    { id: 'small', name: 'Date', definition: '', type: 'text', examples: [], tags: [], stars: [], zone: square(0.4, 0.4, 0.6, 0.6) },
+  ]
+
+  const mountViewer = (props: Record<string, unknown> = {}) => {
+    const wrapper = mount(DocumentViewer, { props: { document, entities: entities as never, ...props } })
+    // jsdom has no layout: the stage is a 100 x 100 box, a pixel is a percent.
+    wrapper.get('[data-testid="document-stage"]').element.getBoundingClientRect = () =>
+      ({ left: 0, top: 0, width: 100, height: 100, right: 100, bottom: 100 }) as DOMRect
+    return wrapper
+  }
+  const press = async (wrapper: ReturnType<typeof mount>, from: [number, number], to: [number, number] = from) => {
+    const stage = wrapper.get('[data-testid="document-stage"]').element
+    const at = (type: string, [x, y]: [number, number]) => stage.dispatchEvent(new MouseEvent(type, { bubbles: true, clientX: x, clientY: y }))
+    at('pointerdown', from)
+    at('pointermove', to)
+    at('pointerup', to)
+    await wrapper.vm.$nextTick()
+  }
+
+  it('says which zone was clicked, the smallest when one lies in another', async () => {
+    const wrapper = mountViewer()
+    await press(wrapper, [50, 50])
+    await press(wrapper, [20, 20])
+    expect(wrapper.emitted('select')).toEqual([['small'], ['big']])
+  })
+
+  it('says nothing for a click that is on no zone, a drag (a pan) or while drawing', async () => {
+    const wrapper = mountViewer()
+    await press(wrapper, [95, 95]) // outside
+    await press(wrapper, [50, 50], [70, 70]) // a pan
+    expect(wrapper.emitted('select')).toBeUndefined()
+    const drawing = mountViewer({ drawing: true })
+    await press(drawing, [50, 50])
+    expect(drawing.emitted('select')).toBeUndefined()
+  })
+})

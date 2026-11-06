@@ -48,6 +48,13 @@ watch(
 watch(suggestionIndex, () => (commentText.value = ''))
 
 const entity = computed(() => template.value?.entities[entityIndex.value])
+// A zone clicked on the document is the entity on show, in its tab.
+function selectEntity(id: string) {
+  const index = template.value?.entities.findIndex((e) => e.id === id) ?? -1
+  if (index < 0) return
+  entityIndex.value = index
+  tab.value = 'entities'
+}
 const suggestion = computed(() => template.value?.suggestions[suggestionIndex.value])
 const pending = computed(() => template.value?.suggestions.filter((s) => s.status === 'pending').length ?? 0)
 const suggestionStarred = computed(
@@ -134,6 +141,7 @@ async function comment() {
           :entities="template.entities"
           :highlight-id="tab === 'entities' ? entity?.id : undefined"
           :fit="wide"
+          @select="selectEntity"
         />
       </div>
       <p v-else class="template-view__empty">Ce modèle n’a pas de document d’exemple.</p>
