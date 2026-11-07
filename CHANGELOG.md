@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.20.0](https://github.com/mitchou10/Croquembouche/compare/v1.19.0...v1.20.0) (2026-11-07)
+
+
+### Features
+
+* **version:** the api says its version, and the frontend shows its own and the backend's ([931dc7a](https://github.com/mitchou10/Croquembouche/commit/931dc7a54255cfcedd1d42208338e8afea33173c))
+
 ## [1.19.0](https://github.com/mitchou10/Croquembouche/compare/v1.18.0...v1.19.0) (2026-11-07)
 
 
