@@ -14,6 +14,7 @@ from app.models.catalogue import Template
 from app.repositories.analysis import AnalysisRepository
 from app.repositories.document import DocumentRepository
 from app.schemas.analysis import (
+    AnalysisConsumptionOut,
     AnalysisCreate,
     AnalysisOut,
     ClassificationOut,
@@ -21,6 +22,7 @@ from app.schemas.analysis import (
     DetectionOut,
     ElementCreate,
     GroupOut,
+    MyConsumptionOut,
     PageOut,
     Review,
     ReviewOut,
@@ -159,6 +161,28 @@ class AnalysisService:
         """Every analysis, the ones the person cannot open named only: they are told there are others, and which."""
         await self._expire()
         return [self._view(a) for a in await self._repository.all()]
+
+    async def my_consumption(self) -> MyConsumptionOut:
+        """What the person's own uses consumed, all of them and by analysis: for the person alone (it is theirs)."""
+        rows = await self._repository.consumption_of_user(self._user.user_id)
+        analyses = [
+            AnalysisConsumptionOut(
+                id=str(analysis_id),
+                name=name,
+                uses=uses,
+                measured=measured,
+                consumption=_consumed(float(kwh), float(co2), float(seconds)),
+            )
+            for analysis_id, name, uses, measured, kwh, co2, seconds in rows
+        ]
+        return MyConsumptionOut(
+            uses=sum(a.uses for a in analyses),
+            measured=sum(a.measured for a in analyses),
+            consumption=_consumed(
+                sum(float(r[4]) for r in rows), sum(float(r[5]) for r in rows), sum(float(r[6]) for r in rows)
+            ),
+            analyses=analyses,
+        )
 
     async def get(self, analysis_id: str) -> AnalysisOut:
         return self._view(await self._analysis(analysis_id))

@@ -35,6 +35,7 @@ export const routes = [
       { path: 'evaluation', name: 'evaluation', component: () => import('../views/EvaluationView.vue') },
       { path: 'vue-d-ensemble', name: 'overview', meta: { requiresAdmin: true }, component: () => import('../views/OverviewView.vue') },
       { path: 'parametres', name: 'settings', component: () => import('../views/SettingsView.vue') },
+      { path: 'parametres/consommation', name: 'my-consumption', component: () => import('../views/MyConsumptionView.vue') },
     ],
   },
   { path: '/:pathMatch(.*)*', redirect: { name: 'landing' } },

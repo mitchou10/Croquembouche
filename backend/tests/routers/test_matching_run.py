@@ -284,3 +284,42 @@ async def test_an_analysis_looks_for_the_sub_models_of_its_models_too(db_client,
         json={"status": "annotated", "templateId": outsider["id"]},
     )
     assert refused.status_code == 422
+
+
+async def test_what_the_uses_of_a_person_consumed_is_told_by_analysis(db_client, as_user, dispatcher):
+    form, analysis = await analysis_of_a_form(db_client, as_user)
+    other = (
+        await db_client.post(
+            "/api/analyses", json={"name": "B", "description": "", "templateIds": [form["id"]], "isPublic": False}
+        )
+    ).json()
+    cost = lambda wh, g, s: {"energy_kwh": wh / 1000, "co2_kg": g / 1000, "duration_s": s}  # noqa: E731
+    for target, spent in ((analysis, cost(2, 1, 10)), (analysis, cost(1, 0.5, 5)), (other, cost(5, 2, 20))):
+        await start(db_client, target)
+        await hand_back(db_client, dispatcher.messages[-1], {**one_element(form), "consumption": spent})
+    await start(db_client, analysis)  # not measured: a use, adding nothing
+
+    told = (await db_client.get("/api/metrics/me/consumption")).json()
+
+    assert told["uses"] == 4 and told["measured"] == 3
+    assert told["consumption"]["energyWh"] == pytest.approx(8) and told["consumption"]["co2G"] == pytest.approx(3.5)
+    assert told["consumption"]["durationS"] == pytest.approx(35)
+    # The most consuming first, with what each used.
+    assert [(a["name"], a["uses"], a["measured"]) for a in told["analyses"]] == [("B", 1, 1), ("A", 3, 2)]
+    assert told["analyses"][1]["consumption"]["energyWh"] == pytest.approx(3)
+    assert told["analyses"][0]["consumption"]["waterMl"] == pytest.approx(5 * 1.8)
+
+
+async def test_what_others_consumed_is_not_told(db_client, as_user, dispatcher):
+    form, analysis = await analysis_of_a_form(db_client, as_user)  # alice's
+    await start(db_client, analysis)
+    await hand_back(
+        db_client,
+        dispatcher.messages[-1],
+        {**one_element(form), "consumption": {"energy_kwh": 0.01, "co2_kg": 0.001, "duration_s": 3}},
+    )
+
+    as_user("bob")
+    told = (await db_client.get("/api/metrics/me/consumption")).json()
+
+    assert told["uses"] == 0 and told["analyses"] == [] and told["consumption"]["energyWh"] == 0

@@ -1,7 +1,7 @@
 import uuid
 from datetime import timedelta
 
-from sqlalchemy import and_, or_, select, update
+from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.analysis import Analysis, Run
@@ -91,6 +91,28 @@ class AnalysisRepository:
                 )
             ).all()
         )
+
+    async def consumption_of_user(self, user_id: str) -> list[tuple]:
+        """What the uses of a person consumed, by analysis: `(id, name, uses, measured, kWh, kg of CO2, seconds)`, the
+        most consuming first. A use is one tried on a document (the first of an analysis, made with it, has none); one
+        that was not measured counts as a use and adds nothing."""
+        energy = func.coalesce(func.sum(Run.energy_kwh), 0)
+        query = (
+            select(
+                Analysis.id,
+                Analysis.name,
+                func.count(Run.id).filter(Run.file_name.is_not(None)),
+                func.count(Run.energy_kwh),
+                energy,
+                func.coalesce(func.sum(Run.co2_kg), 0),
+                func.coalesce(func.sum(Run.duration_s), 0),
+            )
+            .join(Analysis, Analysis.id == Run.analysis_id)
+            .where(Run.user_id == user_id, Run.file_name.is_not(None))
+            .group_by(Analysis.id, Analysis.name)
+            .order_by(energy.desc(), Analysis.name)
+        )
+        return [tuple(row) for row in (await self._session.execute(query)).all()]
 
     async def document(self, document_id: uuid.UUID) -> Document | None:
         return await self._session.get(Document, document_id)

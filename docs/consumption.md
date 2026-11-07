@@ -11,6 +11,8 @@ Chaque utilisation d'une analyse dit ce qu'elle a consommé : l'**électricité*
 - **Page d'une analyse**, onglet « Utilisations » : le total de toutes ses utilisations mesurées, et une ligne par
   utilisation.
 - **Vue d'ensemble** (administrateur) : le total de tout le service.
+- **Mon profil, « Ma consommation »** : ce que *mes* utilisations ont consommé, au total et analyse par analyse
+  (voir plus bas).
 
 Une utilisation qui n'a pas été mesurée (celles d'avant cette fonction, ou une mesure qui a échoué) n'affiche rien et ne
 compte pour rien dans les totaux.
@@ -47,3 +49,21 @@ Backend : `WATER_LITERS_PER_KWH` (1,8).
 - Dans un conteneur, CodeCarbon ne lit souvent pas la puissance réelle (RAPL) : il l'estime alors à partir du
   processeur. C'est un ordre de grandeur, pas un wattmètre.
 - La capture est faite avec des données fictives.
+
+## Ma consommation (mon profil)
+
+Depuis les **Paramètres** (le bouton avec votre nom, en bas du menu), le lien « Ma consommation » ouvre la page de ce que
+**vos** utilisations ont consommé.
+
+![Le lien « Ma consommation » dans les paramètres](my-consumption-link.png)
+
+![Ma consommation : le total de mes utilisations et le détail par analyse](my-consumption.png)
+
+- **En haut** : le total de toutes mes utilisations mesurées (électricité, CO₂, eau, avec les équivalents).
+- **Le détail par analyse**, de la plus consommatrice à la moins consommatrice : le nombre d'utilisations (et combien sont
+  mesurées, quand ce n'est pas toutes), l'électricité, le CO₂, l'eau et la durée de calcul. Le nom de l'analyse ouvre sa page.
+- Seules **mes** utilisations sont comptées, pas celles des autres personnes d'une analyse partagée. Une utilisation est un
+  test sur un document : la première utilisation d'une analyse, faite avec elle, n'en est pas une.
+- Une utilisation qui n'a pas été mesurée compte comme une utilisation mais ne consomme rien dans les totaux.
+
+Les chiffres viennent de `GET /api/metrics/me/consumption`, calculés par la base à partir des mêmes colonnes de `runs`.

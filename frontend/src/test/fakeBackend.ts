@@ -15,6 +15,7 @@ import type {
 import { analyses as analysisSeed, entityTypeSeed, groupSeed, sampleLetter, templates as seed } from '../data/mock'
 import { simulatePage, simulateTest } from './simulate'
 import { changedFields, cleanCategories, cleanList, MAX_EXAMPLES, MAX_TAGS } from '../composables/useCatalogue'
+import { totalConsumption } from '../composables/consumption'
 import { useSession } from '../composables/useSession'
 
 /**
@@ -203,6 +204,7 @@ export async function fakeFetch(path: string, init: RequestInit = {}): Promise<A
 
   if (parts[0] === 'groups') return reply(200, groupsOf(user))
   if (parts[0] === 'metrics') {
+    if (parts[1] === 'me' && parts[2] === 'consumption') return reply(200, consumptionOf(user))
     if (parts[1] === 'me') return reply(200, overviewOf(user))
     return isAdmin.value ? reply(200, overviewOf()) : refuse(403, 'Réservé aux administrateurs.')
   }
@@ -488,6 +490,24 @@ function qualityOf(template: Pick<Template, 'id' | 'entities'>): TemplateQuality
 }
 
 /** The quality over every model, and model by model, of the decisions of one person or of everyone. */
+/** What the uses of a person consumed, by analysis (the uses that name a document), the most consuming first. */
+function consumptionOf(user: string) {
+  const rows = analyses
+    .map((a) => ({ analysis: a, runs: a.runs.filter((r) => r.userId === user && r.fileName) }))
+    .filter((row) => row.runs.length)
+    .map(({ analysis, runs }) => {
+      const consumption = totalConsumption([{ consumption: undefined } as Analysis, ...runs.map((r) => ({ consumption: r.consumption ?? undefined }) as Analysis)])
+      return { id: analysis.id, name: analysis.name, uses: runs.length, measured: runs.filter((r) => r.consumption).length, consumption }
+    })
+    .sort((a, b) => b.consumption.energyWh - a.consumption.energyWh || a.name.localeCompare(b.name))
+  return {
+    uses: rows.reduce((n, r) => n + r.uses, 0),
+    measured: rows.reduce((n, r) => n + r.measured, 0),
+    consumption: totalConsumption(rows.map((r) => ({ consumption: r.consumption }) as Analysis)),
+    analyses: rows,
+  }
+}
+
 function overviewOf(user?: string): QualityOverview {
   const { pages, elements } = collect(user)
   const ids = new Set<string>()

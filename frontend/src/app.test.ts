@@ -1618,6 +1618,54 @@ describe('app', () => {
     })
   })
 
+  describe('my consumption, from my profile', () => {
+    const rows = (wrapper: ReturnType<typeof mount>) => wrapper.findAll('[data-testid="consumption-row"]')
+
+    it('is a link of the settings page', async () => {
+      useSession().setUser('alice.martin')
+      const { wrapper, router } = await mountAt('/parametres')
+      await wrapper.get('[data-testid="my-consumption-link"]').trigger('click')
+      await landsOn(router, 'my-consumption')
+    })
+
+    it('tells what the uses of the person consumed, in all and by analysis', async () => {
+      useSession().setUser('alice.martin')
+      const { wrapper } = await mountAt('/parametres/consommation')
+      await vi.waitFor(() => expect(wrapper.find('[data-testid="consumption-by-analysis"]').exists()).toBe(true))
+
+      const mine = analyses.value.flatMap((a) => backendAnalysis(a.id).runs).filter((r) => r.userId === 'alice.martin' && r.fileName)
+      expect(wrapper.get('[data-testid="consumption-uses"]').text()).toContain(`${mine.length} utilisations`)
+      expect(rows(wrapper).length).toBeGreaterThan(0)
+      // Each analysis links to its page.
+      expect(wrapper.get('[data-testid="consumption-analysis"]').attributes('href')).toMatch(/^\/analyses\//)
+    })
+
+    it('counts a use that was measured, and lists one that was not for nothing', async () => {
+      useSession().setUser('alice.martin')
+      const run = backendAnalysis('a1').runs.find((r) => r.userId === 'alice.martin' && r.fileName)!
+      run.consumption = { durationS: 5, energyWh: 7, co2G: 0.4, waterMl: 12.6 }
+      const { wrapper } = await mountAt('/parametres/consommation')
+      await vi.waitFor(() => expect(rows(wrapper).length).toBeGreaterThan(0))
+
+      expect(wrapper.get('[data-testid="my-consumption-total"]').text()).toContain('Toutes mes utilisations')
+      expect(wrapper.get('[data-testid="consumption-row-energy"]').text()).toMatch(/Wh/)
+    })
+
+    it('has nothing to say to someone who tested nothing', async () => {
+      useSession().setUser('someone.new')
+      const { wrapper } = await mountAt('/parametres/consommation')
+      await vi.waitFor(() => expect(wrapper.find('[data-testid="consumption-none"]').exists()).toBe(true))
+      expect(wrapper.find('[data-testid="consumption-by-analysis"]').exists()).toBe(false)
+    })
+
+    it('says so when it cannot be loaded', async () => {
+      useSession().setUser('alice.martin')
+      vi.stubGlobal('fetch', () => Promise.resolve(new Response('{}', { status: 500 })))
+      const { wrapper } = await mountAt('/parametres/consommation')
+      await vi.waitFor(() => expect(wrapper.find('[data-testid="consumption-failed"]').exists()).toBe(true))
+    })
+  })
+
   describe('the overview of the administrator', () => {
     const values = (wrapper: ReturnType<typeof mount>) =>
       Object.fromEntries(wrapper.findAll('[data-testid="stat"]').map((s) => [s.get('[data-testid="stat-label"]').text(), s.get('[data-testid="stat-value"]').text()]))

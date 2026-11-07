@@ -4,6 +4,7 @@ import type {
   Classification,
   EntityTypeInfo,
   Group,
+  MyConsumption,
   QualityOverview,
   Review,
   ReviewedDetection,
@@ -106,6 +107,8 @@ export const fetchTemplates = async () => (await request<TemplateAnswer[]>('GET'
 export const fetchQuality = (id: string) => request<TemplateQuality>('GET', `${base}/${id}/metrics`)
 /** What the person decided of their own tests, over every model and model by model. */
 export const fetchMyQuality = () => request<QualityOverview>('GET', '/api/metrics/me')
+/** What the uses of the person consumed, all of them and by analysis. */
+export const fetchMyConsumption = () => request<MyConsumption>('GET', '/api/metrics/me/consumption')
 /** What everyone decided: administrators only. */
 export const fetchAllQuality = () => request<QualityOverview>('GET', '/api/metrics')
 export const postTemplate = (body: TemplateBody) => call('POST', base, body)
