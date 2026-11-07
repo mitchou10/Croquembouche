@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.21.0](https://github.com/mitchou10/Croquembouche/compare/v1.20.1...v1.21.0) (2026-11-07)
+
+
+### Features
+
+* **analyses:** a button that shows how to try the analysis with curl ([df1a356](https://github.com/mitchou10/Croquembouche/commit/df1a356aae2071a7fae32e8f31d6dcfd72f1f5aa))
+* **evaluation:** explain each metric in simple words, beside the figure and all together ([eb9e342](https://github.com/mitchou10/Croquembouche/commit/eb9e3429c29c73997475678398324d89da1235f3))
+
 ## [1.20.1](https://github.com/mitchou10/Croquembouche/compare/v1.20.0...v1.20.1) (2026-11-07)
 
 
