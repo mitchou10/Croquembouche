@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { fetchQuality } from '../data/api'
 import type { TemplateQuality } from '../data/mock'
 import QualityBlocks from './QualityBlocks.vue'
+import QualityHelp from './QualityHelp.vue'
 
 /**
  * How right the analysis has been on a model, from what people decided of its predictions (validated, invalidated,
@@ -45,6 +46,7 @@ const nothingDecided = computed(
         Mesurée à partir de ce que les utilisateurs valident, invalident ou corrigent dans leurs tests : elle se précise à chaque décision.
         La <strong>précision</strong> est la part des prédictions justes, le <strong>rappel</strong> la part de ce qui existait que l’analyse a trouvé.
       </p>
+      <QualityHelp />
       <p v-if="nothingDecided" role="status" class="fr-mb-0" data-testid="quality-empty">
         Personne n’a encore validé ni corrigé de prédiction pour ce modèle.
       </p>

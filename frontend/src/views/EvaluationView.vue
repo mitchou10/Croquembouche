@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import FixedPage from '../components/FixedPage.vue'
+import QualityHelp from '../components/QualityHelp.vue'
 import QualityOverviewPanel from '../components/QualityOverviewPanel.vue'
 import TabList from '../components/TabList.vue'
 import { useSession } from '../composables/useSession'
@@ -23,6 +24,7 @@ const tabs = computed(() => [
         <p class="fr-mb-0">La qualité de l’analyse, d’après ce que vous validez et corrigez.</p>
       </div>
     </template>
+    <QualityHelp />
     <TabList v-if="tabs.length > 1" v-model="tab" :tabs="tabs" label="Périmètre de l’évaluation" />
     <QualityOverviewPanel :key="tab" :scope="tab" />
   </FixedPage>
