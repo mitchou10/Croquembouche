@@ -1705,8 +1705,8 @@ describe('app', () => {
       expect(text).toContain('2 kWh') // 2 000 Wh
       expect(text).toContain('200 g')
       expect(text).toContain('3,6 L')
-      expect(text).toContain('muffins cuits')
-      expect(text).toContain('bouteilles d’eau')
+      expect(text).toContain('8,3 ampoules LED allumées 1 jour') // 2 000 Wh
+      expect(text).toContain('3,6 bouteilles d’1 L') // 3,6 L
     })
 
     it('spreads the uses over their three states', async () => {

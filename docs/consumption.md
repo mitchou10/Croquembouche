@@ -50,24 +50,31 @@ Backend : `WATER_LITERS_PER_KWH` (1,8).
   processeur. C'est un ordre de grandeur, pas un wattmètre.
 - La capture est faite avec des données fictives.
 
-## Ampoule, ballon de gaz, bouteille
+## Des choses qu'on peut compter
 
-![L'ampoule, le ballon de CO₂ et la bouteille d'eau se remplissent](consumption-gauges.gif)
+![Des ampoules, des ballons de gaz et des bouteilles se remplissent](consumption-gauges.gif)
 
-Chaque bloc de consommation montre, à côté des chiffres, une **ampoule** (électricité), un **ballon de gaz** (CO₂) et une
-**bouteille** (eau) qui **se remplissent** à l'affichage jusqu'au niveau de ce qui a été consommé.
+Chaque bloc de consommation dit, sous les chiffres, ce que c'est **en choses qu'on compte**, dessinées et **animées** : elles
+se remplissent à l'affichage, l'une après l'autre. Trois bouteilles pleines et une à 40 %, c'est « 3,4 bouteilles d'1 L ».
 
-- **Le niveau est indicatif.** Il est sur une échelle **logarithmique** : une utilisation vaut quelques centièmes de
-  bouteille, un mois d'utilisations vaut une bouteille, et sur une échelle linéaire la première ne se verrait jamais. Plein,
-  c'est ce que dit l'équivalent : **70 Wh** (un muffin cuit), **200 g** de CO₂ (un kilomètre en voiture), **500 mL** (une
-  bouteille d'eau). Vide, c'est 0,01 Wh, 0,01 g, 0,1 mL. Dès qu'il y a quelque chose, on en voit un peu.
-- **Après le remplissage**, elles bougent un peu : une vague sur l'eau, des bulles dans le ballon, un halo qui pulse autour
-  de l'ampoule (d'autant plus fort qu'elle est pleine).
-- **Moins de mouvement** : si votre système le demande (`prefers-reduced-motion`), elles apparaissent déjà remplies, sans
-  rien qui bouge.
-- Elles sont cachées aux lecteurs d'écran : les chiffres et les équivalents disent la même chose. Un survol rappelle que
-  le niveau est indicatif.
-- Les échelles sont des constantes de `frontend/src/composables/consumption.ts` (`GAUGE`), à corriger à un seul endroit.
+| | Unités, de la plus petite à la plus grande |
+| --- | --- |
+| Électricité (ampoule LED de 10 W) | allumée 1 minute, 1 heure, 1 jour, 1 mois, 1 an |
+| CO₂ (ballon de gaz, 1 L de CO₂ pèse environ 1,84 g) | ballon de 1 L, de 10 L, de 100 L, de 1 000 L |
+| Eau | cuillère à café (5 mL), verre (20 cL), bouteille d'1 L, seau de 10 L, baignoire (150 L) |
+
+- **Jamais plus de 10.** L'unité est la plus petite dont il y a **moins de dix** : pas « 100 bouteilles », mais « 10 seaux ». Au-delà
+  de la plus grande unité, c'est écrit « **plus de 10** baignoires » et dix sont dessinées, pleines.
+- **En dessous de la plus petite unité**, il n'y en a qu'une partie, dessinée (un peu s'en voit toujours quand il y a quelque
+  chose).
+- Pour le CO₂, l'équivalent en voiture (« 476 m en voiture ») reste affiché.
+- **Après le remplissage**, ça bouge un peu : une vague sur l'eau, des bulles dans les ballons, un halo qui pulse autour des
+  ampoules.
+- **Moins de mouvement** : si votre système le demande (`prefers-reduced-motion`), tout apparaît déjà rempli, rien ne bouge.
+- Les dessins sont cachés aux lecteurs d'écran : le texte (« 3,4 bouteilles d'1 L ») dit la même chose.
+- Les unités et leurs valeurs sont des constantes de `frontend/src/composables/consumption.ts` (`LADDERS`), à corriger à un
+  seul endroit. Ce sont des ordres de grandeur, pas des mesures. Les chiffres de la capture ci-dessus sont ceux d'un usage
+  important, fabriqués pour l'exemple.
 
 ## Ma consommation (mon profil)
 

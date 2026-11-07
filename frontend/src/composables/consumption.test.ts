@@ -1,16 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import {
   co2Equivalent,
-  electricityEquivalent,
   figure,
   formatCo2,
   formatDuration,
   formatEnergy,
   formatWater,
-  gaugeLevel,
   hasConsumption,
+  MAX_SHOWN,
   totalConsumption,
-  waterEquivalent,
+  unitsOf,
 } from './consumption'
 
 const nbsp = (text: string) => text.replace(/[  ]/g, ' ')
@@ -34,22 +33,7 @@ describe('units', () => {
   })
 })
 
-describe('equivalents', () => {
-  it('says a small electricity as the time a LED bulb stays lit, a big one as muffins baked', () => {
-    expect(electricityEquivalent(2)).toBe('une ampoule LED allumée 12 min')
-    expect(electricityEquivalent(0.05)).toBe('une ampoule LED allumée 18 s')
-    expect(electricityEquivalent(140)).toBe('2 muffins cuits au four')
-    expect(electricityEquivalent(70)).toBe('1 muffin cuit au four')
-    expect(electricityEquivalent(0)).toBe('')
-  })
-
-  it('says a little water as teaspoons, half a bottle or more as bottles', () => {
-    expect(waterEquivalent(3.6)).toBe('0,72 cuillère à café')
-    expect(waterEquivalent(50)).toBe('10 cuillères à café')
-    expect(waterEquivalent(250)).toBe('0,5 bouteille d’eau')
-    expect(waterEquivalent(1500)).toBe('3 bouteilles d’eau')
-  })
-
+describe('the equivalent in a car', () => {
   it('says the CO2 as the distance a car drives to make it', () => {
     expect(co2Equivalent(0.1)).toBe('0,5 m en voiture')
     expect(nbsp(co2Equivalent(400))).toBe('2 km en voiture')
@@ -73,19 +57,48 @@ describe('totalConsumption', () => {
   })
 })
 
-describe('gaugeLevel', () => {
-  it('is empty for nothing and full from what the equivalent is about', () => {
-    expect(gaugeLevel('water', 0)).toBe(0)
-    expect(gaugeLevel('water', 500)).toBe(1)
-    expect(gaugeLevel('energy', 70)).toBe(1)
-    expect(gaugeLevel('co2', 200)).toBe(1)
-    expect(gaugeLevel('water', 10000)).toBe(1)
+describe('unitsOf', () => {
+  it('has nothing for nothing', () => {
+    expect(unitsOf('water', 0)).toBeNull()
+    expect(unitsOf('energy', Number.NaN)).toBeNull()
   })
 
-  it('shows something as soon as there is something, and grows with the quantity', () => {
-    expect(gaugeLevel('water', 0.001)).toBe(0.06)
-    expect(gaugeLevel('energy', 0.5)).toBeGreaterThan(gaugeLevel('energy', 0.05))
-    expect(gaugeLevel('co2', 20)).toBeGreaterThan(gaugeLevel('co2', 2))
-    expect(gaugeLevel('water', Number.NaN)).toBe(0)
+  it('takes the smallest unit of which there are fewer than ten', () => {
+    expect(unitsOf('water', 4)?.shape).toBe('spoon')
+    expect(unitsOf('water', 100)?.shape).toBe('glass')
+    expect(unitsOf('water', 3400)?.shape).toBe('bottle')
+    expect(unitsOf('water', 30_000)?.shape).toBe('bucket')
+    expect(unitsOf('water', 400_000)?.shape).toBe('bath')
+    expect(unitsOf('water', 0.01)?.shape).toBe('spoon') // only a part of the smallest
+    expect(unitsOf('energy', 0.4)?.text).toContain('minute')
+    expect(unitsOf('energy', 5)?.text).toContain('1 heure')
+    expect(unitsOf('energy', 500)?.text).toContain('1 jour')
+    expect(unitsOf('co2', 0.01)?.text).toContain('1 L de CO₂')
+  })
+
+  it('never counts ten or more: the next unit, and past the largest « plus de 10 »', () => {
+    for (const kind of ['energy', 'co2', 'water'] as const) {
+      for (const value of [0.001, 0.1, 3, 90, 4_000, 60_000, 900_000, 1e8, 1e11]) {
+        const units = unitsOf(kind, value)!
+        expect(units.levels.length).toBeLessThanOrEqual(MAX_SHOWN)
+        // No « 100 bouteilles », no « 35 ampoules »: fewer than ten, or « plus de 10 ».
+        if (!units.text.startsWith('plus de')) expect(units.count).toBeLessThan(MAX_SHOWN)
+      }
+    }
+    expect(unitsOf('water', 1e9)?.text).toBe('plus de 10 baignoires')
+    expect(unitsOf('energy', 1e9)?.text).toBe('plus de 10 ampoules LED allumées 1 an')
+    expect(unitsOf('co2', 1e9)?.text).toBe('plus de 10 ballons de 1 000 L de CO₂')
+  })
+
+  it('draws the whole ones full then the part, always seeing a little of a part that is there', () => {
+    expect(unitsOf('water', 2500)?.levels).toEqual([1, 1, 0.5])
+    expect(unitsOf('water', 1000)?.levels).toEqual([1, 1, 1, 1, 1]) // five glasses
+    expect(unitsOf('water', 0.001)?.levels).toEqual([0.06])
+  })
+
+  it('draws ten at most', () => {
+    expect(unitsOf('water', 1e9)?.levels).toEqual(Array(MAX_SHOWN).fill(1))
+    expect(unitsOf('water', 9_500)?.levels).toHaveLength(10)
+    expect(unitsOf('water', 8_200)?.levels).toHaveLength(9)
   })
 })
