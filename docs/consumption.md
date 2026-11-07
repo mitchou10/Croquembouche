@@ -11,7 +11,7 @@ Chaque utilisation d'une analyse dit ce qu'elle a consommé : l'**électricité*
 - **Page d'une analyse**, onglet « Utilisations » : le total de toutes ses utilisations mesurées, et une ligne par
   utilisation.
 - **Vue d'ensemble** (administrateur) : le total de tout le service.
-- **Mon profil, « Ma consommation »** : ce que *mes* utilisations ont consommé, au total et analyse par analyse
+- **Menu du compte, « Ma consommation »** : ce que *mes* utilisations ont consommé, au total et analyse par analyse
   (voir plus bas).
 
 Une utilisation qui n'a pas été mesurée (celles d'avant cette fonction, ou une mesure qui a échoué) n'affiche rien et ne
@@ -78,10 +78,10 @@ se remplissent à l'affichage, l'une après l'autre. Trois bouteilles pleines et
 
 ## Ma consommation (mon profil)
 
-Depuis les **Paramètres** (le bouton avec votre nom, en bas du menu), le lien « Ma consommation » ouvre la page de ce que
-**vos** utilisations ont consommé.
+Cliquez sur **votre nom**, en bas du menu : un menu s'ouvre avec « Ma consommation », « Mon profil » et « Se déconnecter »,
+et en bas les versions du frontend et de l'API.
 
-![Le lien « Ma consommation » dans les paramètres](my-consumption-link.png)
+![Le menu du compte : ma consommation, mon profil, se déconnecter, et les versions](profile-menu.png)
 
 ![Ma consommation : le total de mes utilisations et le détail par analyse](my-consumption.png)
 

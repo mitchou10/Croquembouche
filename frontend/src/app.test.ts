@@ -77,17 +77,29 @@ describe('app', () => {
     expect(wrapper.get('.app-sidebar__user').text()).toBe('alice')
   })
 
-  it('opens the settings from the user id and signs out from there', async () => {
+  it('opens the menu of the account from the user id: the profile, and signing out from there', async () => {
     useSession().setUser('alice')
     const { wrapper, router } = await mountAt('/catalogue')
     await wrapper.get('.app-sidebar__user').trigger('click')
+    await wrapper.get('[data-testid="menu-profile"]').trigger('click')
     await landsOn(router, 'settings')
+    expect(wrapper.find('[data-testid="account-menu"]').exists()).toBe(false) // it closes on the way
+
     const assign = vi.fn()
     vi.stubGlobal('location', { assign })
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({ redirectUrl: 'http://keycloak/logout' }) }))
-    await wrapper.findAll('button').find((b) => b.text() === 'Se déconnecter')!.trigger('click')
+    await wrapper.get('.app-sidebar__user').trigger('click')
+    await wrapper.get('[data-testid="menu-logout"]').trigger('click')
     await vi.waitFor(() => expect(assign).toHaveBeenCalledWith('http://keycloak/logout'))
     expect(useSession().isAuthenticated.value).toBe(false)
+  })
+
+  it('has no choice of language in the profile', async () => {
+    useSession().setUser('alice')
+    const { wrapper } = await mountAt('/parametres')
+    expect(wrapper.get('h1').text()).toBe('Mon profil')
+    expect(wrapper.text()).not.toContain('Langue')
+    expect(wrapper.find('select').exists()).toBe(false)
   })
 
   it('filters the catalogue', async () => {

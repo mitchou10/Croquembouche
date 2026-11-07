@@ -5,7 +5,6 @@ import { useSession } from '../composables/useSession'
 const { displayName: accountName, logout } = useSession()
 
 const displayName = ref(accountName.value ?? '')
-const language = ref('fr')
 const saved = ref(false)
 
 // Nothing is persisted yet: the form only shows what the settings page will offer.
@@ -20,7 +19,7 @@ function signOut() {
 </script>
 
 <template>
-  <h1 class="fr-h3">Paramètres</h1>
+  <h1 class="fr-h3">Mon profil</h1>
 
   <p class="fr-mb-3w">
     <RouterLink :to="{ name: 'my-consumption' }" class="fr-link fr-icon-leaf-line fr-link--icon-left" data-testid="my-consumption-link">
@@ -32,15 +31,6 @@ function signOut() {
 
   <form class="settings-form" @submit.prevent="save">
     <DsfrInput v-model="displayName" label="Nom affiché" label-visible class="fr-mb-3w" @update:model-value="saved = false" />
-    <DsfrSelect
-      v-model="language"
-      label="Langue"
-      :options="[
-        { value: 'fr', text: 'Français' },
-        { value: 'en', text: 'English' },
-      ]"
-      class="fr-mb-3w"
-    />
     <ul class="fr-btns-group fr-btns-group--inline-md">
       <li><DsfrButton type="submit" label="Enregistrer" /></li>
       <li><DsfrButton type="button" label="Se déconnecter" secondary @click="signOut" /></li>
