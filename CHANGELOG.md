@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.17.0](https://github.com/mitchou10/Croquembouche/compare/v1.16.0...v1.17.0) (2026-11-07)
+
+
+### Features
+
+* **ocr:** give each element the text read in its zone, and show it ([4c12f7b](https://github.com/mitchou10/Croquembouche/commit/4c12f7b30dbad8d3e1898a00907aa17eca488c08))
+* **ocr:** read the text of a document beside the matching, with PaddleOCR on the CPU ([35460c0](https://github.com/mitchou10/Croquembouche/commit/35460c0844ac30f8d8590cbf9a5620e89a96ef7d))
+
+
+### Bug Fixes
+
+* **ocr:** install what Paddle and OpenCV load, so the image builds and starts ([5514817](https://github.com/mitchou10/Croquembouche/commit/5514817017830b865af9bf556c9dd5878a73c1a2))
+
 ## [1.16.0](https://github.com/mitchou10/Croquembouche/compare/v1.15.0...v1.16.0) (2026-11-06)
 
 
