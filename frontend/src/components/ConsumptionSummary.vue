@@ -7,17 +7,19 @@ import {
   formatDuration,
   formatEnergy,
   formatWater,
+  gaugeLevel,
   waterEquivalent,
 } from '../composables/consumption'
 import type { Consumption } from '../data/mock'
+import ConsumptionGauge from './ConsumptionGauge.vue'
 
 /** What computing something consumed: the electricity, the CO2 it made and the water it cost, each with what that is like. */
 const props = defineProps<{ consumption: Consumption; heading: string; compact?: boolean }>()
 
 const items = computed(() => [
-  { key: 'energy', label: 'Électricité', value: formatEnergy(props.consumption.energyWh), like: electricityEquivalent(props.consumption.energyWh) },
-  { key: 'co2', label: 'CO₂', value: formatCo2(props.consumption.co2G), like: co2Equivalent(props.consumption.co2G) },
-  { key: 'water', label: 'Eau', value: formatWater(props.consumption.waterMl), like: waterEquivalent(props.consumption.waterMl) },
+  { key: 'energy' as const, label: 'Électricité', value: formatEnergy(props.consumption.energyWh), like: electricityEquivalent(props.consumption.energyWh), level: gaugeLevel('energy', props.consumption.energyWh) },
+  { key: 'co2' as const, label: 'CO₂', value: formatCo2(props.consumption.co2G), like: co2Equivalent(props.consumption.co2G), level: gaugeLevel('co2', props.consumption.co2G) },
+  { key: 'water' as const, label: 'Eau', value: formatWater(props.consumption.waterMl), like: waterEquivalent(props.consumption.waterMl), level: gaugeLevel('water', props.consumption.waterMl) },
 ])
 </script>
 
@@ -28,6 +30,13 @@ const items = computed(() => [
     </p>
     <ul class="consumption__items">
       <li v-for="item in items" :key="item.key" class="consumption__item" :data-testid="`consumption-${item.key}`">
+        <ConsumptionGauge
+          :kind="item.key"
+          :level="item.level"
+          :size="compact ? 24 : 34"
+          class="consumption__gauge"
+          title="Remplissage indicatif, sur une échelle logarithmique : plein, c’est un muffin cuit, un kilomètre en voiture ou une bouteille d’eau."
+        />
         <span class="consumption__label">{{ item.label }}</span>
         <strong class="consumption__value" data-testid="consumption-value">{{ item.value }}</strong>
         <span v-if="item.like" class="consumption__like" data-testid="consumption-like">≈ {{ item.like }}</span>
@@ -61,8 +70,20 @@ const items = computed(() => [
 
 .consumption__item {
   display: grid;
-  gap: 0.125rem;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: 0.625rem;
+  row-gap: 0.125rem;
+  align-items: start;
   min-width: 0;
+}
+
+.consumption__gauge {
+  grid-row: 1 / span 3;
+  align-self: center;
+}
+
+.consumption__item > :not(.consumption__gauge) {
+  grid-column: 2;
 }
 
 .consumption__label {

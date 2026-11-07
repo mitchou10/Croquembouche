@@ -44,6 +44,25 @@ export const totalConsumption = (analyses: Analysis[]): Consumption =>
     }
   }, emptyConsumption())
 
+/** What fills a gauge: the quantity at which it is empty and at which it is full, on a logarithmic scale (the quantities
+ * are far too apart for a linear one: a use is a few hundredths of a bottle, a month of them is one). Full is what the
+ * equivalent is about: a muffin baked, a kilometre by car, a bottle of water. */
+const GAUGE = {
+  energy: { empty: 0.01, full: 70 },
+  co2: { empty: 0.01, full: 200 },
+  water: { empty: 0.1, full: 500 },
+} as const
+
+export type GaugeKind = keyof typeof GAUGE
+
+/** How full a gauge is, from 0 (nothing was consumed) to 1; a little something is always seen when there is something. */
+export function gaugeLevel(kind: GaugeKind, value: number): number {
+  if (!(value > 0)) return 0
+  const { empty, full } = GAUGE[kind]
+  const level = Math.log(value / empty) / Math.log(full / empty)
+  return Math.round(Math.min(1, Math.max(0.06, level)) * 100) / 100
+}
+
 export const hasConsumption = (c: Consumption | null | undefined): c is Consumption => !!c && c.energyWh > 0
 
 export function formatEnergy(wh: number): string {
