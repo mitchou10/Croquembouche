@@ -24,7 +24,7 @@ const plural = (n: number, one: string, many: string) => `${n} ${n > 1 ? many : 
 <template>
   <h1 class="fr-h3">Ma consommation</h1>
   <p class="fr-mb-3w">
-    <RouterLink :to="{ name: 'settings' }" class="fr-link fr-icon-arrow-left-line fr-link--icon-left">Paramètres</RouterLink>
+    <RouterLink :to="{ name: 'settings' }" class="fr-link fr-icon-arrow-left-line fr-link--icon-left">Mon profil</RouterLink>
   </p>
 
   <p v-if="failed" class="fr-error-text" role="alert" data-testid="consumption-failed">Votre consommation n’a pas pu être chargée.</p>
