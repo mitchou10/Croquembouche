@@ -9,6 +9,7 @@ from app.routers.internal import router as internal_router
 from app.routers.metrics import router as metrics_router
 from app.routers.reference import router as reference_router
 from app.routers.templates import router as templates_router
+from app.version import app_version
 
 app = FastAPI(title="Croquembouche")
 
@@ -33,3 +34,8 @@ app.include_router(internal_router, prefix="/internal")
 @app.get("/api/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/api/version", summary="The version of the backend: the one of the release it was built from")
+def get_version() -> dict[str, str]:
+    return {"version": app_version()}

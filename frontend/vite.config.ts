@@ -1,9 +1,14 @@
+import { readFileSync } from 'node:fs'
 import vue from '@vitejs/plugin-vue'
 import { defineConfig } from 'vitest/config'
+
+// The version of the frontend is the one of the release, which bumps package.json: it is known when the page is built.
+const { version } = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as { version: string }
 
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [vue()],
+  define: { __APP_VERSION__: JSON.stringify(version) },
   server: {
     // File events do not cross a bind mount on macOS or Windows: docker-compose.override.yaml turns polling on there.
     watch: { usePolling: process.env.VITE_USE_POLLING === 'true' },
