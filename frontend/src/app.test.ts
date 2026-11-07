@@ -646,7 +646,22 @@ describe('app', () => {
       expect(wrapper.get('[data-testid="meta"]').text()).toContain('Pour voir.')
     })
 
-    describe('testing the analysis', () => {
+    describe('trying the analysis from a terminal', () => {
+  it('has a button that shows the curl commands for this analysis, with the capture as the page is set', async () => {
+    useSession().setUser('alice.martin')
+    const { wrapper } = await mountAt('/analyses/a1')
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="curl-button"]').exists()).toBe(true))
+
+    await wrapper.get('[data-testid="curl-button"]').trigger('click')
+    expect(wrapper.get('[data-testid="curl-command"]').text()).toContain('/api/analyses/a1/runs')
+    expect(wrapper.get('[data-testid="curl-command"]').text()).toContain('keepScreenshot=true') // the box is checked by default
+
+    await wrapper.get('[data-testid="save-screenshot"]').setValue(false)
+    expect(wrapper.get('[data-testid="curl-command"]').text()).toContain('keepScreenshot=false')
+  })
+})
+
+describe('testing the analysis', () => {
       const send = async (wrapper: ReturnType<typeof mount>, file: File) => {
         const input = wrapper.get('input[type="file"]')
         Object.defineProperty(input.element, 'files', { value: [file], configurable: true })
