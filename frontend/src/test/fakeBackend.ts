@@ -174,6 +174,7 @@ export async function fakeFetch(path: string, init: RequestInit = {}): Promise<A
   const parts = url.pathname.replace(/^\/api\//, '').split('/')
 
   if (path === '/api/entity-types') return reply(200, entityTypeSeed)
+  if (path === '/api/version') return reply(200, { version: BACKEND_VERSION })
 
   if (url.pathname === '/api/documents' && method === 'POST') {
     const file = (init.body as FormData).get('file') as File
@@ -392,6 +393,9 @@ function canOpen(analysis: Analysis, user: string, admin: boolean): boolean {
   const groups = groupsOf(user).map((g) => g.name)
   return analysis.shares.some((s) => (s.kind === 'email' ? s.value.toLowerCase() === emailOf(user) : groups.includes(s.value)))
 }
+
+/** The version the fake backend says it is: the one of the frontend, as a release deploys them together. */
+export const BACKEND_VERSION = __APP_VERSION__
 
 // The uses the worker has not answered yet, with how it answers, and how many times each was asked for.
 const answers = new Map<string, () => void>()

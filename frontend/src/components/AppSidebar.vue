@@ -2,9 +2,11 @@
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { useSession } from '../composables/useSession'
+import { useVersions } from '../composables/useVersions'
 
 const route = useRoute()
 const { displayName, isAdmin } = useSession()
+const { frontend, backend, differ } = useVersions()
 
 const everyone = [
   { name: 'catalogue', path: '/catalogue', label: 'Catalogue', icon: 'fr-icon-folder-2-line' },
@@ -46,6 +48,15 @@ const items = computed(() => (isAdmin.value ? [...everyone, ...administrator] : 
       <span class="app-sidebar__user-id">{{ displayName }}</span>
       <DsfrBadge v-if="isAdmin" label="Admin" type="info" small data-testid="admin-badge" class="app-sidebar__role" />
     </RouterLink>
+
+    <p
+      class="app-sidebar__version fr-text--xs fr-mb-0"
+      :class="{ 'app-sidebar__version--differ': differ }"
+      :title="differ ? 'Le frontend et le backend ne sont pas de la même version.' : 'Les versions de l’application.'"
+      data-testid="app-versions"
+    >
+      Front <span data-testid="app-version-frontend">v{{ frontend }}</span> · API <span data-testid="app-version-backend">{{ backend === '…' || backend === 'indisponible' ? backend : `v${backend}` }}</span>
+    </p>
   </aside>
 </template>
 
@@ -107,6 +118,17 @@ const items = computed(() => (isAdmin.value ? [...everyone, ...administrator] : 
 
 .app-sidebar__role {
   margin-left: auto;
+}
+
+.app-sidebar__version {
+  margin-top: 0.5rem;
+  padding-left: 0.5rem;
+  color: var(--text-mention-grey);
+}
+
+.app-sidebar__version--differ {
+  color: var(--text-default-warning);
+  font-weight: 700;
 }
 
 .app-sidebar__user-id {

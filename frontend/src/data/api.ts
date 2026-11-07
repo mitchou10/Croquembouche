@@ -50,6 +50,8 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 }
 
 /** GET /api/entity-types */
+/** The version of the backend. */
+export const fetchVersion = () => request<{ version: string }>('GET', '/api/version')
 export const fetchEntityTypes = () => request<EntityTypeInfo[]>('GET', '/api/entity-types')
 
 /** GET /api/groups: the groups an analysis can be shared with, the signed-in user's own. */
