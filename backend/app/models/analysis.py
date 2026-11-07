@@ -6,7 +6,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, EncryptedText, TimestampMixin, UUIDMixin, utcnow
-from app.models.catalogue import Template
+from app.models.catalogue import Template, TemplateEntity
 from app.models.document import Document
 from app.models.user import UserProfile
 
@@ -138,6 +138,7 @@ class Detection(UUIDMixin, Base):
         ForeignKey("template_entities.id", ondelete="SET NULL"), index=True
     )
 
+    entity: Mapped[TemplateEntity | None] = relationship(lazy="selectin")
     classifications: Mapped[list["DetectionClassification"]] = relationship(
         order_by="DetectionClassification.confidence.desc()", cascade="all, delete-orphan", lazy="selectin"
     )

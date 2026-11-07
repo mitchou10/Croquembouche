@@ -29,7 +29,7 @@ from app.schemas.analysis import (
 )
 from app.schemas.catalogue import DocumentOut, Zone
 from app.schemas.matching import MatchingResult, OcrPage
-from app.services import documents, matching_results
+from app.services import documents, matching_results, ocr_text
 from app.services.catalogue import ForbiddenError, InvalidError, NotFoundError, index_message, version_message
 
 __all__ = ["AnalysisService", "ForbiddenError", "InvalidError", "NotFoundError", "group_name"]
@@ -449,6 +449,7 @@ class AnalysisService:
     def _run(self, run: Run, mine: bool | None = None, text: bool = False) -> RunOut:
         mine = run.user_id == self._user.user_id if mine is None else mine
         has_result = mine and run.file_name is not None
+        read = [OcrPage(**page) for page in json.loads(run.ocr)] if mine and text and run.ocr else None
         return RunOut(
             id=str(run.id),
             user_id=run.user_id,
@@ -470,6 +471,9 @@ class AnalysisService:
                     review=_review(d.review_status, d.review_template_id),
                     source=d.source,  # type: ignore[arg-type]
                     entity_id=None if d.entity_id is None else str(d.entity_id),
+                    text=ocr_text.text_in_zone(read, d.zone_page, d.zone_points)
+                    if read is not None and ocr_text.is_read(d.entity.type if d.entity else None)
+                    else None,
                 )
                 for d in run.detections
             ]
@@ -495,7 +499,7 @@ class AnalysisService:
             else None,
             file_decision=run.file_decision if mine else None,  # type: ignore[arg-type]
             ocr_status=run.ocr_status,  # type: ignore[arg-type]
-            ocr=[OcrPage(**page) for page in json.loads(run.ocr)] if mine and text and run.ocr else None,
+            ocr=read,
         )
 
     def _view(self, analysis: Analysis) -> AnalysisOut:

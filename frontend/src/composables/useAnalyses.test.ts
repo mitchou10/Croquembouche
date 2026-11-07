@@ -243,6 +243,40 @@ describe('trying an analysis on a document', () => {
     }
   })
 
+  it('follows a use that is done until its text is read too', async () => {
+    vi.useFakeTimers()
+    try {
+      const { startRun, findRun } = useAnalyses()
+      const started = (await startRun('a1', png('text.png'), { saveScreenshot: false }))!
+      expect(started).toMatchObject({ status: 'done', ocrStatus: 'running' })
+
+      await vi.advanceTimersByTimeAsync(2000) // asked for once: not read yet
+      expect(findRun('a1', started.id)).toMatchObject({ status: 'done', ocrStatus: 'running' })
+      await vi.advanceTimersByTimeAsync(2000) // asked for again: the text is read
+      const read = findRun('a1', started.id)!
+      expect(read.ocrStatus).toBe('done')
+      expect(read.detections!.every((d) => d.text === 'Texte lu')).toBe(true)
+
+      const calls = vi.fn(fakeFetch)
+      vi.stubGlobal('fetch', calls)
+      await vi.advanceTimersByTimeAsync(10000)
+      expect(calls.mock.calls.length).toBe(0) // not asked for any more
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('loads the text of a use that has been read, which the list does not carry', async () => {
+    const { startRun, loadRun, findRun } = useAnalyses()
+    const started = (await startRun('a1', png('text.png'), { saveScreenshot: false }))!
+    await loadRun('a1', started.id) // the worker has not read it yet: asked once
+    expect(findRun('a1', started.id)!.detections!.every((d) => !d.text)).toBe(true)
+    await loadRun('a1', started.id) // asked a second time: read
+    expect(findRun('a1', started.id)).toMatchObject({ ocrStatus: 'done' })
+    expect(findRun('a1', started.id)!.detections!.every((d) => d.text === 'Texte lu')).toBe(true)
+    await expect(loadRun('a1', 'unknown')).resolves.toBeUndefined() // a use that is gone is not an error
+  })
+
   it('ends as failed when the worker fails', async () => {
     vi.useFakeTimers()
     try {

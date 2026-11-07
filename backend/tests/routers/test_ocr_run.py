@@ -175,3 +175,59 @@ async def test_the_endpoint_of_the_reader_asks_for_the_key(db_client, as_user, d
         await db_client.post(url, json=read(dispatcher.ocr_messages[0]), headers={"X-Internal-Key": "x"})
     ).status_code == 401
     assert (await db_client.post(url, json=read(dispatcher.ocr_messages[0]), headers=KEY)).status_code == 204
+
+
+async def test_the_text_of_an_element_is_the_text_read_in_its_zone(db_client, as_user, dispatcher):
+    form, analysis = await analysis_of_a_form(db_client, as_user)
+    started = await start(db_client, analysis)
+    element = one_element(form)  # its zone is the triangle (0.2, 0.2), (0.5, 0.2), (0.5, 0.4)
+    element["found"][0]["entity_id"] = form["entities"][0]["id"]
+    await hand_back(db_client, dispatcher.messages[0], element)
+    inside = {
+        "text": "Logo",
+        "score": 0.9,
+        "points": [{"x": 0.4, "y": 0.22}, {"x": 0.45, "y": 0.22}, {"x": 0.45, "y": 0.25}],
+    }
+    outside = {
+        "text": "ailleurs",
+        "score": 0.9,
+        "points": [{"x": 0.8, "y": 0.8}, {"x": 0.9, "y": 0.8}, {"x": 0.9, "y": 0.9}],
+    }
+    reading = {"status": "done", "pages": [{"page": 1, "angle": 0, "lines": [inside, outside]}]}
+
+    before = await get(db_client, analysis, started)
+    await hand_back_ocr(db_client, dispatcher.ocr_messages[0], reading)
+    after = await get(db_client, analysis, started)
+
+    assert before["detections"][0]["text"] is None  # not read yet
+    assert after["detections"][0]["text"] == "Logo"
+
+
+async def test_an_image_has_no_text(db_client, as_user, dispatcher):
+    as_user("alice")
+    entity = {
+        "name": "Tampon",
+        "definition": "d",
+        "type": "image",
+        "examples": [],
+        "zone": {"page": 1, "points": [{"x": 0.1, "y": 0.1}, {"x": 0.9, "y": 0.1}, {"x": 0.9, "y": 0.9}]},
+    }
+    form = (await db_client.post("/api/templates", json={"name": "F", "entities": [entity]})).json()
+    analysis = (
+        await db_client.post(
+            "/api/analyses", json={"name": "A", "description": "", "templateIds": [form["id"]], "isPublic": False}
+        )
+    ).json()
+    started = await start(db_client, analysis, data=__import__("tests.documents", fromlist=["png"]).png())
+    element = one_element(form)
+    element["found"][0]["entity_id"] = form["entities"][0]["id"]
+    element["found"][0]["points"] = [{"x": 0.1, "y": 0.1}, {"x": 0.9, "y": 0.1}, {"x": 0.9, "y": 0.9}]
+    await hand_back(db_client, dispatcher.messages[0], element)
+    line = {"text": "signé", "score": 0.9, "points": [{"x": 0.6, "y": 0.2}, {"x": 0.7, "y": 0.2}, {"x": 0.7, "y": 0.3}]}
+    await hand_back_ocr(
+        db_client, dispatcher.ocr_messages[0], {"status": "done", "pages": [{"page": 1, "lines": [line]}]}
+    )
+
+    run = await get(db_client, analysis, started)
+
+    assert run["ocrStatus"] == "done" and run["detections"][0]["text"] is None

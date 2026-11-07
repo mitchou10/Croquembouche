@@ -84,6 +84,9 @@ class DetectionOut(CamelModel):
     review: ReviewOut
     source: Literal["analysis", "manual"]
     entity_id: str | None = None
+    # The text the OCR read in the zone: only when a single use is asked for, once it is read, and never for an image or
+    # a table. Absent until then.
+    text: str | None = None
 
 
 class PageOut(CamelModel):

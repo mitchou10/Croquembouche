@@ -13,6 +13,10 @@ const props = defineProps<{
   title?: string
   /** The entity it is, when known: what the element is called, the model being a badge beside it. */
   entityName?: string
+  /** The type of the entity, when known: an image or a table has no text to read. */
+  entityType?: string
+  /** Whether the text of the document is being read, is read, or could not be. */
+  ocrStatus?: 'none' | 'running' | 'done' | 'failed'
   /** The document it was found in, to show what the zone covers. */
   document?: TemplateDocument | null
   /** The name of a class: a model's, or « other » for null. */
@@ -41,6 +45,14 @@ async function copy() {
   timer = setTimeout(() => (copied.value = null), 2000)
 }
 onBeforeUnmount(() => clearTimeout(timer))
+// An image has no text, and a table is read another way: the card says so instead of waiting for a text that never comes.
+const noText = computed(() => (props.entityType === 'image' ? 'une image' : props.entityType === 'table' ? 'un tableau' : ''))
+const pending = computed(() => {
+  if (props.ocrStatus === 'running') return 'Lecture du texte du document en cours…'
+  if (props.ocrStatus === 'failed') return 'La lecture du texte du document a échoué.'
+  if (props.ocrStatus === 'done') return 'Aucun texte lu dans cette zone.'
+  return 'La lecture du texte de la zone n’est pas encore disponible.'
+})
 const hidden = computed(() => props.detection.classifications.length - shown.value.length)
 </script>
 
@@ -54,9 +66,10 @@ const hidden = computed(() => props.detection.classifications.length - shown.val
 
     <ZoneCrop v-if="document && detection.zone.points.length >= 3" :document="document" :zone="detection.zone" />
 
-    <div class="text" data-testid="detection-text-block">
+    <p v-if="noText" class="fr-hint-text fr-mb-0" data-testid="detection-no-text">Pas de texte à lire pour {{ noText }}.</p>
+    <div v-else class="text" data-testid="detection-text-block">
       <p v-if="text" class="text__value fr-mb-0" data-testid="detection-text">{{ text }}</p>
-      <p v-else class="fr-hint-text fr-mb-0" data-testid="detection-text-pending">La lecture du texte de la zone n’est pas encore disponible.</p>
+      <p v-else class="fr-hint-text fr-mb-0" :role="ocrStatus === 'running' ? 'status' : undefined" data-testid="detection-text-pending">{{ pending }}</p>
       <button
         type="button"
         class="fr-btn fr-btn--sm fr-btn--tertiary fr-icon-clipboard-line fr-btn--icon-left"

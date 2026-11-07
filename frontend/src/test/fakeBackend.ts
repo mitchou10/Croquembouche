@@ -623,6 +623,8 @@ function analysesRoute(user: string, admin: boolean, method: string, parts: stri
     // A file whose name says « slow » is answered by the worker later, as the real one is: running, then done (or failed
     // when it says « broken »), at the second time it is asked for.
     const later = /slow|broken/.test(file.name)
+    // A file whose name says « text » is matched at once, and its text read later (the second time it is asked for).
+    const reading = /text/.test(file.name)
     const run: AnalysisRun = {
       id: newId('r'),
       userId: user,
@@ -635,10 +637,17 @@ function analysesRoute(user: string, admin: boolean, method: string, parts: stri
       fileName: file.name,
       detections: later ? [] : detections,
       pages: later ? undefined : pages,
+      ocrStatus: reading ? 'running' : undefined,
       screenshot: keep ? { id: newId('d'), name: file.name, type: file.type, url: '', pages: file.type === 'application/pdf' ? 3 : 1 } : null,
     }
     analysis.runs = [run, ...analysis.runs]
     analysis.matches += run.matches
+    if (reading) {
+      answers.set(run.id, () => {
+        run.ocrStatus = 'done'
+        for (const d of detections) d.text = 'Texte lu'
+      })
+    }
     if (later) answers.set(run.id, () => answer(run, analysis, detections, pages, file.name.includes('broken')))
     return reply(201, runView(run, user))
   }
