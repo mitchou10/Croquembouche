@@ -7,6 +7,8 @@ from app.config import RedisSettings
 from app.core.worker import QUEUE, make_client
 
 MATCH_TASK = "template_matching.match_document"
+OCR_TASK = "ocr.read_document"
+OCR_QUEUE = "ocr"
 
 
 class MatchingDispatcher(Protocol):
@@ -14,10 +16,19 @@ class MatchingDispatcher(Protocol):
         """Raises when the worker cannot be asked: the use is then ended as failed instead of waiting for nothing."""
         ...
 
-    def revoke(self, run_id: str) -> None:
-        """Asks the worker to stop the matching of a run, if it has not ended. Only an attempt: what the worker would
-        hand back for a cancelled run is ignored anyway."""
+    def dispatch_ocr(self, message: dict) -> None:
+        """Asks the OCR worker to read the text of the document, beside the matching: nothing waits for it. Raises when
+        it cannot be asked, which only costs the text."""
         ...
+
+    def revoke(self, run_id: str) -> None:
+        """Asks the workers to stop the matching and the reading of a run, if they have not ended. Only an attempt:
+        what they would hand back for a cancelled run is ignored anyway."""
+        ...
+
+
+def ocr_task_id(run_id: str) -> str:
+    return f"ocr-{run_id}"
 
 
 class CeleryDispatcher:
@@ -28,8 +39,11 @@ class CeleryDispatcher:
         # The task is the run's: that is what is revoked to cancel it.
         self._app.send_task(MATCH_TASK, args=[message], queue=QUEUE, task_id=message["run_id"])
 
+    def dispatch_ocr(self, message: dict) -> None:
+        self._app.send_task(OCR_TASK, args=[message], queue=OCR_QUEUE, task_id=ocr_task_id(message["run_id"]))
+
     def revoke(self, run_id: str) -> None:
-        self._app.control.revoke(run_id, terminate=True)
+        self._app.control.revoke([run_id, ocr_task_id(run_id)], terminate=True)
 
 
 _dispatcher: MatchingDispatcher | None = None

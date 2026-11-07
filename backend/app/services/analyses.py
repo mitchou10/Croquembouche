@@ -1,3 +1,4 @@
+import json
 import logging
 import re
 import uuid
@@ -27,7 +28,7 @@ from app.schemas.analysis import (
     Share,
 )
 from app.schemas.catalogue import DocumentOut, Zone
-from app.schemas.matching import MatchingResult
+from app.schemas.matching import MatchingResult, OcrPage
 from app.services import documents, matching_results
 from app.services.catalogue import ForbiddenError, InvalidError, NotFoundError, index_message, version_message
 
@@ -248,6 +249,8 @@ class AnalysisService:
             file_name=file_name[:255],
             matching_document_id=saved.id,
             keep_screenshot=keep_screenshot,
+            # The text is read beside the matching, which does not wait for it.
+            ocr_status="running" if MatchingSettings().OCR_ENABLED else "none",
             # The model is searched as it is now: the use says in which version.
             template_versions={str(t.id): t.version for t in searched},
         )
@@ -265,11 +268,26 @@ class AnalysisService:
             await run_in_threadpool(self._dispatcher.dispatch, message)
         except Exception:
             logger.warning("Could not ask the worker to match the run %s", run.id, exc_info=True)
+            run.ocr_status = "none" if run.ocr_status == "running" else run.ocr_status  # nothing to read for a failure
             await matching_results.finish(run, MatchingResult(status="failed"), self._documents)
             await self._repository.commit()
+        else:
+            await self._ask_to_read(run, message["page_keys"])
         run_id = run.id
         analysis = await self._repository.reload(analysis)
         return next(self._run(r, True) for r in analysis.runs if r.id == run_id)
+
+    async def _ask_to_read(self, run: Run, page_keys: list[str]) -> None:
+        """Asks the OCR worker for the text of the document, beside the matching. A reader that cannot be asked
+        only costs the text: the use goes on."""
+        if run.ocr_status != "running":
+            return
+        try:
+            await run_in_threadpool(self._dispatcher.dispatch_ocr, {"run_id": str(run.id), "page_keys": page_keys})
+        except Exception:
+            logger.warning("Could not ask the worker to read the run %s", run.id, exc_info=True)
+            run.ocr_status = "failed"
+            await self._repository.commit()
 
     async def _template_messages(self, templates: list[Template]) -> list[dict]:
         """What each model is made of, once for each X it has had (its last version): a document is looked for in all
@@ -292,7 +310,7 @@ class AnalysisService:
 
     async def get_run(self, analysis_id: str, run_id: str) -> RunOut:
         analysis = await self._analysis(analysis_id)
-        return self._run(self._own_run(analysis, run_id), True)
+        return self._run(self._own_run(analysis, run_id), True, text=True)
 
     async def cancel_run(self, analysis_id: str, run_id: str) -> RunOut:
         """Stops a use that is running: its person's alone. One that has already ended is left as it is."""
@@ -428,7 +446,7 @@ class AnalysisService:
 
     # --- what is sent
 
-    def _run(self, run: Run, mine: bool | None = None) -> RunOut:
+    def _run(self, run: Run, mine: bool | None = None, text: bool = False) -> RunOut:
         mine = run.user_id == self._user.user_id if mine is None else mine
         has_result = mine and run.file_name is not None
         return RunOut(
@@ -476,6 +494,8 @@ class AnalysisService:
             if mine and run.screenshot is not None
             else None,
             file_decision=run.file_decision if mine else None,  # type: ignore[arg-type]
+            ocr_status=run.ocr_status,  # type: ignore[arg-type]
+            ocr=[OcrPage(**page) for page in json.loads(run.ocr)] if mine and text and run.ocr else None,
         )
 
     def _view(self, analysis: Analysis) -> AnalysisOut:

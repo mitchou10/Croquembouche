@@ -42,3 +42,21 @@ def as_json(result: MatchResult) -> dict:
 async def hand_back(client, message: dict, result: dict | None = None):
     """The answer of the worker to the use a message is about."""
     return await client.post(f"/internal/runs/{message['run_id']}/result", json=result or answer(message), headers=KEY)
+
+
+LINE = {
+    "text": "Facture 2026",
+    "score": 0.98,
+    "points": [{"x": 0.1, "y": 0.1}, {"x": 0.5, "y": 0.1}, {"x": 0.5, "y": 0.2}],
+}
+
+
+def read(message: dict, **extra) -> dict:
+    """The text the OCR worker reads of the document a message is about: a line on each page."""
+    pages = [{"page": n, "angle": 0, "lines": [LINE]} for n in range(1, len(message["page_keys"]) + 1)]
+    return {"status": "done", "pages": pages, **extra}
+
+
+async def hand_back_ocr(client, message: dict, result: dict | None = None):
+    """The answer of the OCR worker to the use a message is about."""
+    return await client.post(f"/internal/runs/{message['run_id']}/ocr", json=result or read(message), headers=KEY)

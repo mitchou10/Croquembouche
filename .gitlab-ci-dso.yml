@@ -90,6 +90,15 @@ docker-build-worker-template-matching:
     DOCKERFILE: "worker/template_matching/Dockerfile"
     WORKING_DIR: "worker/template_matching"
 
+# The OCR models are downloaded while the image is built (see its Dockerfile).
+docker-build-worker-ocr:
+  extends:
+    - .docker-build-service
+  variables:
+    SERVICE: "worker-ocr"
+    DOCKERFILE: "worker/ocr/Dockerfile"
+    WORKING_DIR: "worker/ocr"
+
 # Inlined copy of the catalogue's `.helm:build-push` (helm-ci.yml) with its chart
 # detection fixed, so the fix can be exercised here before it is proposed upstream.
 #   - the changed-files grep matches `${CHARTS_PREFIX}/`, derived from CHARTS_DIR,

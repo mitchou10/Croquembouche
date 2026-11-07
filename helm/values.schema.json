@@ -882,6 +882,9 @@
     "worker_template_matching": {
       "$ref": "#/definitions/workloadComponent"
     },
+    "worker_ocr": {
+      "$ref": "#/definitions/workloadComponent"
+    },
     "jobs": {
       "type": [
         "object",

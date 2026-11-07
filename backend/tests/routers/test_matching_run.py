@@ -4,7 +4,7 @@ import pytest
 from sqlalchemy import text
 
 from tests.documents import pdf, png
-from tests.worker import KEY, hand_back
+from tests.worker import KEY, hand_back, hand_back_ocr
 
 SQUARE = {"page": 1, "points": [{"x": 0.1, "y": 0.1}, {"x": 0.4, "y": 0.1}, {"x": 0.4, "y": 0.3}]}
 
@@ -100,7 +100,9 @@ async def test_the_answer_of_the_worker_ends_the_use(db_client, as_user, dispatc
     ]
     [page] = done["pages"]
     assert (page["classifications"][0]["templateId"], page["classifications"][0]["templatePage"]) == (form["id"], 2)
-    # The document the worker read is not kept, unless asked: only the pages of the model are left.
+    # The document is not kept, unless asked: only the pages of the model are left once the OCR has read it too.
+    assert {k for k in store.objects if "pages/" in k} != pages_of_the_form
+    await hand_back_ocr(db_client, dispatcher.ocr_messages[0], {"status": "failed"})
     assert {k for k in store.objects if "pages/" in k} == pages_of_the_form
     assert done["screenshot"] is None
     assert (await db_client.get(f"/api/analyses/{analysis['id']}")).json()["matches"] == 1

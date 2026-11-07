@@ -82,6 +82,7 @@ jobs:
         - frontend
         - backend
         - worker-template-matching
+        - worker-ocr
     with:
       IMAGE: ${{ needs.list-closed-prs.outputs.image-base }}/${{ matrix.service }}:pr-${{ matrix.pr.number }}
 
@@ -98,6 +99,7 @@ jobs:
         - frontend
         - backend
         - worker-template-matching
+        - worker-ocr
     with:
       IMAGE: ${{ needs.list-closed-prs.outputs.image-base }}/${{ matrix.service }}
       CLEAN_TAGGED: false

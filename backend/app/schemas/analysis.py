@@ -5,6 +5,7 @@ from pydantic import Field, StringConstraints
 
 from app.schemas.base import CamelModel
 from app.schemas.catalogue import DocumentOut, Zone
+from app.schemas.matching import OcrPage
 
 MAX_SHARES = 20
 
@@ -114,6 +115,10 @@ class RunOut(CamelModel):
     pages: list[PageOut] | None = None
     screenshot: DocumentOut | None = None
     file_decision: Literal["kept", "deleted"] | None = None
+    # The text of the document comes after the matching, once the OCR has read it: say so, then give it (only when a
+    # single use is asked for; it is the person's alone).
+    ocr_status: Literal["none", "running", "done", "failed"] = "none"
+    ocr: list[OcrPage] | None = None
 
 
 class AnalysisOut(CamelModel):

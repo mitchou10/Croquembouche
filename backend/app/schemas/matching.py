@@ -46,3 +46,26 @@ class MatchingResult(BaseModel):
     consumption: Consumption | None = None
     pages: list[PageAnswer] = []
     found: list[FoundElement] = []
+
+
+class OcrLine(BaseModel):
+    """A line of text and where it is on the page as it was given: the four corners, from 0 to 1."""
+
+    text: str
+    score: float = Field(ge=0, le=1)
+    points: list[Point]
+
+
+class OcrPage(BaseModel):
+    page: int = Field(ge=1)
+    # How far the page was turned clockwise (0, 90, 180 or 270) when it was scanned: the lines are read upright.
+    angle: int = 0
+    lines: list[OcrLine]
+
+
+class OcrResult(BaseModel):
+    """What the OCR worker hands back for a use: the text of each page, and what reading it consumed."""
+
+    status: Literal["done", "failed"]
+    consumption: Consumption | None = None
+    pages: list[OcrPage] = []
