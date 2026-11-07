@@ -112,6 +112,27 @@ describe('DetectionCard', () => {
       expect(wrapper.find('[data-testid="detection-text-pending"]').exists()).toBe(true)
     })
 
+    const read = (props: Record<string, unknown>) =>
+      mount(DetectionCard, {
+        props: { detection: { id: 'd1', zone, classifications: [{ templateId: 't1', confidence: 0.9 }] }, position: 1, nameOf, ...props },
+        global: { plugins: [VueDsfr] },
+      })
+
+    it('says the text is being read, failed, or empty, according to the reading', () => {
+      expect(read({ ocrStatus: 'running' }).get('[data-testid="detection-text-pending"]').text()).toContain('en cours')
+      expect(read({ ocrStatus: 'failed' }).get('[data-testid="detection-text-pending"]').text()).toContain('échoué')
+      expect(read({ ocrStatus: 'done' }).get('[data-testid="detection-text-pending"]').text()).toBe('Aucun texte lu dans cette zone.')
+    })
+
+    it('has no text and no button for an image or a table', () => {
+      for (const [entityType, noun] of [['image', 'une image'], ['table', 'un tableau']]) {
+        const wrapper = read({ entityType, ocrStatus: 'done' })
+        expect(wrapper.get('[data-testid="detection-no-text"]').text()).toBe(`Pas de texte à lire pour ${noun}.`)
+        expect(wrapper.find('[data-testid="detection-copy"]').exists()).toBe(false)
+      }
+      expect(read({ entityType: 'date' }).find('[data-testid="detection-copy"]').exists()).toBe(true)
+    })
+
     it('shows the text and copies it', async () => {
       const writeText = vi.fn().mockResolvedValue(undefined)
       vi.stubGlobal('navigator', { clipboard: { writeText } })

@@ -238,6 +238,8 @@ export interface AnalysisRun {
   userName: string
   /** Whether it was tried on a document, so has a result (which is for whoever ran it to see). */
   hasResult: boolean
+  /** The text of the document is read beside the analysis, which does not wait for it: absent for a use from before. */
+  ocrStatus?: 'none' | 'running' | 'done' | 'failed'
   /** What it consumed, once it has ended: absent when it was not measured. */
   consumption?: Consumption | null
   date: string

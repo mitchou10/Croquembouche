@@ -35,6 +35,7 @@ const {
   canSeeResult,
   startRun,
   follow,
+  loadRun,
   reviewDetection,
   cancelRun,
   ownsRun,
@@ -124,8 +125,12 @@ function selectElement(id: string) {
 
 function open(runId: string) {
   selectedRunId.value = runId
-  // A use that is still running is asked for until the worker has answered.
-  if (analysis.value && findRun(analysis.value.id, runId)?.status === 'running') follow(analysis.value.id, runId)
+  // A use that is still running is asked for until the worker has answered, and its text until it is read.
+  const analysisId = analysis.value?.id
+  const followed = analysisId ? findRun(analysisId, runId) : undefined
+  if (analysisId && (followed?.status === 'running' || followed?.ocrStatus === 'running')) follow(analysisId, runId)
+  // The text of a use that is read comes with the use itself, not with the list of the uses.
+  else if (analysisId && followed?.hasResult && followed.ocrStatus === 'done') void loadRun(analysisId, runId)
   viewerPage.value = 1
   current.value = 0
   adding.value = false
@@ -512,7 +517,7 @@ const sharing = computed(() => {
 
             <template v-if="shown && !adding">
               <ManualElementCard v-if="shown.source === 'manual'" :key="shown.id" :element="shown" :position="current + 1" :model-name="nameOf" @remove="remove(shown.id)" />
-              <DetectionCard v-else :key="shown.id" :detection="shown" :position="current + 1" :name-of="nameOf" :entity-name="entityName(shown)" :document="run?.screenshot">
+              <DetectionCard v-else :key="shown.id" :detection="shown" :position="current + 1" :name-of="nameOf" :entity-name="entityName(shown)" :entity-type="entityOf(shown)?.type" :ocr-status="run?.ocrStatus" :document="run?.screenshot">
                 <ReviewControls :review="shown.review" :models="models" :model-name="nameOf" @review="review(shown.id, $event)" />
               </DetectionCard>
             </template>

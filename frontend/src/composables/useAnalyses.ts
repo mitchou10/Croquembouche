@@ -110,22 +110,26 @@ export function useAnalyses() {
   }
 
   /**
-   * Follows a use that is running until the worker has answered (done or failed): its state is asked for every couple of
-   * seconds, and the analysis, which counts what its uses found, is read again at the end.
+   * Follows a use that is running until the worker has answered (done or failed), and its text until it is read: its state
+   * is asked for every couple of seconds, and the analysis, which counts what its uses found, is read again once it is over.
    */
   function follow(analysisId: string, runId: string) {
     if (following.has(runId)) return
     following.add(runId)
     let asked = 0
+    let counted = false
     const tick = async () => {
       let over = ++asked > POLL_LIMIT
       try {
         const run = await api.fetchRun(analysisId, runId)
         keepRun(analysisId, run)
-        if (run.status !== 'running') {
+        if (run.status !== 'running' && !counted) {
+          counted = true
           keep(await api.fetchAnalysis(analysisId))
-          over = true
+          keepRun(analysisId, run) // the list does not carry the text: what was just read is put back
         }
+        // The text is read beside the analysis, which does not wait for it: the use is followed until it is read too.
+        if (run.status !== 'running' && run.ocrStatus !== 'running') over = true
       } catch (error) {
         // The use is gone (its analysis was deleted): nothing to follow. Anything else is tried again.
         over ||= error instanceof api.ApiError && error.status === 404
@@ -134,6 +138,18 @@ export function useAnalyses() {
       else setTimeout(tick, POLL_MS)
     }
     setTimeout(tick, POLL_MS)
+  }
+
+  /**
+   * The use as it is asked for on its own, which is the only way to have its text (the list of the uses of an analysis
+   * does not carry it, it would be heavy). A use that cannot be read is left as it is.
+   */
+  async function loadRun(analysisId: string, runId: string) {
+    try {
+      keepRun(analysisId, await api.fetchRun(analysisId, runId))
+    } catch {
+      // Left as the list had it: the card says the text is not available.
+    }
   }
 
   /** One more look at the page of an analysis: counted for whoever can open it, and for no one else. */
@@ -189,7 +205,7 @@ export function useAnalyses() {
       keepRun(analysisId, started)
       // What the analysis counts of its uses has changed.
       keep(await api.fetchAnalysis(analysisId))
-      if (started.status === 'running') follow(analysisId, started.id)
+      if (started.status === 'running' || started.ocrStatus === 'running') follow(analysisId, started.id)
     })
     return done ? started : null
   }
@@ -261,6 +277,7 @@ export function useAnalyses() {
     canSeeResult,
     startRun,
     follow,
+    loadRun,
     reviewDetection,
     cancelRun,
     reviewPage,
