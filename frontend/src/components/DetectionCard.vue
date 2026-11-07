@@ -64,6 +64,10 @@ const hidden = computed(() => props.detection.classifications.length - shown.val
       <span class="detection__confidence" data-testid="detection-confidence">{{ percent(best.confidence) }} %</span>
     </div>
 
+    <p v-if="detection.foundInText" class="fr-hint-text fr-mb-0" data-testid="detection-in-text">
+      Trouvé dans le texte du document, à partir de la définition de l’entité : la zone est approximative.
+    </p>
+
     <ZoneCrop v-if="document && detection.zone.points.length >= 3" :document="document" :zone="detection.zone" />
 
     <p v-if="noText" class="fr-hint-text fr-mb-0" data-testid="detection-no-text">Pas de texte à lire pour {{ noText }}.</p>

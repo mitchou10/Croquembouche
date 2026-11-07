@@ -14,7 +14,7 @@ import StatTile from '../components/StatTile.vue'
 import TabList from '../components/TabList.vue'
 import { hasConsumption } from '../composables/consumption'
 import { describeShares } from '../composables/shares'
-import { loadAnalyses, statsOf, useAnalyses } from '../composables/useAnalyses'
+import { isPending, loadAnalyses, statsOf, useAnalyses } from '../composables/useAnalyses'
 import { ACCEPTED_DOCUMENT_TYPES, documentError, useCatalogue } from '../composables/useCatalogue'
 import { useSession } from '../composables/useSession'
 import { useWideScreen } from '../composables/useWideScreen'
@@ -128,7 +128,7 @@ function open(runId: string) {
   // A use that is still running is asked for until the worker has answered, and its text until it is read.
   const analysisId = analysis.value?.id
   const followed = analysisId ? findRun(analysisId, runId) : undefined
-  if (analysisId && (followed?.status === 'running' || followed?.ocrStatus === 'running')) follow(analysisId, runId)
+  if (analysisId && followed && isPending(followed)) follow(analysisId, runId)
   // The text of a use that is read comes with the use itself, not with the list of the uses.
   else if (analysisId && followed?.hasResult && followed.ocrStatus === 'done') void loadRun(analysisId, runId)
   viewerPage.value = 1

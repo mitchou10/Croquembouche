@@ -168,3 +168,30 @@ jobs:
 
       - name: CRAP score
         run: uvx --from lizard==1.17.13 python ci/crap.py --src worker/ocr/app --root worker/ocr --lcov worker/ocr/coverage.lcov --name worker/ocr $CRAP_FAIL
+
+  unit-tests-worker-gliner:
+    name: worker/gliner
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          python-version: ${{ inputs.PYTHON_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: worker/gliner/uv.lock
+
+      - name: Install worker dependencies
+        working-directory: worker/gliner
+        run: uv sync --group dev
+
+      - name: Run tests
+        working-directory: worker/gliner
+        run: uv run pytest --cov=app --cov-report=term-missing --cov-report=lcov:coverage.lcov
+
+      - name: CRAP score
+        run: uvx --from lizard==1.17.13 python ci/crap.py --src worker/gliner/app --root worker/gliner --lcov worker/gliner/coverage.lcov --name worker/gliner $CRAP_FAIL

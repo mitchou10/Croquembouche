@@ -130,6 +130,8 @@ class RecordingDispatcher:
         self.messages: list[dict] = []
         self.ocr_messages: list[dict] = []
         self.fail_ocr = False
+        self.find_messages: list[dict] = []
+        self.fail_find = False
         self.revoked: list[str] = []
         self.fail = False
 
@@ -142,6 +144,11 @@ class RecordingDispatcher:
         if self.fail or self.fail_ocr:
             raise ConnectionError("broker down")
         self.ocr_messages.append(message)
+
+    def dispatch_find(self, message: dict) -> None:
+        if self.fail or self.fail_find:
+            raise ConnectionError("broker down")
+        self.find_messages.append(message)
 
     def revoke(self, run_id: str) -> None:
         if self.fail:

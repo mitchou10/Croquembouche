@@ -99,6 +99,15 @@ docker-build-worker-ocr:
     DOCKERFILE: "worker/ocr/Dockerfile"
     WORKING_DIR: "worker/ocr"
 
+# The GLiNER model is downloaded while the image is built (see its Dockerfile).
+docker-build-worker-gliner:
+  extends:
+    - .docker-build-service
+  variables:
+    SERVICE: "worker-gliner"
+    DOCKERFILE: "worker/gliner/Dockerfile"
+    WORKING_DIR: "worker/gliner"
+
 # Inlined copy of the catalogue's `.helm:build-push` (helm-ci.yml) with its chart
 # detection fixed, so the fix can be exercised here before it is proposed upstream.
 #   - the changed-files grep matches `${CHARTS_PREFIX}/`, derived from CHARTS_DIR,

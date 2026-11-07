@@ -55,6 +55,13 @@ const POLL_MS = 2000
 const POLL_LIMIT = 450
 const following = new Set<string>()
 
+/** Whether a worker still has something to say of a use: the analysis, the reading of the text, or the search in it. */
+export const isPending = (run: Pick<AnalysisRun, 'status' | 'ocrStatus' | 'findStatus'>) =>
+  run.status === 'running' ||
+  run.ocrStatus === 'running' ||
+  run.findStatus === 'waiting' ||
+  run.findStatus === 'running'
+
 export interface AnalysisStats {
   views: number
   uses: number
@@ -128,8 +135,9 @@ export function useAnalyses() {
           keep(await api.fetchAnalysis(analysisId))
           keepRun(analysisId, run) // the list does not carry the text: what was just read is put back
         }
-        // The text is read beside the analysis, which does not wait for it: the use is followed until it is read too.
-        if (run.status !== 'running' && run.ocrStatus !== 'running') over = true
+        // The text is read beside the analysis, which does not wait for it, and the entities with no zone are found in
+        // it after: the use is followed until all of it is over.
+        if (!isPending(run)) over = true
       } catch (error) {
         // The use is gone (its analysis was deleted): nothing to follow. Anything else is tried again.
         over ||= error instanceof api.ApiError && error.status === 404
@@ -205,7 +213,7 @@ export function useAnalyses() {
       keepRun(analysisId, started)
       // What the analysis counts of its uses has changed.
       keep(await api.fetchAnalysis(analysisId))
-      if (started.status === 'running' || started.ocrStatus === 'running') follow(analysisId, started.id)
+      if (isPending(started)) follow(analysisId, started.id)
     })
     return done ? started : null
   }

@@ -85,6 +85,7 @@ class AnalysisRepository:
                         or_(
                             and_(Run.status == "running", Run.matching_document_id.is_not(None)),
                             Run.ocr_status == "running",
+                            Run.find_status.in_(("waiting", "running")),
                         ),
                         Run.created_at < utcnow() - timedelta(seconds=seconds),
                     )

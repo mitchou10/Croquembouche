@@ -3,6 +3,7 @@
 import pytest
 from sqlalchemy import text
 
+from tests.documents import png
 from tests.routers.test_matching_run import analysis_of_a_form, one_element, start
 from tests.worker import KEY, hand_back, hand_back_ocr, read
 
@@ -231,3 +232,194 @@ async def test_an_image_has_no_text(db_client, as_user, dispatcher):
     run = await get(db_client, analysis, started)
 
     assert run["ocrStatus"] == "done" and run["detections"][0]["text"] is None
+
+
+async def bare_analysis(db_client):
+    """A model with no document, and two entities with no zone at all, and an analysis of it."""
+    entities = [
+        {"name": "Numéro", "definition": "Le numéro de la facture", "type": "text", "examples": []},
+        {"name": "Tampon", "definition": "Le tampon", "type": "image", "examples": []},
+    ]
+    form = (await db_client.post("/api/templates", json={"name": "Facture", "entities": entities})).json()
+    analysis = (
+        await db_client.post(
+            "/api/analyses", json={"name": "A", "description": "", "templateIds": [form["id"]], "isPublic": False}
+        )
+    ).json()
+    return form, analysis
+
+
+def found_in_text(form, text="2026-0042", points=None):
+    return {
+        "page": 1,
+        "entity_id": form["entities"][0]["id"],
+        "text": text,
+        "points": points or [{"x": 0.5, "y": 0.1}, {"x": 0.6, "y": 0.1}, {"x": 0.6, "y": 0.15}, {"x": 0.5, "y": 0.15}],
+        "classifications": [{"template_id": form["id"], "confidence": 0.8}, {"template_id": None, "confidence": 0.2}],
+    }
+
+
+async def hand_back_found(client, run_id, result):
+    return await client.post(f"/internal/runs/{run_id}/found", json=result, headers=KEY)
+
+
+async def test_the_gliner_worker_is_asked_once_the_text_is_read(db_client, as_user, dispatcher):
+    as_user("alice")
+    form, analysis = await bare_analysis(db_client)
+    started = await start(db_client, analysis, data=png())
+    assert started["findStatus"] == "waiting" and dispatcher.find_messages == []  # the text comes first
+
+    await hand_back_ocr(db_client, dispatcher.ocr_messages[0])
+
+    [asked] = dispatcher.find_messages
+    assert asked["run_id"] == started["id"] and asked["pages"][0]["lines"][0]["text"] == "Facture 2026"
+    # The image has no text to find; the other is looked for by its definition.
+    assert [(e["name"], e["definition"], e["template_id"]) for e in asked["entities"]] == [
+        ("Numéro", "Le numéro de la facture", form["id"])
+    ]
+
+
+async def test_nothing_is_asked_of_the_gliner_worker_when_every_entity_has_a_zone(db_client, as_user, dispatcher):
+    form, analysis = await analysis_of_a_form(db_client, as_user)
+    started = await start(db_client, analysis)
+
+    await hand_back_ocr(db_client, dispatcher.ocr_messages[0])
+
+    assert started["findStatus"] == "none" and dispatcher.find_messages == []
+
+
+async def test_what_is_found_in_the_text_is_an_element_with_its_zone_and_its_text(db_client, as_user, dispatcher):
+    as_user("alice")
+    form, analysis = await bare_analysis(db_client)
+    started = await start(db_client, analysis, data=png())
+    await hand_back(db_client, dispatcher.messages[0], {"status": "done", "pages": [], "found": []})
+    await hand_back_ocr(db_client, dispatcher.ocr_messages[0])
+
+    answered = await hand_back_found(db_client, started["id"], {"status": "done", "found": [found_in_text(form)]})
+
+    assert answered.status_code == 204
+    run = await get(db_client, analysis, started)
+    [element] = run["detections"]
+    assert run["findStatus"] == "done" and run["matches"] == 1
+    assert element["foundInText"] is True and element["text"] == "2026-0042"
+    assert element["entityId"] == form["entities"][0]["id"] and len(element["zone"]["points"]) == 4
+    assert [(c["templateId"], c["confidence"]) for c in element["classifications"]] == [(form["id"], 0.8), (None, 0.2)]
+    # Not in the list of the uses, which does not carry the text.
+    runs = (await db_client.get(f"/api/analyses/{analysis['id']}")).json()["runs"]
+    assert next(r for r in runs if r["id"] == run["id"])["detections"][0]["text"] is None
+
+
+async def test_what_is_found_in_the_text_is_kept_when_the_matching_comes_after(db_client, as_user, dispatcher):
+    as_user("alice")
+    form, analysis = await bare_analysis(db_client)
+    started = await start(db_client, analysis, data=png())
+    await hand_back_ocr(db_client, dispatcher.ocr_messages[0])
+    await hand_back_found(db_client, started["id"], {"status": "done", "found": [found_in_text(form)]})
+    zone = [{"x": 0.2, "y": 0.2}, {"x": 0.5, "y": 0.2}, {"x": 0.5, "y": 0.4}]
+    classes = [{"template_id": form["id"], "confidence": 0.7}]
+    matched = {"status": "done", "pages": [], "found": [{"page": 1, "points": zone, "classifications": classes}]}
+    await hand_back(db_client, dispatcher.messages[0], matched)
+
+    run = await get(db_client, analysis, started)
+    assert [d["foundInText"] for d in run["detections"]] == [False, True]  # the matching's first, then the text's
+    assert run["matches"] == 2
+
+
+async def test_an_entity_that_is_gone_is_not_an_element(db_client, as_user, dispatcher):
+    as_user("alice")
+    form, analysis = await bare_analysis(db_client)
+    started = await start(db_client, analysis, data=png())
+    await hand_back_ocr(db_client, dispatcher.ocr_messages[0])
+    gone = {**found_in_text(form), "entity_id": "00000000-0000-0000-0000-000000000000"}
+
+    await hand_back_found(db_client, started["id"], {"status": "done", "found": [gone]})
+
+    assert (await get(db_client, analysis, started))["detections"] == []
+
+
+async def test_the_search_consumption_is_added_to_the_use(db_client, as_user, dispatcher):
+    as_user("alice")
+    form, analysis = await bare_analysis(db_client)
+    started = await start(db_client, analysis, data=png())
+    await hand_back_ocr(db_client, dispatcher.ocr_messages[0])
+    cost = {"energy_kwh": 0.003, "co2_kg": 0.0003, "duration_s": 4}
+
+    await hand_back_found(db_client, started["id"], {"status": "done", "found": [], "consumption": cost})
+
+    assert (await get(db_client, analysis, started))["consumption"]["energyWh"] == pytest.approx(3)
+
+
+async def test_a_search_that_fails_or_cannot_be_asked_costs_those_elements_only(db_client, as_user, dispatcher):
+    as_user("alice")
+    form, analysis = await bare_analysis(db_client)
+    started = await start(db_client, analysis, data=png())
+    await hand_back_ocr(db_client, dispatcher.ocr_messages[0])
+    await hand_back_found(db_client, started["id"], {"status": "failed"})
+    assert (await get(db_client, analysis, started))["findStatus"] == "failed"
+
+    dispatcher.fail_find = True
+    other = await start(db_client, analysis, data=png())
+    await hand_back_ocr(db_client, dispatcher.ocr_messages[1])
+    run = await get(db_client, analysis, other)
+    assert run["findStatus"] == "failed" and run["ocrStatus"] == "done"
+
+
+async def test_a_text_that_cannot_be_read_leaves_nothing_to_search(db_client, as_user, dispatcher):
+    as_user("alice")
+    form, analysis = await bare_analysis(db_client)
+    started = await start(db_client, analysis, data=png())
+
+    await hand_back_ocr(db_client, dispatcher.ocr_messages[0], {"status": "failed"})
+
+    assert (await get(db_client, analysis, started))["findStatus"] == "failed" and dispatcher.find_messages == []
+
+
+async def test_a_document_with_no_text_has_nothing_to_search_in(db_client, as_user, dispatcher):
+    as_user("alice")
+    form, analysis = await bare_analysis(db_client)
+    started = await start(db_client, analysis, data=png())
+
+    await hand_back_ocr(db_client, dispatcher.ocr_messages[0], {"status": "done", "pages": [{"page": 1, "lines": []}]})
+
+    assert (await get(db_client, analysis, started))["findStatus"] == "done" and dispatcher.find_messages == []
+
+
+async def test_the_search_comes_once_and_only_when_asked(db_client, as_user, dispatcher):
+    as_user("alice")
+    form, analysis = await bare_analysis(db_client)
+    started = await start(db_client, analysis, data=png())
+    result = {"status": "done", "found": []}
+
+    assert (await hand_back_found(db_client, started["id"], result)).status_code == 404  # the text is not read yet
+    await hand_back_ocr(db_client, dispatcher.ocr_messages[0])
+    assert (await hand_back_found(db_client, started["id"], result)).status_code == 204
+    assert (await hand_back_found(db_client, started["id"], result)).status_code == 404
+
+
+async def test_a_search_the_worker_never_answers_for_fails_after_the_timeout(db_client, db, as_user, dispatcher):
+    as_user("alice")
+    form, analysis = await bare_analysis(db_client)
+    started = await start(db_client, analysis, data=png())
+    await hand_back(db_client, dispatcher.messages[0], {"status": "done", "pages": [], "found": []})
+    await hand_back_ocr(db_client, dispatcher.ocr_messages[0])
+    await db.execute(
+        text("UPDATE runs SET created_at = now() - interval '2 hours' WHERE id = :id"), {"id": started["id"]}
+    )
+
+    await db_client.get(f"/api/analyses/{analysis['id']}")
+
+    run = await get(db_client, analysis, started)
+    assert run["status"] == "done" and run["findStatus"] == "failed"
+
+
+async def test_a_cancelled_use_ignores_the_search(db_client, as_user, dispatcher):
+    as_user("alice")
+    form, analysis = await bare_analysis(db_client)
+    started = await start(db_client, analysis, data=png())
+    await db_client.post(f"/api/analyses/{analysis['id']}/runs/{started['id']}/cancel")
+
+    answered = await hand_back_found(db_client, started["id"], {"status": "done", "found": [found_in_text(form)]})
+
+    assert answered.status_code == 204
+    run = await get(db_client, analysis, started)
+    assert run["status"] == "cancelled" and run["findStatus"] == "failed" and run["detections"] == []

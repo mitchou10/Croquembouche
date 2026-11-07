@@ -885,6 +885,9 @@
     "worker_ocr": {
       "$ref": "#/definitions/workloadComponent"
     },
+    "worker_gliner": {
+      "$ref": "#/definitions/workloadComponent"
+    },
     "jobs": {
       "type": [
         "object",

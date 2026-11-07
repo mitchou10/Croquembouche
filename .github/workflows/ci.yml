@@ -37,6 +37,7 @@ jobs:
       backend: ${{ steps.filter.outputs.backend }}
       worker_template_matching: ${{ steps.filter.outputs.worker_template_matching }}
       worker_ocr: ${{ steps.filter.outputs.worker_ocr }}
+      worker_gliner: ${{ steps.filter.outputs.worker_gliner }}
       helm: ${{ steps.filter.outputs.helm }}
       ci: ${{ steps.filter.outputs.ci }}
       services: ${{ steps.services.outputs.services }}
@@ -57,6 +58,8 @@ jobs:
               - 'worker/template_matching/**'
             worker_ocr:
               - 'worker/ocr/**'
+            worker_gliner:
+              - 'worker/gliner/**'
             helm:
               - 'helm/**'
               - 'ci/configs/ct.yaml'
@@ -70,6 +73,7 @@ jobs:
           BACKEND: ${{ steps.filter.outputs.backend }}
           WORKER_TEMPLATE_MATCHING: ${{ steps.filter.outputs.worker_template_matching }}
           WORKER_OCR: ${{ steps.filter.outputs.worker_ocr }}
+          WORKER_GLINER: ${{ steps.filter.outputs.worker_gliner }}
           CI: ${{ steps.filter.outputs.ci }}
         run: |
           set -euo pipefail
@@ -88,6 +92,9 @@ jobs:
           fi
           if [ "$WORKER_OCR" = "true" ] || [ "$CI" = "true" ]; then
             add '{"name":"worker-ocr","context":"worker/ocr","dockerfile":"worker/ocr/Dockerfile","target":"runtime"}'
+          fi
+          if [ "$WORKER_GLINER" = "true" ] || [ "$CI" = "true" ]; then
+            add '{"name":"worker-gliner","context":"worker/gliner","dockerfile":"worker/gliner/Dockerfile","target":"runtime"}'
           fi
 
           echo "Images to build: $SERVICES"
@@ -139,7 +146,7 @@ jobs:
     uses: ./.github/workflows/lint.yml
     needs:
       - path-filter
-    if: ${{ needs.path-filter.outputs.frontend == 'true' || needs.path-filter.outputs.backend == 'true' || needs.path-filter.outputs.worker_template_matching == 'true' || needs.path-filter.outputs.worker_ocr == 'true' || needs.path-filter.outputs.ci == 'true' }}
+    if: ${{ needs.path-filter.outputs.frontend == 'true' || needs.path-filter.outputs.backend == 'true' || needs.path-filter.outputs.worker_template_matching == 'true' || needs.path-filter.outputs.worker_ocr == 'true' || needs.path-filter.outputs.worker_gliner == 'true' || needs.path-filter.outputs.ci == 'true' }}
     permissions:
       contents: read
 
@@ -147,7 +154,7 @@ jobs:
     uses: ./.github/workflows/unit-tests.yml
     needs:
       - path-filter
-    if: ${{ needs.path-filter.outputs.frontend == 'true' || needs.path-filter.outputs.backend == 'true' || needs.path-filter.outputs.worker_template_matching == 'true' || needs.path-filter.outputs.worker_ocr == 'true' || needs.path-filter.outputs.ci == 'true' }}
+    if: ${{ needs.path-filter.outputs.frontend == 'true' || needs.path-filter.outputs.backend == 'true' || needs.path-filter.outputs.worker_template_matching == 'true' || needs.path-filter.outputs.worker_ocr == 'true' || needs.path-filter.outputs.worker_gliner == 'true' || needs.path-filter.outputs.ci == 'true' }}
     permissions:
       contents: read
 

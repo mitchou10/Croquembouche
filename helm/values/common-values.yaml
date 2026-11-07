@@ -117,6 +117,21 @@ worker_ocr:
   envCm:
     AWS_ENDPOINT_URL: "https://s3.example.org"
 
+worker_gliner:
+  image:
+    registry: "harbor.sdid.cpin.numerique-interieur.com"
+    repository: "{{ .Values.global.project }}/croquembouche-worker-gliner"
+    pullPolicy: "Always"
+  replicaCount: 1
+  serviceAccount:
+    enabled: true
+    create: true
+  envFrom:
+  - secretRef:
+      name: "croquembouche-worker"
+  - secretRef:
+      name: "croquembouche-redis"
+
 jobs:
   migrate:
     hook:

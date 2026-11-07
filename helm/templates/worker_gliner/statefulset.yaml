@@ -1,0 +1,25 @@
+{{- if .Values.enabled }}
+{{- if eq .Values.worker_gliner.deploymentType "StatefulSet" }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "helper.componentFullname" (dict "root" . "componentName" "worker_gliner") }}
+  labels: {{- include "helper.labels" (dict "root" . "componentName" "worker_gliner") | nindent 4 }}
+spec:
+  {{- if not .Values.worker_gliner.autoscaling.enabled }}
+  replicas: {{ .Values.worker_gliner.replicaCount }}
+  {{- end }}
+  revisionHistoryLimit: {{ .Values.worker_gliner.revisionHistoryLimit | default 10 }}
+  selector:
+    matchLabels: {{- include "helper.selectorLabels" (dict "root" . "componentName" "worker_gliner") | nindent 6 }}
+  serviceName: {{ include "helper.componentFullname" (dict "root" . "componentName" "worker_gliner") }}
+  {{- with .Values.worker_gliner.updateStrategy }}
+  updateStrategy: {{- toYaml . | nindent 4 }}
+  {{- end }}
+  template:
+    {{- include "helper.component.podTemplate" (dict "root" . "name" "worker_gliner" "component" .Values.worker_gliner) | nindent 4 }}
+  {{- if or .Values.worker_gliner.volumeClaims .Values.worker_gliner.extraVolumeClaims }}
+  volumeClaimTemplates: {{- toYaml (concat (default (list) .Values.worker_gliner.volumeClaims) (default (list) .Values.worker_gliner.extraVolumeClaims)) | nindent 2 }}
+  {{- end }}
+{{- end }}
+{{- end }}
