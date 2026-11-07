@@ -21,7 +21,7 @@ Les clés ci-dessous sont **exactement** les noms des variables d'environnement 
 | `s3` | `croquembouche-s3` | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | backend, worker |
 | `keycloak` | `croquembouche-keycloak` | `KEYCLOAK_CLIENT_SECRET` | backend |
 | `app` | `croquembouche-app` | `DATA_ENCRYPTION_KEYS`, `BLIND_INDEX_PEPPER` | backend |
-| `worker` | `croquembouche-worker` | `INTERNAL_API_KEY` | backend, worker |
+| `worker` | `croquembouche-worker` | `INTERNAL_API_KEY` | backend, workers (template matching et OCR) |
 | `redis` | `croquembouche-redis` | `REDIS_PASSWORD` | Redis, et `REDIS_URL` pour backend et worker |
 | `db-superuser` | `croquembouche-db-superuser` | `username`, `password` | CloudNativePG |
 | `db-appuser` | `croquembouche-db-appuser` | `username`, `password` | CloudNativePG, et `DATABASE_URL` pour backend et migration |

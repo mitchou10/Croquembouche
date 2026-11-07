@@ -32,6 +32,16 @@
           "type": "toml",
           "path": "worker/template_matching/uv.lock",
           "jsonpath": "$.package[?(@.name.value=='croquembouche-worker-template-matching')].version"
+        },
+        {
+          "type": "toml",
+          "path": "worker/ocr/pyproject.toml",
+          "jsonpath": "project.version"
+        },
+        {
+          "type": "toml",
+          "path": "worker/ocr/uv.lock",
+          "jsonpath": "$.package[?(@.name.value=='croquembouche-worker-ocr')].version"
         }
       ],
       "changelog-sections": [

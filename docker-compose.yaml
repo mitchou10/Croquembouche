@@ -109,6 +109,29 @@ services:
       rustfs:
         condition: service_healthy
 
+  # Reads the text of page images with PaddleOCR, on the CPU.
+  worker-ocr:
+    build:
+      context: worker/ocr
+      target: runtime
+      # The recognition model is part of the image (see its Dockerfile): another language is another build.
+      args:
+        OCR_LANG: ${OCR_LANG:-fr}
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      AWS_ENDPOINT_URL: http://rustfs:9000
+      AWS_ACCESS_KEY_ID: rustfsadmin
+      AWS_SECRET_ACCESS_KEY: rustfsadmin
+      AWS_BUCKET: croquembouche-documents
+      # Where the text goes back to, and the key that proves it is the worker's.
+      BACKEND_URL: http://backend:8000
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-dev-only-internal-key}
+    depends_on:
+      redis:
+        condition: service_healthy
+      rustfs:
+        condition: service_healthy
+
   qdrant:
     image: qdrant/qdrant:v1.15.5
     volumes:

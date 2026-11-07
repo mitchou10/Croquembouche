@@ -1,7 +1,7 @@
 import uuid
 from datetime import timedelta
 
-from sqlalchemy import select, update
+from sqlalchemy import and_, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.analysis import Analysis, Run
@@ -82,8 +82,10 @@ class AnalysisRepository:
             (
                 await self._session.scalars(
                     select(Run).where(
-                        Run.status == "running",
-                        Run.matching_document_id.is_not(None),
+                        or_(
+                            and_(Run.status == "running", Run.matching_document_id.is_not(None)),
+                            Run.ocr_status == "running",
+                        ),
                         Run.created_at < utcnow() - timedelta(seconds=seconds),
                     )
                 )

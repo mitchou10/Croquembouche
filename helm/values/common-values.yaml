@@ -98,6 +98,25 @@ worker_template_matching:
   envCm:
     AWS_ENDPOINT_URL: "https://s3.example.org"
 
+worker_ocr:
+  image:
+    registry: "harbor.sdid.cpin.numerique-interieur.com"
+    repository: "{{ .Values.global.project }}/croquembouche-worker-ocr"
+    pullPolicy: "Always"
+  replicaCount: 1
+  serviceAccount:
+    enabled: true
+    create: true
+  envFrom:
+  - secretRef:
+      name: "croquembouche-s3"
+  - secretRef:
+      name: "croquembouche-worker"
+  - secretRef:
+      name: "croquembouche-redis"
+  envCm:
+    AWS_ENDPOINT_URL: "https://s3.example.org"
+
 jobs:
   migrate:
     hook:

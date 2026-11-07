@@ -10,7 +10,7 @@ from app.config import MatchingSettings
 from app.dependencies import Db
 from app.repositories.analysis import AnalysisRepository
 from app.repositories.document import DocumentRepository
-from app.schemas.matching import MatchingResult
+from app.schemas.matching import MatchingResult, OcrResult
 from app.services import matching_results
 
 
@@ -30,3 +30,11 @@ async def result(run_id: str, body: MatchingResult, db: Db) -> None:
     """How a use went, from the worker. One that already ended is left as it is."""
     if not await matching_results.apply(AnalysisRepository(db), DocumentRepository(db), run_id, body):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No such use running")
+
+
+@router.post("/runs/{run_id}/ocr", status_code=status.HTTP_204_NO_CONTENT)
+async def ocr(run_id: str, body: OcrResult, db: Db) -> None:
+    """The text of the document of a use, from the OCR worker, which reads beside the matching: it may come after the
+    use is done."""
+    if not await matching_results.apply_ocr(AnalysisRepository(db), DocumentRepository(db), run_id, body):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No such use being read")

@@ -63,6 +63,11 @@ class Run(UUIDMixin, Base):
     co2_kg: Mapped[float | None] = mapped_column(Float)
     duration_s: Mapped[float | None] = mapped_column(Float)
     file_name: Mapped[str | None] = mapped_column("file_name_encrypted", EncryptedText)
+    # The text of the document, read by the OCR worker beside the matching and handed back when it is done: none (not
+    # asked, or a use from before), running, done or failed. It is the document's own words, so it is encrypted: a JSON
+    # of `[{page, angle, lines: [{text, score, points}]}]`.
+    ocr_status: Mapped[str] = mapped_column(String(16), default="none", server_default="none")
+    ocr: Mapped[str | None] = mapped_column("ocr_encrypted", EncryptedText)
     screenshot_document_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("documents.id", ondelete="SET NULL"))
     # The document while the worker reads its pages: kept as the screenshot of the use if asked to, else deleted as soon
     # as the worker has answered.
