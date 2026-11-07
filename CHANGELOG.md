@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.20.1](https://github.com/mitchou10/Croquembouche/compare/v1.20.0...v1.20.1) (2026-11-07)
+
+
+### Bug Fixes
+
+* **profile:** a menu of the account from the name, and no more choice of language ([1dc6c0e](https://github.com/mitchou10/Croquembouche/commit/1dc6c0e8f6df89176a295466170b20d31357f56d))
+
 ## [1.20.0](https://github.com/mitchou10/Croquembouche/compare/v1.19.0...v1.20.0) (2026-11-07)
 
 
