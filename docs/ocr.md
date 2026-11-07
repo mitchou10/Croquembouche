@@ -29,6 +29,35 @@ le texte, pas l'analyse.
 
 Un élément dont l'entité n'est pas connue (dessiné à la main, ou entité supprimée) est traité comme un texte.
 
+## Retrouver une entité sans zone (GLiNER)
+
+Une entité n'a pas toujours de zone à reporter sur le document : son modèle n'a pas d'image ni de PDF, ou la zone n'a
+pas été dessinée. Un **worker à part**, `worker/gliner`, cherche alors sa valeur **dans le texte lu** avec
+[GLiNER](https://github.com/urchade/GLiNER) (extraction d'entités « zero-shot »), et rend un élément avec sa zone.
+
+**GLiNER attend l'OCR.** Il lui faut le texte : le backend ne lui envoie sa tâche qu'une fois que l'OCR a répondu. Une
+utilisation a un troisième état, `findStatus` : `none` (rien à retrouver), `waiting` (le texte n'est pas encore lu),
+`running` (GLiNER cherche), `done`, `failed`. Si le texte ne peut pas être lu, ou n'a aucune ligne, il n'y a rien à
+chercher dedans.
+
+- **Quelles entités** : celles d'un modèle **sans document** (aucune n'a de zone), et celles **sans zone** d'un modèle qui
+  en a un. Une entité de type image ou tableau n'a pas de texte à retrouver : elle est ignorée.
+- **Ce qu'on demande à GLiNER** : la **définition** de l'entité (son nom si elle n'en a pas). Plus la définition est
+  précise (« Le numéro de la facture »), mieux c'est.
+- **La zone** est celle de ce qui a été trouvé : la partie de la ligne OCR où se trouve le texte (au prorata des
+  caractères), ou le rectangle autour de plusieurs lignes. Elle est approximative, la carte le dit.
+- **La confiance** est celle de GLiNER, le reste étant « autre ». Pour chaque entité, on garde la réponse la plus sûre sur
+  **toutes** les pages : sans zone, on ne sait pas sur quelle page elle est.
+- **Le texte trouvé** est gardé chiffré avec l'élément (`detections.text_encrypted`) et rendu tel quel.
+- Ces éléments arrivent **après le texte**, donc après l'analyse, et s'ajoutent à ceux qu'elle a trouvés (qui ne les
+  remplacent pas). Si GLiNER échoue ou n'est pas déployé, on perd ces éléments, pas le texte ni l'analyse.
+- Sa consommation (CodeCarbon) s'ajoute à celle de l'utilisation.
+- Le modèle (et son tokenizer) est dans l'image : rien n'est téléchargé au démarrage.
+
+Réglages du worker : `GLINER_MODEL` (`urchade/gliner_multi-v2.1`, multilingue, à la construction de l'image),
+`GLINER_THRESHOLD` (`0.4`), `GLINER_CHUNK_WORDS` (`250` : GLiNER lit environ 380 mots à la fois, une page est lue par
+morceaux). Backend : `GLINER_ENABLED` (`true`) : `false` ne cherche plus rien par la définition.
+
 ## Ce que fait le worker
 
 - Il remet la page d'aplomb (0, 90, 180 ou 270°) et chaque ligne à l'endroit avant de lire : un scan couché ou à l'envers

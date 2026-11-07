@@ -84,6 +84,8 @@ class DetectionOut(CamelModel):
     review: ReviewOut
     source: Literal["analysis", "manual"]
     entity_id: str | None = None
+    # Found in the text, by the definition of its entity, instead of by a zone of a model.
+    found_in_text: bool = False
     # The text the OCR read in the zone: only when a single use is asked for, once it is read, and never for an image or
     # a table. Absent until then.
     text: str | None = None
@@ -121,6 +123,9 @@ class RunOut(CamelModel):
     # The text of the document comes after the matching, once the OCR has read it: say so, then give it (only when a
     # single use is asked for; it is the person's alone).
     ocr_status: Literal["none", "running", "done", "failed"] = "none"
+    # Whether the entities with no zone are found in that text: waiting for it to be read, being found, are, or could
+    # not be.
+    find_status: Literal["none", "waiting", "running", "done", "failed"] = "none"
     ocr: list[OcrPage] | None = None
 
 

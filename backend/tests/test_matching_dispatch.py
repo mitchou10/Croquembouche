@@ -30,6 +30,17 @@ def test_the_ocr_worker_is_asked_to_read_on_its_own_queue(monkeypatch):
     assert send.call_args.kwargs == {"args": [{"run_id": "r1"}], "queue": OCR_QUEUE, "task_id": "ocr-r1"}
 
 
+def test_the_gliner_worker_is_asked_to_find_on_its_own_queue(monkeypatch):
+    dispatcher = CeleryDispatcher("redis://localhost:1/0")
+    send = MagicMock()
+    monkeypatch.setattr(dispatcher._app, "send_task", send)
+
+    dispatcher.dispatch_find({"run_id": "r1"})
+
+    assert send.call_args.args == ("gliner.find_entities",)
+    assert send.call_args.kwargs == {"args": [{"run_id": "r1"}], "queue": "gliner", "task_id": "gliner-r1"}
+
+
 def test_the_task_of_a_run_is_revoked_to_cancel_it(monkeypatch):
     dispatcher = CeleryDispatcher("redis://localhost:1/0")
     revoke = MagicMock()
@@ -37,7 +48,7 @@ def test_the_task_of_a_run_is_revoked_to_cancel_it(monkeypatch):
 
     dispatcher.revoke("r1")
 
-    revoke.assert_called_once_with(["r1", "ocr-r1"], terminate=True)
+    revoke.assert_called_once_with(["r1", "ocr-r1", "gliner-r1"], terminate=True)
 
 
 def test_a_broker_that_is_down_is_not_hidden(monkeypatch):

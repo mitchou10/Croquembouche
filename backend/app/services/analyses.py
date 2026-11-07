@@ -251,6 +251,8 @@ class AnalysisService:
             keep_screenshot=keep_screenshot,
             # The text is read beside the matching, which does not wait for it.
             ocr_status="running" if MatchingSettings().OCR_ENABLED else "none",
+            # What has no zone is found in that text, by definition, once it is read.
+            **self._to_find(searched),
             # The model is searched as it is now: the use says in which version.
             template_versions={str(t.id): t.version for t in searched},
         )
@@ -272,14 +274,22 @@ class AnalysisService:
             await matching_results.finish(run, MatchingResult(status="failed"), self._documents)
             await self._repository.commit()
         else:
-            await self._ask_to_read(run, message["page_keys"])
+            await self._ask_to_read(run, message["page_keys"], searched)
         run_id = run.id
         analysis = await self._repository.reload(analysis)
         return next(self._run(r, True) for r in analysis.runs if r.id == run_id)
 
-    async def _ask_to_read(self, run: Run, page_keys: list[str]) -> None:
-        """Asks the OCR worker for the text of the document, beside the matching. A reader that cannot be asked
-        only costs the text: the use goes on."""
+    @staticmethod
+    def _to_find(searched: list[Template]) -> dict:
+        """The entities to find in the text, if the text is read and there are some: the OCR comes first, the GLiNER
+        worker is asked when it has handed the text back."""
+        settings = MatchingSettings()
+        entities = ocr_text.entities_to_find(searched) if settings.OCR_ENABLED and settings.GLINER_ENABLED else []
+        return {"find_status": "waiting", "find_entities": entities} if entities else {}
+
+    async def _ask_to_read(self, run: Run, page_keys: list[str], searched: list[Template]) -> None:
+        """Asks the OCR worker for the text of the document, beside the matching. A reader that cannot be asked only
+        costs the text, and the entities that were to be found in it: the use goes on."""
         if run.ocr_status != "running":
             return
         try:
@@ -287,6 +297,8 @@ class AnalysisService:
         except Exception:
             logger.warning("Could not ask the worker to read the run %s", run.id, exc_info=True)
             run.ocr_status = "failed"
+            if run.find_status == "waiting":  # no text, nothing to find in it
+                run.find_status, run.find_entities = "failed", None
             await self._repository.commit()
 
     async def _template_messages(self, templates: list[Template]) -> list[dict]:
@@ -471,7 +483,10 @@ class AnalysisService:
                     review=_review(d.review_status, d.review_template_id),
                     source=d.source,  # type: ignore[arg-type]
                     entity_id=None if d.entity_id is None else str(d.entity_id),
-                    text=ocr_text.text_in_zone(read, d.zone_page, d.zone_points)
+                    found_in_text=d.found_in_text,
+                    text=d.text
+                    if d.found_in_text and text
+                    else ocr_text.text_in_zone(read, d.zone_page, d.zone_points)
                     if read is not None and ocr_text.is_read(d.entity.type if d.entity else None)
                     else None,
                 )
@@ -499,6 +514,7 @@ class AnalysisService:
             else None,
             file_decision=run.file_decision if mine else None,  # type: ignore[arg-type]
             ocr_status=run.ocr_status,  # type: ignore[arg-type]
+            find_status=run.find_status,  # type: ignore[arg-type]
             ocr=read,
         )
 

@@ -193,6 +193,8 @@ export interface Detection {
   classifications: Classification[]
   /** Which entity of the model it is, when known: what the quality of each entity is measured on. */
   entityId?: string | null
+  /** Found in the text by the definition of its entity (it has no zone on its model), not by carrying a zone over. */
+  foundInText?: boolean
   /** The text read in the zone, once the analysis reads them (OCR): absent until then. */
   text?: string | null
 }
@@ -240,6 +242,8 @@ export interface AnalysisRun {
   hasResult: boolean
   /** The text of the document is read beside the analysis, which does not wait for it: absent for a use from before. */
   ocrStatus?: 'none' | 'running' | 'done' | 'failed'
+  /** The entities with no zone are found in that text once it is read: waiting for it, being found, found, or not. */
+  findStatus?: 'none' | 'waiting' | 'running' | 'done' | 'failed'
   /** What it consumed, once it has ended: absent when it was not measured. */
   consumption?: Consumption | null
   date: string

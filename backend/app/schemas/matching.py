@@ -63,9 +63,23 @@ class OcrPage(BaseModel):
     lines: list[OcrLine]
 
 
+class FoundInText(FoundElement):
+    """An element found in the text, for an entity that has no zone to carry over: where, and what was found there."""
+
+    text: str
+
+
 class OcrResult(BaseModel):
     """What the OCR worker hands back for a use: the text of each page, and what reading it consumed."""
 
     status: Literal["done", "failed"]
     consumption: Consumption | None = None
     pages: list[OcrPage] = []
+
+
+class FindResult(BaseModel):
+    """What the GLiNER worker hands back for a use: the elements it found in the text, and what it consumed."""
+
+    status: Literal["done", "failed"]
+    consumption: Consumption | None = None
+    found: list[FoundInText] = []

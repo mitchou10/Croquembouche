@@ -124,6 +124,16 @@ describe('DetectionCard', () => {
       expect(read({ ocrStatus: 'done' }).get('[data-testid="detection-text-pending"]').text()).toBe('Aucun texte lu dans cette zone.')
     })
 
+    it('says when it was found in the text, by the definition of its entity', () => {
+      expect(read({}).find('[data-testid="detection-in-text"]').exists()).toBe(false)
+      const wrapper = mount(DetectionCard, {
+        props: { detection: { id: 'd1', zone, classifications: [{ templateId: 't1', confidence: 0.9 }], foundInText: true, text: '2026-0042' }, position: 1, nameOf },
+        global: { plugins: [VueDsfr] },
+      })
+      expect(wrapper.get('[data-testid="detection-in-text"]').text()).toContain('à partir de la définition')
+      expect(wrapper.get('[data-testid="detection-text"]').text()).toBe('2026-0042')
+    })
+
     it('has no text and no button for an image or a table', () => {
       for (const [entityType, noun] of [['image', 'une image'], ['table', 'un tableau']]) {
         const wrapper = read({ entityType, ocrStatus: 'done' })

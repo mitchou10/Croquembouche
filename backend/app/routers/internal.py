@@ -7,10 +7,11 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 
 from app.config import MatchingSettings
+from app.core.matching import MatchingDispatcher, get_dispatcher
 from app.dependencies import Db
 from app.repositories.analysis import AnalysisRepository
 from app.repositories.document import DocumentRepository
-from app.schemas.matching import MatchingResult, OcrResult
+from app.schemas.matching import FindResult, MatchingResult, OcrResult
 from app.services import matching_results
 
 
@@ -33,8 +34,20 @@ async def result(run_id: str, body: MatchingResult, db: Db) -> None:
 
 
 @router.post("/runs/{run_id}/ocr", status_code=status.HTTP_204_NO_CONTENT)
-async def ocr(run_id: str, body: OcrResult, db: Db) -> None:
+async def ocr(
+    run_id: str, body: OcrResult, db: Db, dispatcher: Annotated[MatchingDispatcher, Depends(get_dispatcher)]
+) -> None:
     """The text of the document of a use, from the OCR worker, which reads beside the matching: it may come after the
     use is done."""
-    if not await matching_results.apply_ocr(AnalysisRepository(db), DocumentRepository(db), run_id, body):
+    if not await matching_results.apply_ocr(
+        AnalysisRepository(db), DocumentRepository(db), run_id, body, dispatcher.dispatch_find
+    ):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No such use being read")
+
+
+@router.post("/runs/{run_id}/found", status_code=status.HTTP_204_NO_CONTENT)
+async def found(run_id: str, body: FindResult, db: Db) -> None:
+    """What the GLiNER worker found in the text for the entities with no zone: it comes after the text, so after the
+    use is done."""
+    if not await matching_results.apply_found(AnalysisRepository(db), run_id, body):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No such use being searched")

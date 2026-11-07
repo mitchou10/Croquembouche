@@ -132,6 +132,23 @@ services:
       rustfs:
         condition: service_healthy
 
+  # Finds the entities that have no zone in the text the OCR read, with GLiNER, on the CPU.
+  worker-gliner:
+    build:
+      context: worker/gliner
+      target: runtime
+      # The model is part of the image (see its Dockerfile): another model is another build.
+      args:
+        GLINER_MODEL: ${GLINER_MODEL:-urchade/gliner_multi-v2.1}
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      # Where what it found goes back to, and the key that proves it is the worker's.
+      BACKEND_URL: http://backend:8000
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-dev-only-internal-key}
+    depends_on:
+      redis:
+        condition: service_healthy
+
   qdrant:
     image: qdrant/qdrant:v1.15.5
     volumes:

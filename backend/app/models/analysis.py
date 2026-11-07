@@ -67,6 +67,11 @@ class Run(UUIDMixin, Base):
     # asked, or a use from before), running, done or failed. It is the document's own words, so it is encrypted: a JSON
     # of `[{page, angle, lines: [{text, score, points}]}]`.
     ocr_status: Mapped[str] = mapped_column(String(16), default="none", server_default="none")
+    # The entities that have no zone are found in that text by the GLiNER worker, once it is read: none (nothing to
+    # find, or not asked), waiting for the text, running, done or failed. What it has to find
+    # (`[{id, template_id, name, definition, ...}]`) is kept until it is asked.
+    find_status: Mapped[str] = mapped_column(String(16), default="none", server_default="none")
+    find_entities: Mapped[list[dict] | None] = mapped_column(JSONB)
     ocr: Mapped[str | None] = mapped_column("ocr_encrypted", EncryptedText)
     screenshot_document_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("documents.id", ondelete="SET NULL"))
     # The document while the worker reads its pages: kept as the screenshot of the use if asked to, else deleted as soon
@@ -137,6 +142,11 @@ class Detection(UUIDMixin, Base):
     entity_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("template_entities.id", ondelete="SET NULL"), index=True
     )
+
+    # Found in the text the OCR read (by the definition of its entity) rather than by carrying a zone of a model over:
+    # then `text` is what was found, kept encrypted as it is the document's own words.
+    found_in_text: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    text: Mapped[str | None] = mapped_column("text_encrypted", EncryptedText)
 
     entity: Mapped[TemplateEntity | None] = relationship(lazy="selectin")
     classifications: Mapped[list["DetectionClassification"]] = relationship(

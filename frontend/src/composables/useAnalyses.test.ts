@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { backendAnalysis, fakeFetch } from '../test/fakeBackend'
 import { uploadDocument } from '../data/api'
-import { loadAnalyses, resetAnalyses, statsOf, useAnalyses } from './useAnalyses'
+import { isPending, loadAnalyses, resetAnalyses, statsOf, useAnalyses } from './useAnalyses'
 import { loadCatalogue, resetCatalogue, useCatalogue } from './useCatalogue'
 import { useSession } from './useSession'
 
@@ -275,6 +275,17 @@ describe('trying an analysis on a document', () => {
     expect(findRun('a1', started.id)).toMatchObject({ ocrStatus: 'done' })
     expect(findRun('a1', started.id)!.detections!.every((d) => d.text === 'Texte lu')).toBe(true)
     await expect(loadRun('a1', 'unknown')).resolves.toBeUndefined() // a use that is gone is not an error
+  })
+
+  it('is pending while a worker has something to say of a use, and not once all of them have', () => {
+    const run = { status: 'done' as const }
+    expect(isPending(run)).toBe(false)
+    expect(isPending({ status: 'running' })).toBe(true)
+    expect(isPending({ ...run, ocrStatus: 'running' })).toBe(true)
+    expect(isPending({ ...run, ocrStatus: 'done', findStatus: 'waiting' })).toBe(true)
+    expect(isPending({ ...run, ocrStatus: 'done', findStatus: 'running' })).toBe(true)
+    expect(isPending({ ...run, ocrStatus: 'done', findStatus: 'done' })).toBe(false)
+    expect(isPending({ ...run, ocrStatus: 'failed', findStatus: 'failed' })).toBe(false)
   })
 
   it('ends as failed when the worker fails', async () => {
