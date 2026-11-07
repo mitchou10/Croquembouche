@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.18.0](https://github.com/mitchou10/Croquembouche/compare/v1.17.0...v1.18.0) (2026-11-07)
+
+
+### Features
+
+* **gliner:** find the entities with no zone in the OCR text, in a worker of its own ([208d15b](https://github.com/mitchou10/Croquembouche/commit/208d15b788828323cbad8ad3049853a40b90cd35))
+
 ## [1.17.0](https://github.com/mitchou10/Croquembouche/compare/v1.16.0...v1.17.0) (2026-11-07)
 
 
