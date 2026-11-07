@@ -12,15 +12,17 @@ RUN uv sync --frozen --no-dev
 # Another language is another build: `--build-arg OCR_LANG=...`.
 FROM builder AS model
 ARG OCR_LANG=fr
-ENV PADDLE_PDX_CACHE_HOME=/models OCR_LANG=$OCR_LANG
-RUN apt-get update && apt-get install -y --no-install-recommends libgl1 libglib2.0-0 && rm -rf /var/lib/apt/lists/*
+ENV PADDLE_PDX_CACHE_HOME=/models PADDLE_PDX_MODEL_SOURCE=huggingface OCR_LANG=$OCR_LANG
+# What Paddle and OpenCV load at import: the build fails without them (libgomp.so.1 for Paddle).
+RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 libgl1 libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
 RUN /app/.venv/bin/python -c "\
 from app import ocr; ocr.get_engine()"
 
 FROM python:3.13-slim AS runtime
 RUN python -m pip uninstall -y pip
 # Paddle and OpenCV load these at import.
-RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 libglib2.0-0 \
+RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 libgl1 libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 RUN useradd --create-home --uid 1000 worker
 WORKDIR /app
