@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import ConfirmButton from '../components/ConfirmButton.vue'
 import ConsumptionSummary from '../components/ConsumptionSummary.vue'
+import CurlExample from '../components/CurlExample.vue'
 import DetectionCard from '../components/DetectionCard.vue'
 import DocumentViewer from '../components/DocumentViewer.vue'
 import FixedPage from '../components/FixedPage.vue'
@@ -326,6 +327,8 @@ const sharing = computed(() => {
             <button type="button" class="fr-btn fr-btn--sm fr-btn--secondary" data-testid="another" @click="newTest">Nouveau test</button>
           </template>
         </div>
+
+        <CurlExample v-if="analysis" :analysis-id="analysis.id" :keep-screenshot="saveScreenshot" />
 
         <input
           id="test-file"
