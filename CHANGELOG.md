@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.19.0](https://github.com/mitchou10/Croquembouche/compare/v1.18.0...v1.19.0) (2026-11-07)
+
+
+### Features
+
+* **consumption:** a light bulb, a balloon of gas and a bottle that fill with what was consumed ([9382966](https://github.com/mitchou10/Croquembouche/commit/9382966bd16e3e13f7907041372d85fec4d177c9))
+* **consumption:** count what was consumed in things that fill: bulbs, balloons of gas, bottles ([8b8c3b6](https://github.com/mitchou10/Croquembouche/commit/8b8c3b6a778ae3b3b58f50951693414abb7d5382))
+* **profile:** a page with my consumption, in all and by analysis ([d73c0c2](https://github.com/mitchou10/Croquembouche/commit/d73c0c2628a228f520a64ac4a76a0184d3e54d73))
+
 ## [1.18.0](https://github.com/mitchou10/Croquembouche/compare/v1.17.0...v1.18.0) (2026-11-07)
 
 
