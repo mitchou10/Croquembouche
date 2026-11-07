@@ -50,6 +50,25 @@ Backend : `WATER_LITERS_PER_KWH` (1,8).
   processeur. C'est un ordre de grandeur, pas un wattmètre.
 - La capture est faite avec des données fictives.
 
+## Ampoule, ballon de gaz, bouteille
+
+![L'ampoule, le ballon de CO₂ et la bouteille d'eau se remplissent](consumption-gauges.gif)
+
+Chaque bloc de consommation montre, à côté des chiffres, une **ampoule** (électricité), un **ballon de gaz** (CO₂) et une
+**bouteille** (eau) qui **se remplissent** à l'affichage jusqu'au niveau de ce qui a été consommé.
+
+- **Le niveau est indicatif.** Il est sur une échelle **logarithmique** : une utilisation vaut quelques centièmes de
+  bouteille, un mois d'utilisations vaut une bouteille, et sur une échelle linéaire la première ne se verrait jamais. Plein,
+  c'est ce que dit l'équivalent : **70 Wh** (un muffin cuit), **200 g** de CO₂ (un kilomètre en voiture), **500 mL** (une
+  bouteille d'eau). Vide, c'est 0,01 Wh, 0,01 g, 0,1 mL. Dès qu'il y a quelque chose, on en voit un peu.
+- **Après le remplissage**, elles bougent un peu : une vague sur l'eau, des bulles dans le ballon, un halo qui pulse autour
+  de l'ampoule (d'autant plus fort qu'elle est pleine).
+- **Moins de mouvement** : si votre système le demande (`prefers-reduced-motion`), elles apparaissent déjà remplies, sans
+  rien qui bouge.
+- Elles sont cachées aux lecteurs d'écran : les chiffres et les équivalents disent la même chose. Un survol rappelle que
+  le niveau est indicatif.
+- Les échelles sont des constantes de `frontend/src/composables/consumption.ts` (`GAUGE`), à corriger à un seul endroit.
+
 ## Ma consommation (mon profil)
 
 Depuis les **Paramètres** (le bouton avec votre nom, en bas du menu), le lien « Ma consommation » ouvre la page de ce que

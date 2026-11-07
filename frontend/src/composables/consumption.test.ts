@@ -7,6 +7,7 @@ import {
   formatDuration,
   formatEnergy,
   formatWater,
+  gaugeLevel,
   hasConsumption,
   totalConsumption,
   waterEquivalent,
@@ -69,5 +70,22 @@ describe('totalConsumption', () => {
     expect(hasConsumption(total)).toBe(true)
     expect(hasConsumption(totalConsumption([]))).toBe(false)
     expect(hasConsumption(null)).toBe(false)
+  })
+})
+
+describe('gaugeLevel', () => {
+  it('is empty for nothing and full from what the equivalent is about', () => {
+    expect(gaugeLevel('water', 0)).toBe(0)
+    expect(gaugeLevel('water', 500)).toBe(1)
+    expect(gaugeLevel('energy', 70)).toBe(1)
+    expect(gaugeLevel('co2', 200)).toBe(1)
+    expect(gaugeLevel('water', 10000)).toBe(1)
+  })
+
+  it('shows something as soon as there is something, and grows with the quantity', () => {
+    expect(gaugeLevel('water', 0.001)).toBe(0.06)
+    expect(gaugeLevel('energy', 0.5)).toBeGreaterThan(gaugeLevel('energy', 0.05))
+    expect(gaugeLevel('co2', 20)).toBeGreaterThan(gaugeLevel('co2', 2))
+    expect(gaugeLevel('water', Number.NaN)).toBe(0)
   })
 })
