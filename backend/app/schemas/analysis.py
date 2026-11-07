@@ -99,6 +99,26 @@ class PageOut(CamelModel):
     review: ReviewOut
 
 
+class AnalysisConsumptionOut(CamelModel):
+    """What the uses of a person consumed in one analysis. `measured` are the uses that were (the others add
+    nothing)."""
+
+    id: str
+    name: str
+    uses: int
+    measured: int
+    consumption: ConsumptionOut
+
+
+class MyConsumptionOut(CamelModel):
+    """What all the uses of a person consumed, and the detail by analysis, the most consuming first."""
+
+    uses: int
+    measured: int
+    consumption: ConsumptionOut
+    analyses: list[AnalysisConsumptionOut]
+
+
 class RunOut(CamelModel):
     """One use of an analysis. Whoever can open the analysis sees who ran it, when and how it went; what it found is for
     the person who ran it alone, an administrator included."""

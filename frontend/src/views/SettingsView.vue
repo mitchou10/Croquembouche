@@ -22,6 +22,12 @@ function signOut() {
 <template>
   <h1 class="fr-h3">Paramètres</h1>
 
+  <p class="fr-mb-3w">
+    <RouterLink :to="{ name: 'my-consumption' }" class="fr-link fr-icon-leaf-line fr-link--icon-left" data-testid="my-consumption-link">
+      Ma consommation
+    </RouterLink>
+  </p>
+
   <DsfrAlert v-if="saved" type="success" small description="Vos paramètres ont été enregistrés." class="fr-mb-3w" />
 
   <form class="settings-form" @submit.prevent="save">

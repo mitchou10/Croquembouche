@@ -233,6 +233,23 @@ export interface Consumption {
   waterMl: number
 }
 
+/** What the uses of a person consumed in one analysis; `measured` are the uses that were (the others add nothing). */
+export interface AnalysisConsumption {
+  id: string
+  name: string
+  uses: number
+  measured: number
+  consumption: Consumption
+}
+
+/** What all the uses of a person consumed, and the detail by analysis, the most consuming first. */
+export interface MyConsumption {
+  uses: number
+  measured: number
+  consumption: Consumption
+  analyses: AnalysisConsumption[]
+}
+
 export interface AnalysisRun {
   id: string
   userId: string
