@@ -6,13 +6,6 @@ import type { Analysis, Consumption } from '../data/mock'
  * the water is estimated by the backend from the electricity).
  */
 const EQUIVALENTS = {
-  /** An electric oven (2 kW) baking a batch of 12 muffins for 25 minutes. */
-  muffinWh: 70,
-  /** A LED bulb. */
-  ledWatts: 10,
-  /** A bottle of water, and a teaspoon. */
-  bottleMl: 500,
-  teaspoonMl: 5,
   /** What an average car emits a kilometre (ADEME, about). */
   carGramsPerKm: 200,
 } as const
@@ -44,23 +37,75 @@ export const totalConsumption = (analyses: Analysis[]): Consumption =>
     }
   }, emptyConsumption())
 
-/** What fills a gauge: the quantity at which it is empty and at which it is full, on a logarithmic scale (the quantities
- * are far too apart for a linear one: a use is a few hundredths of a bottle, a month of them is one). Full is what the
- * equivalent is about: a muffin baked, a kilometre by car, a bottle of water. */
-const GAUGE = {
-  energy: { empty: 0.01, full: 70 },
-  co2: { empty: 0.01, full: 200 },
-  water: { empty: 0.1, full: 500 },
-} as const
+/** What a quantity is counted in, so that it can be seen: the units of each ladder are what a person has an idea of, each
+ * one drawn as a thing that fills (see `ConsumptionGauge`). The unit is the smallest one of which there are fewer than
+ * ten (never a hundred bottles: a bucket, a bath); past the largest one it says « plus de 10 » and shows ten full. Below
+ * the smallest one there is only a part of it. Everything that is a guess is here, to be corrected in one place. */
+export type GaugeKind = 'energy' | 'co2' | 'water'
+export type GaugeShape = 'bulb' | 'balloon' | 'spoon' | 'glass' | 'bottle' | 'bucket' | 'bath'
 
-export type GaugeKind = keyof typeof GAUGE
+interface Unit {
+  /** How much of the quantity (Wh, g, mL) one of them is. */
+  amount: number
+  one: string
+  many: string
+  shape: GaugeShape
+}
 
-/** How full a gauge is, from 0 (nothing was consumed) to 1; a little something is always seen when there is something. */
-export function gaugeLevel(kind: GaugeKind, value: number): number {
-  if (!(value > 0)) return 0
-  const { empty, full } = GAUGE[kind]
-  const level = Math.log(value / empty) / Math.log(full / empty)
-  return Math.round(Math.min(1, Math.max(0.06, level)) * 100) / 100
+const LADDERS: Record<GaugeKind, Unit[]> = {
+  // A LED bulb of 10 W, lit for a minute, an hour, a day, a month, a year.
+  energy: [
+    { amount: 10 / 60, one: 'ampoule LED allumée 1 minute', many: 'ampoules LED allumées 1 minute', shape: 'bulb' },
+    { amount: 10, one: 'ampoule LED allumée 1 heure', many: 'ampoules LED allumées 1 heure', shape: 'bulb' },
+    { amount: 240, one: 'ampoule LED allumée 1 jour', many: 'ampoules LED allumées 1 jour', shape: 'bulb' },
+    { amount: 7_200, one: 'ampoule LED allumée 1 mois', many: 'ampoules LED allumées 1 mois', shape: 'bulb' },
+    { amount: 87_600, one: 'ampoule LED allumée 1 an', many: 'ampoules LED allumées 1 an', shape: 'bulb' },
+  ],
+  // The gas of a balloon: a litre of CO2 weighs about 1,84 g (at 20 °C); and ten times that, a hundred, a thousand.
+  co2: [
+    { amount: 1.84, one: 'ballon de 1 L de CO₂', many: 'ballons de 1 L de CO₂', shape: 'balloon' },
+    { amount: 18.4, one: 'ballon de 10 L de CO₂', many: 'ballons de 10 L de CO₂', shape: 'balloon' },
+    { amount: 184, one: 'ballon de 100 L de CO₂', many: 'ballons de 100 L de CO₂', shape: 'balloon' },
+    { amount: 1_840, one: 'ballon de 1 000 L de CO₂', many: 'ballons de 1 000 L de CO₂', shape: 'balloon' },
+  ],
+  // A teaspoon, a glass, a bottle of a litre, a bucket, a bath.
+  water: [
+    { amount: 5, one: 'cuillère à café', many: 'cuillères à café', shape: 'spoon' },
+    { amount: 200, one: 'verre d’eau', many: 'verres d’eau', shape: 'glass' },
+    { amount: 1_000, one: 'bouteille d’1 L', many: 'bouteilles d’1 L', shape: 'bottle' },
+    { amount: 10_000, one: 'seau de 10 L', many: 'seaux de 10 L', shape: 'bucket' },
+    { amount: 150_000, one: 'baignoire', many: 'baignoires', shape: 'bath' },
+  ],
+}
+
+/** The most things drawn, and counted: past that they are all full and it says « plus de 10 ». */
+export const MAX_SHOWN = 10
+/** What is seen of a part that is there: a little something, however small. */
+const MIN_SEEN = 0.06
+
+export interface Units {
+  shape: GaugeShape
+  /** How many of the unit there are, with the figures that matter. */
+  count: number
+  /** « 3,4 bouteilles d’1 L ». */
+  text: string
+  /** How full each thing drawn is, from 0 to 1: the whole ones, then the part. */
+  levels: number[]
+}
+
+/** What a quantity is, in things that fill: « 3,4 bouteilles d’1 L » is three full bottles and one filled at 40 %. Nothing
+ * for nothing. */
+export function unitsOf(kind: GaugeKind, value: number): Units | null {
+  if (!(value > 0)) return null
+  const ladder = LADDERS[kind]
+  const unit = ladder.find((u) => value / u.amount < MAX_SHOWN) ?? ladder[ladder.length - 1]
+  const count = value / unit.amount
+  const over = count >= MAX_SHOWN
+  const levels = Array.from({ length: over ? MAX_SHOWN : Math.ceil(count) }, (_, i) =>
+    Math.round(Math.min(1, Math.max(MIN_SEEN, count - i)) * 100) / 100,
+  )
+  const text = over ? `plus de ${MAX_SHOWN} ${unit.many}` : `${figure(count)} ${plural(count, unit.one, unit.many)}`
+  return { shape: unit.shape, count, text, levels }
 }
 
 export const hasConsumption = (c: Consumption | null | undefined): c is Consumption => !!c && c.energyWh > 0
@@ -81,28 +126,6 @@ export function formatDuration(seconds: number): string {
   if (seconds < 60) return `${figure(seconds)} s`
   const minutes = Math.floor(seconds / 60)
   return `${minutes} min ${Math.round(seconds - minutes * 60)} s`
-}
-
-/** The electricity as muffins baked when it is that much, else as the time a LED bulb would stay lit. */
-export function electricityEquivalent(wh: number): string {
-  if (wh <= 0) return ''
-  if (wh >= EQUIVALENTS.muffinWh / 2) {
-    const muffins = wh / EQUIVALENTS.muffinWh
-    return `${figure(muffins)} ${plural(muffins, 'muffin cuit', 'muffins cuits')} au four`
-  }
-  const seconds = (wh / EQUIVALENTS.ledWatts) * 3600
-  return seconds >= 120 ? `une ampoule LED allumée ${figure(seconds / 60)} min` : `une ampoule LED allumée ${figure(seconds)} s`
-}
-
-/** The water as bottles of water when it is half of one or more, else as teaspoons. */
-export function waterEquivalent(ml: number): string {
-  if (ml <= 0) return ''
-  if (ml >= EQUIVALENTS.bottleMl / 2) {
-    const bottles = ml / EQUIVALENTS.bottleMl
-    return `${figure(bottles)} ${plural(bottles, 'bouteille', 'bouteilles')} d’eau`
-  }
-  const spoons = ml / EQUIVALENTS.teaspoonMl
-  return `${figure(spoons)} ${plural(spoons, 'cuillère à café', 'cuillères à café')}`
 }
 
 /** The CO2 as the distance a car would drive to emit it. */

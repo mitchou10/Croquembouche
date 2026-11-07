@@ -2,13 +2,12 @@
 import { computed } from 'vue'
 import {
   co2Equivalent,
-  electricityEquivalent,
   formatCo2,
   formatDuration,
   formatEnergy,
   formatWater,
-  gaugeLevel,
-  waterEquivalent,
+  MAX_SHOWN,
+  unitsOf,
 } from '../composables/consumption'
 import type { Consumption } from '../data/mock'
 import ConsumptionGauge from './ConsumptionGauge.vue'
@@ -16,10 +15,11 @@ import ConsumptionGauge from './ConsumptionGauge.vue'
 /** What computing something consumed: the electricity, the CO2 it made and the water it cost, each with what that is like. */
 const props = defineProps<{ consumption: Consumption; heading: string; compact?: boolean }>()
 
+// Each one in things that fill, which can be counted: bulbs lit, balloons of gas, bottles of water.
 const items = computed(() => [
-  { key: 'energy' as const, label: 'Électricité', value: formatEnergy(props.consumption.energyWh), like: electricityEquivalent(props.consumption.energyWh), level: gaugeLevel('energy', props.consumption.energyWh) },
-  { key: 'co2' as const, label: 'CO₂', value: formatCo2(props.consumption.co2G), like: co2Equivalent(props.consumption.co2G), level: gaugeLevel('co2', props.consumption.co2G) },
-  { key: 'water' as const, label: 'Eau', value: formatWater(props.consumption.waterMl), like: waterEquivalent(props.consumption.waterMl), level: gaugeLevel('water', props.consumption.waterMl) },
+  { key: 'energy' as const, label: 'Électricité', value: formatEnergy(props.consumption.energyWh), units: unitsOf('energy', props.consumption.energyWh), like: '' },
+  { key: 'co2' as const, label: 'CO₂', value: formatCo2(props.consumption.co2G), units: unitsOf('co2', props.consumption.co2G), like: co2Equivalent(props.consumption.co2G) },
+  { key: 'water' as const, label: 'Eau', value: formatWater(props.consumption.waterMl), units: unitsOf('water', props.consumption.waterMl), like: '' },
 ])
 </script>
 
@@ -30,15 +30,15 @@ const items = computed(() => [
     </p>
     <ul class="consumption__items">
       <li v-for="item in items" :key="item.key" class="consumption__item" :data-testid="`consumption-${item.key}`">
-        <ConsumptionGauge
-          :kind="item.key"
-          :level="item.level"
-          :size="compact ? 24 : 34"
-          class="consumption__gauge"
-          title="Remplissage indicatif, sur une échelle logarithmique : plein, c’est un muffin cuit, un kilomètre en voiture ou une bouteille d’eau."
-        />
         <span class="consumption__label">{{ item.label }}</span>
         <strong class="consumption__value" data-testid="consumption-value">{{ item.value }}</strong>
+        <template v-if="item.units">
+          <span class="consumption__things" aria-hidden="true" data-testid="consumption-things">
+            <ConsumptionGauge v-for="(level, i) in item.units.levels" :key="i" :shape="item.units.shape" :level="level" :index="i" :width="compact ? 14 : 18" />
+            <span v-if="item.units.count >= MAX_SHOWN" class="consumption__more">+</span>
+          </span>
+          <span class="consumption__like" data-testid="consumption-units">≈ {{ item.units.text }}</span>
+        </template>
         <span v-if="item.like" class="consumption__like" data-testid="consumption-like">≈ {{ item.like }}</span>
       </li>
     </ul>
@@ -70,20 +70,23 @@ const items = computed(() => [
 
 .consumption__item {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  column-gap: 0.625rem;
-  row-gap: 0.125rem;
-  align-items: start;
+  align-content: start;
+  gap: 0.125rem;
   min-width: 0;
 }
 
-.consumption__gauge {
-  grid-row: 1 / span 3;
-  align-self: center;
+/* What it is in things that fill: they wrap when there are many. */
+.consumption__things {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.25rem;
+  padding: 0.125rem 0;
 }
 
-.consumption__item > :not(.consumption__gauge) {
-  grid-column: 2;
+.consumption__more {
+  color: var(--text-mention-grey);
+  line-height: 1;
 }
 
 .consumption__label {

@@ -1,59 +1,71 @@
 <script setup lang="ts">
 import { computed, useId } from 'vue'
-import type { GaugeKind } from '../composables/consumption'
+import type { GaugeShape } from '../composables/consumption'
 
 /**
- * A thing that fills as much as what was consumed: a light bulb for the electricity, a balloon of gas for the CO2, a
- * bottle for the water. It fills when it appears, and moves a little after (a wave, bubbles, a glow) unless the person
- * asked for less motion.
+ * One thing that fills as much as what it stands for: a light bulb, a balloon of gas, a teaspoon, a glass, a bottle, a bucket
+ * or a bath. It
+ * fills when it appears (each one a little after the one before), and moves a little after (a wave, bubbles, a glow)
+ * unless the person asked for less motion.
  */
-const props = defineProps<{ kind: GaugeKind; level: number; size?: number }>()
+const props = defineProps<{ shape: GaugeShape; level: number; width?: number; index?: number }>()
 
 const id = useId()
-const HEIGHT = 64
 const level = computed(() => Math.min(1, Math.max(0, props.level)))
-// What can be filled in each drawing, as the heights of its inside: full is its top, empty its bottom (the base of a
-// bulb is not filled, nor the air above a balloon).
-const inside = { water: [5, 63], energy: [5, 40], co2: [5, 41] } as const
+
+// The outline of each drawing, on a 40 x 64 board, and what can be filled in it: from its top (full) to its bottom (empty).
+const outlines: Record<GaugeShape, string> = {
+  bottle: 'M14 3h12v8c0 4 8 6 8 14v34a4 4 0 0 1-4 4H10a4 4 0 0 1-4-4V25c0-8 8-10 8-14z',
+  glass: 'M7 8h26l-3 51a4 4 0 0 1-4 4H14a4 4 0 0 1-4-4z',
+  spoon: 'M20 4c-8 0-12 7-12 14s5 11 12 11 12-4 12-11S28 4 20 4z',
+  bulb: 'M20 3a16 16 0 0 0-9 29c2 2 3 4 3 7v3h12v-3c0-3 1-5 3-7A16 16 0 0 0 20 3z',
+  balloon: 'M20 4c11 0 17 8 17 18 0 11-8 20-17 20S3 33 3 22C3 12 9 4 20 4z',
+  bucket: 'M7 22h26l-3 36a4 4 0 0 1-4 4H14a4 4 0 0 1-4-4z',
+  bath: 'M3 30h34v8a14 14 0 0 1-14 14H17A14 14 0 0 1 3 38z',
+}
+const inside: Record<GaugeShape, [number, number]> = {
+  bottle: [5, 63],
+  glass: [9, 62],
+  spoon: [5, 29],
+  bulb: [5, 40],
+  balloon: [5, 41],
+  bucket: [23, 61],
+  bath: [32, 51],
+}
 const style = computed(() => ({
   '--level': String(level.value),
-  '--top': String(inside[props.kind][0]),
-  '--bottom': String(inside[props.kind][1]),
+  '--top': String(inside[props.shape][0]),
+  '--bottom': String(inside[props.shape][1]),
+  '--delay': `${(props.index ?? 0) * 0.14}s`,
 }))
-
-const outlines: Record<GaugeKind, string> = {
-  water: 'M14 3h12v8c0 4 8 6 8 14v34a4 4 0 0 1-4 4H10a4 4 0 0 1-4-4V25c0-8 8-10 8-14z',
-  energy: 'M20 3a16 16 0 0 0-9 29c2 2 3 4 3 7v3h12v-3c0-3 1-5 3-7A16 16 0 0 0 20 3z',
-  co2: 'M20 4c11 0 17 8 17 18 0 11-8 20-17 20S3 33 3 22C3 12 9 4 20 4z',
-}
+const waves = computed(() => ['bottle', 'glass', 'bucket', 'bath'].includes(props.shape))
+const size = computed(() => props.width ?? 22)
 </script>
 
 <template>
-  <span class="gauge" :class="`gauge--${kind}`" :style="style" :data-level="level" data-testid="gauge" aria-hidden="true">
-    <svg :width="size ?? 40" :height="((size ?? 40) * HEIGHT) / 40" viewBox="0 0 40 64" focusable="false">
+  <span class="gauge" :class="`gauge--${shape}`" :style="style" :data-level="level" data-testid="gauge" aria-hidden="true">
+    <svg :width="size" :height="(size * 64) / 40" viewBox="0 0 40 64" focusable="false">
       <defs>
-        <clipPath :id="`${id}-clip`"><path :d="outlines[kind]" /></clipPath>
+        <clipPath :id="`${id}-clip`"><path :d="outlines[shape]" /></clipPath>
       </defs>
       <g :clip-path="`url(#${id}-clip)`">
         <rect class="gauge__empty" x="0" y="0" width="40" height="64" />
         <g class="gauge__fill" data-testid="gauge-fill">
           <rect class="gauge__liquid" x="-10" y="0" width="60" height="70" />
-          <path v-if="kind === 'water'" class="gauge__wave" d="M-20 0q5-3 10 0t10 0 10 0 10 0 10 0 10 0 10 0 10 0v6h-80z" />
-          <template v-if="kind === 'co2'">
+          <path v-if="waves" class="gauge__wave" d="M-20 0q5-3 10 0t10 0 10 0 10 0 10 0 10 0 10 0 10 0v6h-80z" />
+          <template v-if="shape === 'balloon'">
             <circle class="gauge__bubble gauge__bubble--1" cx="12" cy="40" r="2" />
             <circle class="gauge__bubble gauge__bubble--2" cx="22" cy="44" r="1.5" />
             <circle class="gauge__bubble gauge__bubble--3" cx="29" cy="38" r="2.5" />
           </template>
         </g>
       </g>
-      <path class="gauge__outline" :d="outlines[kind]" />
-      <template v-if="kind === 'energy'">
-        <path class="gauge__outline" d="M14 46h12M15 50h10M17 54h6" />
-      </template>
-      <template v-if="kind === 'co2'">
-        <path class="gauge__outline" d="M17 42l3 4 3-4z" />
-        <text class="gauge__text" x="20" y="27" text-anchor="middle">CO₂</text>
-      </template>
+      <path class="gauge__outline" :d="outlines[shape]" />
+      <path v-if="shape === 'spoon'" class="gauge__outline gauge__handle" d="M18.5 29h3l-.8 33h-1.4z" />
+      <path v-if="shape === 'bulb'" class="gauge__outline" d="M14 46h12M15 50h10M17 54h6" />
+      <path v-if="shape === 'balloon'" class="gauge__outline" d="M17 42l3 5 3-5z" />
+      <path v-if="shape === 'bucket'" class="gauge__outline" d="M10 22c0-12 20-12 20 0" />
+      <path v-if="shape === 'bath'" class="gauge__outline" d="M8 52l-2 6M32 52l2 6M30 30V16c0-4-6-4-6 0" />
     </svg>
   </span>
 </template>
@@ -75,14 +87,13 @@ const outlines: Record<GaugeKind, string> = {
 .gauge__outline {
   fill: none;
   stroke: var(--text-mention-grey, #666);
-  stroke-width: 2;
+  stroke-width: 2.5;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
 
-.gauge__text {
-  fill: var(--text-default-grey, #161616);
-  font: 700 9px sans-serif;
+.gauge__handle {
+  fill: var(--text-mention-grey, #666);
 }
 
 .gauge__liquid,
@@ -90,11 +101,11 @@ const outlines: Record<GaugeKind, string> = {
   fill: var(--water);
 }
 
-.gauge--energy .gauge__liquid {
+.gauge--bulb .gauge__liquid {
   fill: var(--light);
 }
 
-.gauge--co2 .gauge__liquid {
+.gauge--balloon .gauge__liquid {
   fill: var(--gas);
 }
 
@@ -103,10 +114,10 @@ const outlines: Record<GaugeKind, string> = {
   opacity: 0.7;
 }
 
-/* Where the fill rests: its top at the level of the gauge. It starts empty (at the bottom of the inside) and rises. */
+/* Where the fill rests: its top at the level of the thing. It starts empty (at the bottom of the inside) and rises. */
 .gauge__fill {
   transform: translateY(calc((var(--bottom) - var(--level) * (var(--bottom) - var(--top))) * 1px));
-  animation: gauge-rise 1.8s cubic-bezier(0.4, 0, 0.2, 1) both;
+  animation: gauge-rise 1.6s cubic-bezier(0.4, 0, 0.2, 1) var(--delay) both;
 }
 
 @keyframes gauge-rise {
@@ -148,7 +159,7 @@ const outlines: Record<GaugeKind, string> = {
   }
 }
 
-.gauge--energy {
+.gauge--bulb {
   filter: drop-shadow(0 0 calc(var(--level) * 5px) var(--light));
   animation: gauge-glow 2.4s ease-in-out infinite alternate;
 }
@@ -166,7 +177,7 @@ const outlines: Record<GaugeKind, string> = {
   .gauge__fill,
   .gauge__wave,
   .gauge__bubble,
-  .gauge--energy {
+  .gauge--bulb {
     animation: none;
   }
 }
