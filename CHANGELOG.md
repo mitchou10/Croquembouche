@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.23.2](https://github.com/mitchou10/Croquembouche/compare/v1.23.1...v1.23.2) (2026-11-09)
+
+
+### Bug Fixes
+
+* **worker:** score a page of an analysis by its similarity, with a threshold of 0.80 ([1d51f04](https://github.com/mitchou10/Croquembouche/commit/1d51f04ce924bc66046618df2bc78b8c41f5cc9c))
+
 ## [1.23.1](https://github.com/mitchou10/Croquembouche/compare/v1.23.0...v1.23.1) (2026-11-09)
 
 
