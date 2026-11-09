@@ -16,6 +16,7 @@ import type {
   TemplateVersion,
   Zone,
 } from './mock'
+import type { Search, SearchSummary } from './search'
 
 /** What the backend refuses, with the reason it gives (in French, to show as is). */
 export class ApiError extends Error {
@@ -268,3 +269,21 @@ export const deleteElement = (id: string, runId: string, detectionId: string) =>
 export const postRunCancel = (id: string, runId: string) => runCall('POST', id, runId, '/cancel')
 export const putFileDecision = (id: string, runId: string, decision: 'kept' | 'deleted') =>
   runCall('PUT', id, runId, '/file', { decision })
+
+/** POST /api/searches: looks for the documents that look like a file, in the models given or in every one the person can
+ * see. It answers at once, `running`: the worker computes (see `fetchSearch`). */
+export function postSearch(file: File, k: number, templateIds: string[] | null) {
+  const form = new FormData()
+  form.append('file', file)
+  form.append('k', String(k))
+  if (templateIds) for (const id of templateIds) form.append('templateIds', id)
+  return request<Search>('POST', '/api/searches', form)
+}
+/** The searches of the person, the newest first. */
+export const fetchSearches = () => request<SearchSummary[]>('GET', '/api/searches')
+export const fetchSearch = (id: string) => request<Search>('GET', `/api/searches/${id}`)
+/** Deletes a search, and the pictures of the document that were kept with it. */
+export const deleteSearch = (id: string) => request<void>('DELETE', `/api/searches/${id}`)
+/** The image of a page (from 1) of the document of a search, and of a page of a model of the catalogue. */
+export const searchPageUrl = (id: string, page: number) => `/api/searches/${id}/pages/${page}`
+export const templatePageUrl = (id: string, page: number) => `/api/templates/${id}/pages/${page}`

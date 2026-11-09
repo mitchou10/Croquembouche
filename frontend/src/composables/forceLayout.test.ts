@@ -73,3 +73,27 @@ describe('the force layout', () => {
     expect(() => layout.settle()).not.toThrow()
   })
 })
+
+describe('the nodes that are put where they must be', () => {
+  it('keeps a held node at the place it was given, and the others around', () => {
+    const layout = createLayout(
+      [
+        { id: 'a', radius: 40, fixed: true, x: 100, y: 270 },
+        { id: 'b', radius: 40, fixed: true, x: 700, y: 270 },
+        { id: 'n', radius: 30 },
+      ],
+      [
+        { source: 'a', target: 'n', distance: 200, strength: 0.8 },
+        { source: 'b', target: 'n', distance: 200, strength: 0.8 },
+      ],
+      800,
+      540,
+    )
+    layout.settle()
+    expect(layout.nodes[0]).toMatchObject({ x: 100, y: 270 })
+    expect(layout.nodes[1]).toMatchObject({ x: 700, y: 270 })
+    // Linked to both, it sits between them.
+    expect(layout.nodes[2].x).toBeGreaterThan(250)
+    expect(layout.nodes[2].x).toBeLessThan(550)
+  })
+})

@@ -2,14 +2,14 @@
 import type { Analysis, Classification, Detection } from '../data/mock'
 
 // A small hash of the name of the file: the same file always gives the same answer, which is what a demo needs.
-function hash(text: string): number {
+export function hash(text: string): number {
   let h = 2166136261
   for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 16777619)
   return h >>> 0
 }
 
 /** A seeded source of numbers between 0 and 1 (mulberry32): the same seed, the same sequence. */
-function random(seed: number) {
+export function random(seed: number) {
   let a = seed >>> 0
   return () => {
     a = (a + 0x6d2b79f5) >>> 0

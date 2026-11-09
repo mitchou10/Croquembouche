@@ -2,119 +2,173 @@ import VueDsfr from '@gouvminint/vue-dsfr'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import { routes } from '../router'
-import SearchView from './SearchView.vue'
+import App from '../App.vue'
+import { resetCatalogue, useCatalogue } from '../composables/useCatalogue'
+import { resetAnalyses } from '../composables/useAnalyses'
+import { resetSearches, useSearches } from '../composables/useSearches'
+import { useSession } from '../composables/useSession'
+import { uploadDocument } from '../data/api'
+import { requireAuth, routes } from '../router'
 
-async function mountView() {
+async function mountAt(path: string) {
   const router = createRouter({ history: createMemoryHistory(), routes })
-  const wrapper = mount(SearchView, { global: { plugins: [VueDsfr, router] }, attachTo: document.body })
+  router.beforeEach(requireAuth)
+  await router.push(path)
+  const wrapper = mount(App, { global: { plugins: [VueDsfr, router] }, attachTo: document.body })
+  await vi.waitFor(() => expect(wrapper.find('h1').exists()).toBe(true))
   await flushPromises()
-  return wrapper
+  return { wrapper, router }
 }
 
-async function send(wrapper: Awaited<ReturnType<typeof mountView>>, file: File) {
-  const input = wrapper.get('[data-testid="file"]')
+type Page = Awaited<ReturnType<typeof mountAt>>
+
+async function send(page: Page, file: File) {
+  const input = page.wrapper.get('[data-testid="file"]')
   Object.defineProperty(input.element, 'files', { value: [file], configurable: true })
   await input.trigger('change')
   await flushPromises()
 }
 
-// jsdom has no pointer events: a mouse event of the same name is what the page listens to.
-const pointer = (target: Element | Window, type: string, x = 0, y = 0) =>
-  target.dispatchEvent(new MouseEvent(type, { button: 0, clientX: x, clientY: y, bubbles: true }))
-
 const png = (name = 'facture.png') => new File([new Uint8Array(10)], name, { type: 'image/png' })
+const pdf = (name = 'dossier.pdf') => new File([new Uint8Array(10)], name, { type: 'application/pdf' })
+const landsOn = (page: Page, name: string) => vi.waitFor(() => expect(page.router.currentRoute.value.name).toBe(name))
+
+/** Models that have a document, so that there is something to look like. */
+async function makeModels() {
+  const { create } = useCatalogue()
+  const made = []
+  for (const [name, type] of [['Facture', 'image/png'], ['Contrat', 'application/pdf'], ['Attestation', 'image/png']] as const) {
+    const document = await uploadDocument(new File(['x'], `${name}.x`, { type }))
+    made.push(await create({ name, description: '', categories: [], entities: [], pages: [] }, document))
+  }
+  return made
+}
 
 describe('the search page', () => {
   beforeEach(() => {
-    URL.createObjectURL = vi.fn(() => 'blob:test')
-    URL.revokeObjectURL = vi.fn()
     document.body.innerHTML = ''
+    URL.createObjectURL = vi.fn(() => 'blob:test')
+    resetCatalogue()
+    resetAnalyses()
+    resetSearches()
+    useSession().setUser('alice')
   })
 
-  it('asks for a document first, and nothing else', async () => {
-    const wrapper = await mountView()
-    expect(wrapper.find('[data-testid="dropzone"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="graph"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="again"]').exists()).toBe(false)
+  it('asks for a document, and says there is no search yet', async () => {
+    const page = await mountAt('/recherche')
+    expect(page.wrapper.find('[data-testid="dropzone"]').exists()).toBe(true)
+    expect(page.wrapper.get('[data-testid="history-empty"]').text()).toContain('pas encore fait de recherche')
   })
 
-  it('draws the document and its neighbours as a graph, and lists them beside it', async () => {
-    const wrapper = await mountView()
-    await send(wrapper, png())
-    expect(wrapper.find('[data-testid="dropzone"]').exists()).toBe(false)
-    // The document and six neighbours, each a picture.
-    expect(wrapper.findAll('[data-testid="graph"] image')).toHaveLength(7)
-    expect(wrapper.findAll('[data-testid="neighbours"] li')).toHaveLength(6)
-    expect(wrapper.get('[data-testid="node-query"]').attributes('aria-label')).toBe('Document envoyé : facture.png')
-  })
-
-  it('refuses what is not an image or a PDF, and what is too big', async () => {
-    const wrapper = await mountView()
-    await send(wrapper, new File(['x'], 'notes.txt', { type: 'text/plain' }))
-    expect(wrapper.get('[data-testid="fault"]').text()).toContain('Seuls les images')
-    expect(wrapper.find('[data-testid="graph"]').exists()).toBe(false)
-    await send(wrapper, new File([new Uint8Array(21 * 1024 * 1024)], 'gros.png', { type: 'image/png' }))
-    expect(wrapper.get('[data-testid="fault"]').text()).toContain('trop lourd')
-  })
-
-  it('chooses a neighbour from the list, and from the graph', async () => {
-    const wrapper = await mountView()
-    await send(wrapper, png())
-    await wrapper.get('[data-testid="neighbour-n2"]').trigger('click')
-    expect(wrapper.get('[data-testid="neighbour-n2"]').attributes('aria-pressed')).toBe('true')
-    expect(wrapper.get('[data-testid="node-n2"]').attributes('aria-pressed')).toBe('true')
-    expect(wrapper.get('[data-testid="selected"]').text()).toContain('ressemble à')
-
-    await wrapper.get('[data-testid="node-n3"]').trigger('keydown', { key: 'Enter' })
-    expect(wrapper.get('[data-testid="node-n3"]').attributes('aria-pressed')).toBe('true')
-    expect(wrapper.get('[data-testid="node-n2"]').attributes('aria-pressed')).toBe('false')
-
-    await wrapper.get('[data-testid="node-n3"]').trigger('keydown', { key: 'Enter' }) // again: let go of it
-    expect(wrapper.find('[data-testid="selected"]').exists()).toBe(false)
-  })
-
-  it('chooses a node with a click that hardly moves it', async () => {
-    const wrapper = await mountView()
-    await send(wrapper, png())
-    const node = wrapper.get('[data-testid="node-n1"]')
-    pointer(node.element, 'pointerdown', 10, 10)
-    pointer(window, 'pointerup', 10, 10)
+  it('sends the document, and opens the search, which is kept', async () => {
+    await makeModels()
+    const page = await mountAt('/recherche')
+    await send(page, png())
+    await landsOn(page, 'search-detail')
     await flushPromises()
-    expect(wrapper.get('[data-testid="node-n1"]').attributes('aria-pressed')).toBe('true')
+    expect(page.wrapper.get('[data-testid="title"]').text()).toBe('facture.png')
+    expect(page.wrapper.get('[data-testid="graph"]').exists()).toBe(true)
+    expect(useSearches().searches.value).toHaveLength(1)
   })
 
-  it('moves a node that is dragged, and does not choose it', async () => {
-    const wrapper = await mountView()
-    await send(wrapper, png())
-    const node = wrapper.get('[data-testid="node-n1"]')
-    const before = node.attributes('transform')
-    pointer(node.element, 'pointerdown', 0, 0)
-    pointer(window, 'pointermove', 120, 90)
-    pointer(window, 'pointerup', 120, 90)
-    await flushPromises()
-    expect(wrapper.get('[data-testid="node-n1"]').attributes('transform')).not.toBe(before)
-    expect(wrapper.get('[data-testid="node-n1"]').attributes('aria-pressed')).toBe('false')
+  it('refuses what is not an image or a PDF, and what is too big, without sending it', async () => {
+    const page = await mountAt('/recherche')
+    await send(page, new File(['x'], 'notes.txt', { type: 'text/plain' }))
+    expect(page.wrapper.get('[data-testid="fault"]').text()).toContain('Seuls les images')
+    await send(page, new File([new Uint8Array(21 * 1024 * 1024)], 'gros.png', { type: 'image/png' }))
+    expect(page.wrapper.get('[data-testid="fault"]').text()).toContain('trop lourd')
+    expect(useSearches().searches.value).toHaveLength(0)
+    expect(page.router.currentRoute.value.name).toBe('search')
   })
 
-  it('searches again with another number of neighbours', async () => {
-    const wrapper = await mountView()
-    await send(wrapper, png())
-    const k = wrapper.get('[data-testid="k"]')
-    ;(k.element as HTMLInputElement).value = '3'
+  it('looks in every model by default, and in the ones picked when asked', async () => {
+    const [facture] = await makeModels()
+    const page = await mountAt('/recherche')
+    expect((page.wrapper.get('[data-testid="scope-all"]').element as HTMLInputElement).checked).toBe(true)
+    expect(page.wrapper.find('[data-testid="scope-picker"]').exists()).toBe(false)
+
+    await page.wrapper.get('[data-testid="scope-some"]').trigger('change')
+    expect(page.wrapper.get('[data-testid="scope-count"]').text()).toBe('Aucun modèle choisi')
+    await send(page, png()) // nothing picked: it cannot look nowhere
+    expect(page.wrapper.get('[data-testid="fault"]').text()).toContain('au moins un modèle')
+
+    await page.wrapper.get(`[data-testid="scope-model-${facture.id}"]`).trigger('change')
+    expect(page.wrapper.get('[data-testid="scope-count"]').text()).toBe('1 modèle choisi')
+    await send(page, png('scan.png'))
+    await landsOn(page, 'search-detail')
+    expect(useSearches().searches.value[0].templateIds).toEqual([facture.id])
+  })
+
+  it('keeps what was picked when it goes back to every model', async () => {
+    const [facture] = await makeModels()
+    const page = await mountAt('/recherche')
+    await page.wrapper.get('[data-testid="scope-some"]').trigger('change')
+    await page.wrapper.get(`[data-testid="scope-model-${facture.id}"]`).trigger('change')
+    await page.wrapper.get('[data-testid="scope-all"]').trigger('change')
+    await page.wrapper.get('[data-testid="scope-some"]').trigger('change')
+    expect(page.wrapper.get('[data-testid="scope-count"]').text()).toBe('1 modèle choisi')
+  })
+
+  it('does not offer a model with no document to look like', async () => {
+    await makeModels()
+    await useCatalogue().create({ name: 'Sans exemple', description: '', categories: [], entities: [], pages: [] })
+    const page = await mountAt('/recherche')
+    await page.wrapper.get('[data-testid="scope-some"]').trigger('change')
+    const labels = page.wrapper.findAll('[data-testid="scope-picker"] label').map((l) => l.text())
+    expect(labels).toEqual(expect.arrayContaining(['Facture', 'Contrat', 'Attestation']))
+    expect(labels).not.toContain('Sans exemple')
+  })
+
+  it('asks for as many neighbours as wanted, between the limits', async () => {
+    await makeModels()
+    const page = await mountAt('/recherche')
+    const k = page.wrapper.get('[data-testid="k"]')
+    ;(k.element as HTMLInputElement).value = '99'
     await k.trigger('change')
-    expect(wrapper.findAll('[data-testid="neighbours"] li')).toHaveLength(3)
+    expect((k.element as HTMLInputElement).value).toBe('12')
+    ;(k.element as HTMLInputElement).value = '2'
+    await k.trigger('change')
+    await send(page, png())
+    await landsOn(page, 'search-detail')
+    expect(useSearches().searches.value[0].k).toBe(2)
   })
 
-  it('starts again from the dropzone', async () => {
-    const wrapper = await mountView()
-    await send(wrapper, png())
-    await wrapper.get('[data-testid="again"]').trigger('click')
-    expect(wrapper.find('[data-testid="dropzone"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="graph"]').exists()).toBe(false)
+  it('lists the searches made, each with what it consumed, and opens one again', async () => {
+    await makeModels()
+    await useSearches().start(png('ancienne.png'), 3, null)
+    resetSearches()
+    const page = await mountAt('/recherche')
+    const rows = page.wrapper.findAll('[data-testid="history"] li')
+    expect(rows).toHaveLength(1)
+    expect(rows[0].text()).toContain('ancienne.png')
+    expect(rows[0].text()).toContain('1 page')
+    expect(rows[0].text()).toContain('tous les modèles')
+    expect(rows[0].get('[data-testid="history-consumption"]').text()).toMatch(/Wh/)
+    await rows[0].get('a').trigger('click')
+    await landsOn(page, 'search-detail')
+    await flushPromises()
+    expect(page.wrapper.get('[data-testid="title"]').text()).toBe('ancienne.png')
   })
 
-  it('is reached from the sidebar route', () => {
-    expect(routes.flatMap((r) => r.children ?? []).some((r) => r.name === 'search' && r.path === 'recherche')).toBe(true)
+  it('deletes a search once it is sure', async () => {
+    await useSearches().start(png('ancienne.png'), 3, null)
+    resetSearches()
+    const page = await mountAt('/recherche')
+    await page.wrapper.get('[data-testid="history"] [data-testid="delete"]').trigger('click')
+    expect(page.wrapper.findAll('[data-testid="history"] li')).toHaveLength(1) // asked, not done yet
+    await page.wrapper.get('[data-testid="confirm-yes"]').trigger('click')
+    expect(page.wrapper.find('[data-testid="history"]').exists()).toBe(false)
+    expect(page.wrapper.get('[data-testid="history-empty"]').exists()).toBe(true)
+  })
+
+  it('says the searches could not be loaded', async () => {
+    vi.stubGlobal('fetch', vi.fn((path: string) => (path === '/api/searches' ? Promise.reject(new Error('down')) : Promise.resolve(new Response('[]')))))
+    const page = await mountAt('/recherche')
+    expect(page.wrapper.get('[data-testid="history-failed"]').exists()).toBe(true)
+  })
+
+  it('is in the sidebar', async () => {
+    const page = await mountAt('/recherche')
+    expect(page.wrapper.findAll('.app-sidebar__link').map((l) => l.text())).toContain('Recherche')
   })
 })

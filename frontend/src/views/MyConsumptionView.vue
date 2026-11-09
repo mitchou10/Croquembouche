@@ -31,9 +31,9 @@ const plural = (n: number, one: string, many: string) => `${n} ${n > 1 ? many : 
   <p v-else-if="!mine" role="status" data-testid="consumption-loading">Chargement…</p>
 
   <template v-else>
-    <p v-if="!mine.uses" class="fr-mb-0" data-testid="consumption-none">Vous n’avez pas encore testé d’analyse sur un document.</p>
+    <p v-if="!mine.uses && !mine.searches.count" class="fr-mb-0" data-testid="consumption-none">Vous n’avez pas encore testé d’analyse sur un document.</p>
 
-    <template v-else>
+    <template v-if="mine.uses">
       <p class="fr-text--sm" data-testid="consumption-uses">
         {{ plural(mine.uses, 'utilisation', 'utilisations') }}, dont {{ plural(mine.measured, 'mesurée', 'mesurées') }}.
         Une utilisation qui n’a pas été mesurée (avant cette fonction, ou une mesure qui a échoué) ne compte pour rien.
@@ -86,5 +86,18 @@ const plural = (n: number, one: string, many: string) => `${n} ${n > 1 ? many : 
         </div>
       </div>
     </template>
+
+    <section v-if="mine.searches.count" class="fr-mt-4w" aria-labelledby="searches-title" data-testid="consumption-searches">
+      <h2 id="searches-title" class="fr-h5">Mes recherches</h2>
+      <p class="fr-text--sm" data-testid="consumption-searches-count">
+        {{ plural(mine.searches.count, 'recherche', 'recherches') }}, dont {{ plural(mine.searches.measured, 'mesurée', 'mesurées') }}.
+      </p>
+      <ConsumptionSummary
+        v-if="hasConsumption(mine.searches.consumption)"
+        :consumption="mine.searches.consumption"
+        heading="Toutes mes recherches"
+        data-testid="my-searches-consumption"
+      />
+    </section>
   </template>
 </template>

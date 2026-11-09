@@ -54,7 +54,7 @@ function seeded(seed: number): () => number {
 }
 
 export function createLayout(
-  input: { id: string; radius: number; fixed?: boolean }[],
+  input: { id: string; radius: number; fixed?: boolean; x?: number; y?: number }[],
   links: LayoutLink[],
   width: number,
   height: number,
@@ -69,8 +69,9 @@ export function createLayout(
     return {
       id: node.id,
       radius: node.radius,
-      x: w / 2 + Math.cos(angle) * spread,
-      y: h / 2 + Math.sin(angle) * spread,
+      // A node that is held can be put where it must be (the pages of a document, in a row).
+      x: node.x ?? w / 2 + Math.cos(angle) * spread,
+      y: node.y ?? h / 2 + Math.sin(angle) * spread,
       vx: 0,
       vy: 0,
       fixed: node.fixed ?? false,

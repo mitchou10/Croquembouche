@@ -248,6 +248,8 @@ export interface MyConsumption {
   measured: number
   consumption: Consumption
   analyses: AnalysisConsumption[]
+  /** The searches for similar documents, which are not uses of an analysis: how many, how many were measured, and what they consumed. */
+  searches: { count: number; measured: number; consumption: Consumption }
 }
 
 export interface AnalysisRun {
