@@ -11,7 +11,7 @@ import { newEntity, resetCatalogue, useCatalogue } from './composables/useCatalo
 import { loadGroups, resetGroups } from './composables/useGroups'
 import { useSession } from './composables/useSession'
 import { requireAuth, routes } from './router'
-import { backendAnalysis, fakeFetch, uploaded } from './test/fakeBackend'
+import { backendAnalysis, fakeFetch, reindexCount, uploaded } from './test/fakeBackend'
 
 // Routes load their view on demand, which takes real time rather than just a few microtasks.
 const landsOn = (router: ReturnType<typeof createRouter>, name: string) =>
@@ -1734,6 +1734,25 @@ describe('testing the analysis', () => {
       expect(text).toContain('3,6 L')
       expect(text).toContain('8,3 ampoules LED allumées 1 jour') // 2 000 Wh
       expect(text).toContain('3,6 bouteilles d’1 L') // 3,6 L
+    })
+
+    it('has the catalogue indexed again, and says how much was sent', async () => {
+      useSession().setUser('admin', { isAdmin: true })
+      const { wrapper } = await mountAt('/vue-d-ensemble')
+      expect(wrapper.find('[data-testid="reindex-done"]').exists()).toBe(false)
+      await wrapper.get('[data-testid="reindex"]').trigger('click')
+      await vi.waitFor(() => expect(wrapper.find('[data-testid="reindex-done"]').exists()).toBe(true))
+      expect(reindexCount()).toBe(1)
+      expect(wrapper.get('[data-testid="reindex-done"]').text()).toMatch(/^Indexation demandée pour \d+ modèles?\.$/)
+    })
+
+    it('tells why the indexing could not be asked for', async () => {
+      useSession().setUser('admin', { isAdmin: true })
+      const { wrapper } = await mountAt('/vue-d-ensemble')
+      vi.stubGlobal('fetch', () => Promise.resolve(new Response('{"detail":"Le broker est injoignable."}', { status: 503 })))
+      await wrapper.get('[data-testid="reindex"]').trigger('click')
+      await vi.waitFor(() => expect(wrapper.find('[data-testid="reindex-fault"]').exists()).toBe(true))
+      expect(wrapper.find('[data-testid="reindex-done"]').exists()).toBe(false)
     })
 
     it('spreads the uses over their three states', async () => {

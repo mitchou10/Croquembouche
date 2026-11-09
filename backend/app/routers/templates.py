@@ -6,6 +6,7 @@ from app.dependencies import Catalogue, Quality
 from app.schemas.catalogue import (
     CommentCreate,
     Decision,
+    ReindexOut,
     SuggestionCreate,
     TemplateCreate,
     TemplateOut,
@@ -41,6 +42,11 @@ async def list_templates(service: Catalogue, q: str = "", mine: bool = False) ->
 @router.post("", status_code=status.HTTP_201_CREATED, summary="Make a model; the user becomes its owner")
 async def create(body: TemplateCreate, service: Catalogue) -> TemplateOut:
     return await _run(service.create(body, body.document_id, body.parent_id))
+
+
+@router.post("/reindex", summary="Index the whole catalogue again (administrators)")
+async def reindex(service: Catalogue) -> ReindexOut:
+    return await _run(service.reindex())
 
 
 @router.get("/{template_id}")

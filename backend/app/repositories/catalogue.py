@@ -96,6 +96,20 @@ class CatalogueRepository:
         )
         return list((await self._session.scalars(query)).all())
 
+    async def last_versions(self) -> list[TemplateVersion]:
+        """The last version of each X of every model: what the index keeps of a model that has changed its document."""
+        query = (
+            select(TemplateVersion)
+            .distinct(TemplateVersion.template_id, TemplateVersion.major)
+            .order_by(
+                TemplateVersion.template_id,
+                TemplateVersion.major,
+                TemplateVersion.minor.desc(),
+                TemplateVersion.patch.desc(),
+            )
+        )
+        return list((await self._session.scalars(query)).all())
+
     async def get_version(self, template_id: uuid.UUID, version: str) -> TemplateVersion | None:
         try:
             major, minor, patch = (int(part) for part in version.split("."))

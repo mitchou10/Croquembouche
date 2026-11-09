@@ -114,6 +114,8 @@ export const fetchMyQuality = () => request<QualityOverview>('GET', '/api/metric
 export const fetchMyConsumption = () => request<MyConsumption>('GET', '/api/metrics/me/consumption')
 /** What everyone decided: administrators only. */
 export const fetchAllQuality = () => request<QualityOverview>('GET', '/api/metrics')
+/** Has the catalogue indexed again by the worker: administrators only. Says how much was sent. */
+export const postReindex = () => request<{ templates: number; versions: number }>('POST', `${base}/reindex`)
 export const postTemplate = (body: TemplateBody) => call('POST', base, body)
 export const putTemplate = (id: string, body: TemplateBody) => call('PUT', `${base}/${id}`, body)
 /** Deletes a model: its owner only, and not one an analysis looks for. */
