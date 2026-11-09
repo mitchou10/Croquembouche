@@ -1,6 +1,6 @@
 [project]
 name = "croquembouche-worker-ocr"
-version = "1.22.0"
+version = "1.23.0"
 description = "Croquembouche OCR worker (PaddleOCR, CPU)"
 requires-python = ">=3.13"
 dependencies = [
