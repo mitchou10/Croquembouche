@@ -13,7 +13,8 @@ import type {
   QualityOverview,
 } from '../data/mock'
 import { analyses as analysisSeed, entityTypeSeed, groupSeed, sampleLetter, templates as seed } from '../data/mock'
-import { simulatePage, simulateTest } from './simulate'
+import type { Search, SearchSummary } from '../data/search'
+import { hash, random, simulatePage, simulateTest } from './simulate'
 import { changedFields, cleanCategories, cleanList, MAX_EXAMPLES, MAX_TAGS } from '../composables/useCatalogue'
 import { totalConsumption } from '../composables/consumption'
 import { useSession } from '../composables/useSession'
@@ -75,6 +76,11 @@ function seedTemplates(): Stored[] {
 }
 
 let analyses: Analysis[] = []
+// The searches for similar documents. One whose file is named « slow » or « broken » is answered by the worker later, at the
+// second time it is asked for.
+let searches: StoredSearch[] = []
+const searchAnswers = new Map<string, () => void>()
+const searchAsked = new Map<string, number>()
 /** An analysis as the backend itself holds it, for the tests to look at what the pages did to it. */
 export const backendAnalysis = (id: string) => analyses.find((a) => a.id === id)!
 
@@ -107,6 +113,9 @@ export function resetBackend() {
   analyses = seedAnalyses()
   uploads.clear()
   history.clear()
+  searches = []
+  searchAnswers.clear()
+  searchAsked.clear()
   sequence = 0
 }
 resetBackend()
@@ -210,6 +219,7 @@ export async function fakeFetch(path: string, init: RequestInit = {}): Promise<A
     return isAdmin.value ? reply(200, overviewOf()) : refuse(403, 'Réservé aux administrateurs.')
   }
   if (parts[0] === 'analyses') return analysesRoute(user, isAdmin.value, method, parts, body, init)
+  if (parts[0] === 'searches') return searchesRoute(user, method, parts, init)
 
   if (parts[0] !== 'templates') return refuse(404, 'Not found')
 
@@ -504,11 +514,17 @@ function consumptionOf(user: string) {
       return { id: analysis.id, name: analysis.name, uses: runs.length, measured: runs.filter((r) => r.consumption).length, consumption }
     })
     .sort((a, b) => b.consumption.energyWh - a.consumption.energyWh || a.name.localeCompare(b.name))
+  const mine = searches.filter((s) => s.ownerId === user)
   return {
     uses: rows.reduce((n, r) => n + r.uses, 0),
     measured: rows.reduce((n, r) => n + r.measured, 0),
     consumption: totalConsumption(rows.map((r) => ({ consumption: r.consumption }) as Analysis)),
     analyses: rows,
+    searches: {
+      count: mine.length,
+      measured: mine.filter((s) => s.consumption).length,
+      consumption: totalConsumption(mine.map((s) => ({ consumption: s.consumption ?? undefined }) as Analysis)),
+    },
   }
 }
 
@@ -757,4 +773,91 @@ function analysesRoute(user: string, admin: boolean, method: string, parts: stri
     return reply(200, runView(run, user))
   }
   return refuse(404, 'Not found')
+}
+
+// --- the searches for similar documents
+
+interface StoredSearch extends Search {
+  ownerId: string
+}
+/**
+ * The pages of models that look like each page of a document, made up: the same file always gets the same ones. Only a
+ * model with a document has pages to look like, as in the real index. Neighbours are one node whatever the pages of the
+ * document they look like; the pages of one model look like each other.
+ */
+function neighbourhood(file: { name: string; size: number }, pages: number, k: number, scope: string[] | null) {
+  const candidates = templates
+    .filter((t) => t.document && (!scope || scope.includes(t.id)))
+    .flatMap((t) => Array.from({ length: t.document!.pages }, (_, i) => ({ id: `${t.id}:${i + 1}`, templateId: t.id, templatePage: i + 1 })))
+  const links: Search['links'] = []
+  const best = new Map<string, number>()
+  for (let page = 1; page <= pages; page++) {
+    const top = candidates
+      .map((c) => ({ c, similarity: Math.round((0.55 + 0.42 * random(hash(`${file.name}|${file.size}|${page}|${c.id}`))()) * 100) / 100 }))
+      .sort((a, b) => b.similarity - a.similarity || a.c.id.localeCompare(b.c.id))
+      .slice(0, k)
+    for (const { c, similarity } of top) {
+      links.push({ source: `page-${page}`, target: c.id, similarity })
+      best.set(c.id, Math.max(best.get(c.id) ?? 0, similarity))
+    }
+  }
+  const neighbours = candidates.filter((c) => best.has(c.id)).map((c) => ({ ...c, similarity: best.get(c.id)! }))
+  for (const [i, a] of neighbours.entries())
+    for (const b of neighbours.slice(i + 1))
+      if (a.templateId === b.templateId) links.push({ source: a.id, target: b.id, similarity: Math.round(Math.min(a.similarity, b.similarity) * 90) / 100 })
+  return { neighbours, links }
+}
+
+const summaryOf = ({ neighbours, links: _links, ownerId: _owner, ...summary }: StoredSearch): SearchSummary => ({ ...summary, neighbourCount: neighbours.length })
+const searchView = ({ ownerId: _owner, ...search }: StoredSearch): Search => search
+
+function searchesRoute(user: string, method: string, parts: string[], init: RequestInit): Answer {
+  if (parts.length === 1) {
+    if (method === 'GET') return reply(200, searches.filter((s) => s.ownerId === user).map(summaryOf))
+    const form = init.body as FormData
+    const file = form.get('file') as File
+    if (!['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'application/pdf'].includes(file.type)) {
+      return refuse(422, 'Seuls les images (PNG, JPEG, WebP, GIF) et les PDF sont acceptés.')
+    }
+    const k = Math.max(1, Math.min(12, Math.round(Number(form.get('k'))) || 6))
+    const scope = form.getAll('templateIds').map(String)
+    const pages = pagesInFile(file)
+    const later = /slow|broken/.test(file.name)
+    const found = neighbourhood(file, pages, k, scope.length ? scope : null)
+    const search: StoredSearch = {
+      id: newId('s'),
+      ownerId: user,
+      fileName: file.name,
+      status: later ? 'running' : 'done',
+      k,
+      templateIds: scope.length ? scope : null,
+      createdAt: new Date().toISOString(),
+      pages,
+      neighbourCount: later ? 0 : found.neighbours.length,
+      consumption: later ? null : CONSUMED,
+      neighbours: later ? [] : found.neighbours,
+      links: later ? [] : found.links,
+    }
+    searches = [search, ...searches]
+    if (later) {
+      searchAnswers.set(search.id, () => {
+        searchAnswers.delete(search.id)
+        if (file.name.includes('broken')) search.status = 'failed'
+        else Object.assign(search, { status: 'done', consumption: CONSUMED, neighbours: found.neighbours, links: found.links, neighbourCount: found.neighbours.length })
+      })
+    }
+    return reply(201, searchView(search))
+  }
+  // A search is its person's alone, an administrator included.
+  const search = searches.find((s) => s.id === parts[1] && s.ownerId === user)
+  if (!search) return refuse(404, 'Not found')
+  if (parts.length === 2 && method === 'DELETE') {
+    searches = searches.filter((s) => s.id !== search.id)
+    return reply(204)
+  }
+  if (parts[2] === 'pages') return reply(200, {})
+  const seen = (searchAsked.get(search.id) ?? 0) + 1
+  searchAsked.set(search.id, seen)
+  if (seen >= 2) searchAnswers.get(search.id)?.()
+  return reply(200, searchView(search))
 }

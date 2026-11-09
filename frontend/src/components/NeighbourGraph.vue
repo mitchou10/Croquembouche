@@ -1,51 +1,57 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, useId, watch } from 'vue'
 import { createLayout, type Layout, type LayoutLink } from '../composables/forceLayout'
-import type { Neighbour, NeighbourLink } from '../data/similar'
 
 /**
- * The documents that look like the one that was sent, as a force graph: the document in the middle, the neighbours
- * around it, each as a picture of itself. The closer a neighbour looks to the document, the closer it sits and the
- * bigger and the thicker its link is; the neighbours that look like each other are linked too, which makes groups.
- * A node can be dragged (the others give way to it) and chosen, with the mouse, the finger or the keyboard.
+ * The documents that look like the one that was sent, as a force graph. The pages of the document sit in a row in the
+ * middle (one for an image, one for each page of a PDF), the pages of the models that look like them around, each as a
+ * picture of itself, linked to the pages it looks like. The closer a neighbour looks to a page, the closer it sits and the
+ * bigger and the thicker its link is; neighbours that look like each other are linked too, which makes groups.
+ * A node can be dragged (the others give way to it); a neighbour can be chosen, with the mouse, the finger or the keyboard.
  */
+interface Node {
+  id: string
+  label: string
+  imageUrl: string
+}
+interface Neighbour extends Node {
+  /** 0 to 1: the biggest it is on any page. */
+  similarity: number
+}
+
 const props = defineProps<{
-  query: { name: string; imageUrl: string }
+  pages: Node[]
   neighbours: Neighbour[]
-  links: NeighbourLink[]
+  links: { source: string; target: string; similarity: number }[]
   selectedId?: string | null
 }>()
 const emit = defineEmits<{ select: [id: string | null] }>()
 
-// The graph is drawn at the size it is shown at (the picture's own units are pixels), so it fills its frame.
+// The graph is drawn at the size of its frame (the picture's units are pixels), so it fills it; a document with many pages
+// is wider than the frame, which then scrolls sideways.
 const DEFAULT_WIDTH = 800
 const DEFAULT_HEIGHT = 540
-const width = ref(DEFAULT_WIDTH)
-const height = ref(DEFAULT_HEIGHT)
+const PAGE_SLOT = 84
+const RATIO = 190 / 140 // a sheet is taller than wide
 // What a node needs besides its picture: its name and its score, below it.
 const CAPTION = 22
-const QUERY_ID = 'query'
-const RATIO = 190 / 140 // a sheet is taller than wide
+const frameWidth = ref(DEFAULT_WIDTH)
+const height = ref(DEFAULT_HEIGHT)
+const width = computed(() => Math.max(frameWidth.value, props.pages.length > 1 ? props.pages.length * PAGE_SLOT : 0))
 const uid = useId()
 
-interface Drawn {
-  id: string
-  label: string
+interface Drawn extends Node {
   similarity: number | null
-  imageUrl: string
-  width: number
-  height: number
+  isPage: boolean
+  w: number
+  h: number
   x: number
   y: number
 }
 
-const sizes = computed(() => {
-  const sizeOf = (similarity: number) => 56 + similarity * 28
-  return new Map<string, number>([
-    [QUERY_ID, 96],
-    ...props.neighbours.map((n) => [n.id, sizeOf(n.similarity)] as [string, number]),
-  ])
-})
+const pageWidth = computed(() => (props.pages.length === 1 ? 96 : Math.max(36, Math.min(80, width.value / props.pages.length - 16))))
+const widthOf = (similarity: number | null) => (similarity === null ? pageWidth.value : 56 + similarity * 28)
+const isPage = (id: string) => props.pages.some((p) => p.id === id)
 
 const positions = shallowRef<Map<string, { x: number; y: number }>>(new Map())
 let layout: Layout | null = null
@@ -59,14 +65,32 @@ function build() {
   cancelAnimationFrame(frame)
   // The distances are for a graph of 540 px: a bigger frame spreads the nodes out, a smaller one brings them together.
   const scale = Math.min(width.value, height.value) / DEFAULT_HEIGHT
-  const wanted: LayoutLink[] = [
-    ...props.neighbours.map((n) => ({ source: QUERY_ID, target: n.id, distance: (150 + (1 - n.similarity) * 260) * scale, strength: 0.8 })),
-    ...props.links.map((l) => ({ source: l.source, target: l.target, distance: (170 + (1 - l.similarity) * 200) * scale, strength: 0.25 })),
-  ]
+  // Never nearer than two nodes can be without covering each other, whatever the similarity says.
+  const radii = new Map<string, number>([
+    ...props.pages.map((p) => [p.id, (pageWidth.value * RATIO) / 2 + CAPTION] as [string, number]),
+    ...props.neighbours.map((n) => [n.id, (widthOf(n.similarity) * RATIO) / 2 + CAPTION] as [string, number]),
+  ])
+  const wanted: LayoutLink[] = props.links.map((l) => {
+    const toPage = isPage(l.source) || isPage(l.target)
+    const wish = (toPage ? 150 + (1 - l.similarity) * 260 : 170 + (1 - l.similarity) * 200) * scale
+    return {
+      source: l.source,
+      target: l.target,
+      distance: Math.max(wish, (radii.get(l.source) ?? 0) + (radii.get(l.target) ?? 0) + 12),
+      strength: toPage ? 0.8 : 0.25,
+    }
+  })
   layout = createLayout(
     [
-      { id: QUERY_ID, radius: ((sizes.value.get(QUERY_ID) ?? 96) * RATIO) / 2 + CAPTION, fixed: true },
-      ...props.neighbours.map((n) => ({ id: n.id, radius: ((sizes.value.get(n.id) ?? 60) * RATIO) / 2 + CAPTION })),
+      // The pages of the document, held, in a row.
+      ...props.pages.map((p, i) => ({
+        id: p.id,
+        radius: (pageWidth.value * RATIO) / 2 + CAPTION,
+        fixed: true,
+        x: ((i + 0.5) * width.value) / props.pages.length,
+        y: height.value / 2,
+      })),
+      ...props.neighbours.map((n) => ({ id: n.id, radius: (widthOf(n.similarity) * RATIO) / 2 + CAPTION })),
     ],
     wanted,
     width.value,
@@ -85,20 +109,21 @@ function animate() {
   frame = energy > 0.05 || dragging.value ? requestAnimationFrame(animate) : 0
 }
 
-watch(() => [props.neighbours, props.links], build, { immediate: true })
+watch(() => [props.pages, props.neighbours, props.links], build, { immediate: true })
 
 // Follows the size of the frame: the layout is made again for it (it settles at once, and is the same each time).
+const scroller = ref<HTMLElement>()
 let observer: ResizeObserver | undefined
 onMounted(() => {
-  if (typeof ResizeObserver === 'undefined' || !svg.value) return
+  if (typeof ResizeObserver === 'undefined' || !scroller.value) return
   observer = new ResizeObserver(([entry]) => {
     const { width: w, height: h } = entry.contentRect
-    if (!w || !h || (Math.abs(w - width.value) < 8 && Math.abs(h - height.value) < 8)) return
-    width.value = Math.round(w)
+    if (!w || !h || (Math.abs(w - frameWidth.value) < 8 && Math.abs(h - height.value) < 8)) return
+    frameWidth.value = Math.round(w)
     height.value = Math.round(h)
     build()
   })
-  observer.observe(svg.value)
+  observer.observe(scroller.value)
 })
 onBeforeUnmount(() => {
   observer?.disconnect()
@@ -108,28 +133,26 @@ onBeforeUnmount(() => {
 
 const nodes = computed<Drawn[]>(() => {
   const at = (id: string) => positions.value.get(id) ?? { x: width.value / 2, y: height.value / 2 }
-  const size = (id: string) => sizes.value.get(id) ?? 60
-  return [
-    { id: QUERY_ID, label: props.query.name, similarity: null, imageUrl: props.query.imageUrl, ...at(QUERY_ID), width: size(QUERY_ID), height: size(QUERY_ID) * RATIO },
-    ...props.neighbours.map((n) => ({ id: n.id, label: n.name, similarity: n.similarity, imageUrl: n.imageUrl, ...at(n.id), width: size(n.id), height: size(n.id) * RATIO })),
-  ]
+  const drawn = (n: Node, similarity: number | null): Drawn => {
+    const w = widthOf(similarity)
+    return { ...n, similarity, isPage: similarity === null, w, h: w * RATIO, ...at(n.id) }
+  }
+  return [...props.pages.map((p) => drawn(p, null)), ...props.neighbours.map((n) => drawn(n, n.similarity))]
 })
 
-const edges = computed(() => {
-  const at = (id: string) => positions.value.get(id)
-  return [
-    ...props.neighbours.map((n) => ({ key: `q-${n.id}`, from: QUERY_ID, to: n.id, similarity: n.similarity, strong: true })),
-    ...props.links.map((l) => ({ key: `${l.source}-${l.target}`, from: l.source, to: l.target, similarity: l.similarity, strong: false })),
-  ].flatMap((e) => {
-    const a = at(e.from)
-    const b = at(e.to)
-    return a && b ? [{ ...e, x1: a.x, y1: a.y, x2: b.x, y2: b.y }] : []
-  })
-})
+const edges = computed(() =>
+  props.links.flatMap((l) => {
+    const a = positions.value.get(l.source)
+    const b = positions.value.get(l.target)
+    const strong = isPage(l.source) || isPage(l.target)
+    return a && b ? [{ key: `${l.source}>${l.target}`, similarity: l.similarity, strong, x1: a.x, y1: a.y, x2: b.x, y2: b.y }] : []
+  }),
+)
 
 const percent = (similarity: number) => `${Math.round(similarity * 100)} %`
 const shorten = (text: string) => (text.length > 22 ? `${text.slice(0, 21)}…` : text)
-const ariaLabel = (n: Drawn) => (n.similarity === null ? `Document envoyé : ${n.label}` : `${n.label}, ressemblance ${percent(n.similarity)}`)
+const ariaLabel = (n: Drawn) =>
+  n.similarity === null ? `Page du document envoyé : ${n.label}` : `${n.label}, ressemblance ${percent(n.similarity)}`
 
 // --- dragging and choosing
 
@@ -170,8 +193,8 @@ function onUp() {
   if (node) node.fixed = wasFixed
   dragging.value = null
   stopDrag()
-  // A press that hardly moved is a click.
-  if (id && moved < 4) emit('select', id === QUERY_ID || props.selectedId === id ? null : id)
+  // A press that hardly moved is a click: on a page of the document it chooses nothing.
+  if (id && moved < 4) emit('select', isPage(id) || props.selectedId === id ? null : id)
   layout?.reheat()
   if (!frame) frame = requestAnimationFrame(animate)
 }
@@ -192,78 +215,88 @@ function onDown(event: PointerEvent, id: string) {
 function onKey(event: KeyboardEvent, id: string) {
   if (event.key !== 'Enter' && event.key !== ' ') return
   event.preventDefault()
-  if (id !== QUERY_ID) emit('select', props.selectedId === id ? null : id)
+  if (!isPage(id)) emit('select', props.selectedId === id ? null : id)
 }
 
 defineExpose({ nodes })
 </script>
 
 <template>
-  <svg
-    ref="svg"
-    class="graph"
-    :viewBox="`0 0 ${width} ${height}`"
-    role="group"
-    aria-label="Documents qui ressemblent à celui envoyé"
-    data-testid="graph"
-  >
-    <g aria-hidden="true">
-      <line
-        v-for="e in edges"
-        :key="e.key"
-        class="graph__edge"
-        :class="{ 'graph__edge--weak': !e.strong }"
-        :x1="e.x1"
-        :y1="e.y1"
-        :x2="e.x2"
-        :y2="e.y2"
-        :stroke-width="e.strong ? 1 + e.similarity * 4 : 0.5 + e.similarity * 2"
-      />
-    </g>
-    <defs>
-      <clipPath v-for="n in nodes" :id="`${uid}-${n.id}`" :key="n.id">
-        <rect :x="-n.width / 2" :y="-n.height / 2" :width="n.width" :height="n.height" rx="4" />
-      </clipPath>
-    </defs>
-    <g
-      v-for="n in nodes"
-      :key="n.id"
-      class="graph__node"
-      :class="{
-        'graph__node--query': n.id === 'query',
-        'graph__node--selected': n.id === selectedId,
-        'graph__node--dragging': n.id === dragging,
-      }"
-      :transform="`translate(${n.x} ${n.y})`"
-      :role="n.id === 'query' ? 'img' : 'button'"
-      :tabindex="n.id === 'query' ? undefined : 0"
-      :aria-label="ariaLabel(n)"
-      :aria-pressed="n.id === 'query' ? undefined : n.id === selectedId"
-      :data-testid="`node-${n.id}`"
-      @pointerdown.prevent="onDown($event, n.id)"
-      @keydown="onKey($event, n.id)"
+  <div ref="scroller" class="graph-frame">
+    <svg
+      ref="svg"
+      class="graph"
+      :width="width"
+      :height="height"
+      :viewBox="`0 0 ${width} ${height}`"
+      role="group"
+      aria-label="Documents qui ressemblent à celui envoyé"
+      data-testid="graph"
     >
-      <rect class="graph__frame" :x="-n.width / 2 - 3" :y="-n.height / 2 - 3" :width="n.width + 6" :height="n.height + 6" rx="6" />
-      <image
-        :href="n.imageUrl"
-        :x="-n.width / 2"
-        :y="-n.height / 2"
-        :width="n.width"
-        :height="n.height"
-        preserveAspectRatio="xMidYMid slice"
-        :clip-path="`url(#${uid}-${n.id})`"
-      />
-      <text class="graph__label" :y="n.height / 2 + 18" text-anchor="middle">{{ shorten(n.label) }}</text>
-      <text v-if="n.similarity !== null" class="graph__score" :y="n.height / 2 + 34" text-anchor="middle">{{ percent(n.similarity) }}</text>
-    </g>
-  </svg>
+      <g aria-hidden="true">
+        <line
+          v-for="e in edges"
+          :key="e.key"
+          class="graph__edge"
+          :class="{ 'graph__edge--weak': !e.strong }"
+          :x1="e.x1"
+          :y1="e.y1"
+          :x2="e.x2"
+          :y2="e.y2"
+          :stroke-width="e.strong ? 1 + e.similarity * 4 : 0.5 + e.similarity * 2"
+        />
+      </g>
+      <defs>
+        <clipPath v-for="n in nodes" :id="`${uid}-${n.id}`" :key="n.id">
+          <rect :x="-n.w / 2" :y="-n.h / 2" :width="n.w" :height="n.h" rx="4" />
+        </clipPath>
+      </defs>
+      <g
+        v-for="n in nodes"
+        :key="n.id"
+        class="graph__node"
+        :class="{
+          'graph__node--page': n.isPage,
+          'graph__node--selected': n.id === selectedId,
+          'graph__node--dragging': n.id === dragging,
+        }"
+        :transform="`translate(${n.x} ${n.y})`"
+        :role="n.isPage ? 'img' : 'button'"
+        :tabindex="n.isPage ? undefined : 0"
+        :aria-label="ariaLabel(n)"
+        :aria-pressed="n.isPage ? undefined : n.id === selectedId"
+        :data-testid="`node-${n.id}`"
+        @pointerdown.prevent="onDown($event, n.id)"
+        @keydown="onKey($event, n.id)"
+      >
+        <rect class="graph__frame" :x="-n.w / 2 - 3" :y="-n.h / 2 - 3" :width="n.w + 6" :height="n.h + 6" rx="6" />
+        <image
+          :href="n.imageUrl"
+          :x="-n.w / 2"
+          :y="-n.h / 2"
+          :width="n.w"
+          :height="n.h"
+          preserveAspectRatio="xMidYMid slice"
+          :clip-path="`url(#${uid}-${n.id})`"
+        />
+        <text class="graph__label" :y="n.h / 2 + 18" text-anchor="middle">{{ shorten(n.label) }}</text>
+        <text v-if="n.similarity !== null" class="graph__score" :y="n.h / 2 + 34" text-anchor="middle">{{ percent(n.similarity) }}</text>
+      </g>
+    </svg>
+  </div>
 </template>
 
 <style scoped>
+.graph-frame {
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
 .graph {
   display: block;
-  width: 100%;
-  height: 100%;
   touch-action: none;
   user-select: none;
 }
@@ -295,7 +328,7 @@ defineExpose({ nodes })
   stroke-width: 1;
 }
 
-.graph__node--query .graph__frame {
+.graph__node--page .graph__frame {
   stroke: var(--border-action-high-blue-france);
   stroke-width: 3;
 }

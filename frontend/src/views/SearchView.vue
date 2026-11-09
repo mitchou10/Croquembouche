@@ -1,21 +1,28 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import FixedPage from '../components/FixedPage.vue'
-import NeighbourGraph from '../components/NeighbourGraph.vue'
-import { useSimilarSearch } from '../composables/useSimilarSearch'
+import SearchHistory from '../components/SearchHistory.vue'
+import SearchScope from '../components/SearchScope.vue'
 import { ACCEPTED_DOCUMENT_TYPES } from '../composables/useCatalogue'
-import { MAX_NEIGHBOURS, MIN_NEIGHBOURS } from '../data/similar'
+import { useSearches } from '../composables/useSearches'
+import { DEFAULT_NEIGHBOURS, MAX_NEIGHBOURS, MIN_NEIGHBOURS } from '../data/search'
 
-// Send a document, see the ones that look the most like it: the k nearest neighbours, drawn as a graph.
-const { file, k, found, loading, error, previewUrl, search, setK, reset } = useSimilarSearch()
+// Send a document: the pages of the models that look the most like each of its pages are looked for by a worker, and the
+// search is kept to be opened again. What it consumed is told with its result.
+const router = useRouter()
+const { searches, loaded, failed, load, start, remove, reason } = useSearches()
 
 const MAX_BYTES = 20 * 1024 * 1024
+const k = ref(DEFAULT_NEIGHBOURS)
+// Null: every model the person can see.
+const scope = ref<string[] | null>(null)
 const dragging = ref(false)
+const sending = ref(false)
 const fault = ref('')
-const selectedId = ref<string | null>(null)
+const removeFault = ref('')
 
-const selected = computed(() => found.value?.neighbours.find((n) => n.id === selectedId.value) ?? null)
-const percent = (similarity: number) => `${Math.round(similarity * 100)} %`
+onMounted(load)
 
 async function take(candidate: File | undefined) {
   fault.value = ''
@@ -28,8 +35,19 @@ async function take(candidate: File | undefined) {
     fault.value = 'Ce fichier est trop lourd (20 Mo au maximum).'
     return
   }
-  selectedId.value = null
-  await search(candidate)
+  if (scope.value !== null && !scope.value.length) {
+    fault.value = 'Choisissez au moins un modèle, ou cherchez dans tous.'
+    return
+  }
+  sending.value = true
+  try {
+    const search = await start(candidate, k.value, scope.value)
+    await router.push({ name: 'search-detail', params: { id: search.id } })
+  } catch (error) {
+    fault.value = reason(error)
+  } finally {
+    sending.value = false
+  }
 }
 
 function onFile(event: Event) {
@@ -44,97 +62,67 @@ function onDrop(event: DragEvent) {
   return take(event.dataTransfer?.files?.[0])
 }
 
-function again() {
-  selectedId.value = null
-  fault.value = ''
-  reset()
+const setK = (event: Event) => {
+  const value = Math.round(Number((event.target as HTMLInputElement).value))
+  k.value = Number.isFinite(value) ? Math.max(MIN_NEIGHBOURS, Math.min(MAX_NEIGHBOURS, value)) : DEFAULT_NEIGHBOURS
 }
 
-const onCount = (event: Event) => setK(Number((event.target as HTMLInputElement).value))
+async function onRemove(id: string) {
+  removeFault.value = await remove(id)
+}
 </script>
 
 <template>
-  <FixedPage :from="64">
+  <FixedPage>
     <template #header>
       <div class="search__title">
         <h1 class="fr-h3 fr-mb-0">Recherche</h1>
-        <p class="fr-mb-0">Envoyez un document : les documents qui lui ressemblent le plus s’affichent autour de lui.</p>
+        <p class="fr-mb-0">Envoyez un document : les modèles qui lui ressemblent le plus s’affichent autour de lui.</p>
       </div>
-      <div class="fr-input-group search__k">
-        <label class="fr-label" for="search-k">Voisins affichés</label>
-        <input
-          id="search-k"
-          class="fr-input"
-          type="number"
-          inputmode="numeric"
-          :min="MIN_NEIGHBOURS"
-          :max="MAX_NEIGHBOURS"
-          :value="k"
-          data-testid="k"
-          @change="onCount"
-        />
-      </div>
-      <button v-if="file" type="button" class="fr-btn fr-btn--secondary" data-testid="again" @click="again">Nouvelle recherche</button>
     </template>
 
-    <input
-      id="search-file"
-      class="fr-sr-only search__input"
-      type="file"
-      aria-label="Document à rechercher"
-      :accept="ACCEPTED_DOCUMENT_TYPES.join(',')"
-      data-testid="file"
-      @change="onFile"
-    />
-    <label
-      v-if="!file"
-      class="dropzone"
-      :class="{ 'dropzone--over': dragging }"
-      for="search-file"
-      data-testid="dropzone"
-      @dragover.prevent="dragging = true"
-      @dragleave="dragging = false"
-      @drop.prevent="onDrop"
-    >
-      <span class="dropzone__title">Déposez un document ici</span>
-      <span class="dropzone__hint">ou cliquez pour en choisir un · image ou PDF, 20 Mo au plus</span>
-    </label>
-    <p v-if="fault" class="fr-error-text fr-mb-0" role="alert" data-testid="fault">{{ fault }}</p>
-    <p v-if="loading" class="fr-hint-text fr-mb-0" role="status" data-testid="loading">Recherche des documents proches…</p>
-    <p v-if="error" class="fr-error-text fr-mb-0" role="alert" data-testid="error">{{ error }}</p>
+    <div class="search__layout">
+      <div class="search__new">
+        <div class="search__settings">
+          <div class="fr-input-group search__k">
+            <label class="fr-label" for="search-k">Voisins par page</label>
+            <input id="search-k" class="fr-input" type="number" inputmode="numeric" :min="MIN_NEIGHBOURS" :max="MAX_NEIGHBOURS" :value="k" data-testid="k" @change="setK" />
+          </div>
+          <SearchScope v-model="scope" />
+        </div>
 
-    <div v-if="file && found" class="search__result">
-      <section class="search__graph" aria-label="Graphe des voisins">
-        <NeighbourGraph
-          :query="{ name: file.name, imageUrl: previewUrl }"
-          :neighbours="found.neighbours"
-          :links="found.links"
-          :selected-id="selectedId"
-          @select="selectedId = $event"
+        <input
+          id="search-file"
+          class="fr-sr-only search__input"
+          type="file"
+          aria-label="Document à rechercher"
+          :accept="ACCEPTED_DOCUMENT_TYPES.join(',')"
+          data-testid="file"
+          @change="onFile"
         />
-      </section>
+        <label
+          class="dropzone"
+          :class="{ 'dropzone--over': dragging }"
+          for="search-file"
+          data-testid="dropzone"
+          @dragover.prevent="dragging = true"
+          @dragleave="dragging = false"
+          @drop.prevent="onDrop"
+        >
+          <span class="dropzone__title">Déposez un document ici</span>
+          <span class="dropzone__hint">ou cliquez pour en choisir un · image ou PDF, 20 Mo au plus</span>
+        </label>
+        <p v-if="sending" class="fr-hint-text fr-mb-0" role="status" data-testid="sending">Envoi du document…</p>
+        <p v-if="fault" class="fr-error-text fr-mb-0" role="alert" data-testid="fault">{{ fault }}</p>
+      </div>
 
-      <section class="search__side" aria-label="Documents proches">
-        <h2 class="fr-h6 fr-mb-1w">{{ found.neighbours.length }} documents proches de « {{ file.name }} »</h2>
-        <ol class="search__list" data-testid="neighbours">
-          <li v-for="n in found.neighbours" :key="n.id">
-            <button
-              type="button"
-              class="neighbour"
-              :class="{ 'neighbour--selected': n.id === selectedId }"
-              :aria-pressed="n.id === selectedId"
-              :data-testid="`neighbour-${n.id}`"
-              @click="selectedId = n.id === selectedId ? null : n.id"
-            >
-              <img class="neighbour__image" :src="n.imageUrl" alt="" />
-              <span class="neighbour__name">{{ n.name }}</span>
-              <span class="neighbour__score">{{ percent(n.similarity) }}</span>
-            </button>
-          </li>
-        </ol>
-        <p v-if="selected" class="search__selected fr-mb-0" role="status" data-testid="selected">
-          <strong>{{ selected.name }}</strong> ressemble à {{ percent(selected.similarity) }} au document envoyé.
-        </p>
+      <section class="search__past" aria-labelledby="past-title">
+        <h2 id="past-title" class="fr-h6 fr-mb-1w">Mes recherches</h2>
+        <p v-if="failed" class="fr-error-text" role="alert" data-testid="history-failed">Vos recherches n’ont pas pu être chargées.</p>
+        <p v-else-if="!loaded" role="status" class="fr-hint-text">Chargement…</p>
+        <p v-else-if="!searches.length" class="fr-hint-text" data-testid="history-empty">Vous n’avez pas encore fait de recherche.</p>
+        <SearchHistory v-else :searches="searches" @remove="onRemove" />
+        <p v-if="removeFault" class="fr-error-text" role="alert" data-testid="remove-fault">{{ removeFault }}</p>
       </section>
     </div>
   </FixedPage>
@@ -145,16 +133,40 @@ const onCount = (event: Event) => setK(Number((event.target as HTMLInputElement)
   margin-right: auto;
 }
 
-.search__k {
+.search__layout {
   display: flex;
-  align-items: center;
-  gap: 0.5rem;
+  flex: 1;
+  flex-direction: column;
+  gap: 1.5rem;
+  min-height: 0;
+}
+
+.search__new {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.search__settings {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem 2rem;
+}
+
+.search__k {
   margin: 0;
 }
 
 .search__k .fr-input {
-  width: 5rem;
-  margin: 0;
+  width: 6rem;
+}
+
+.search__past {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .dropzone {
@@ -164,7 +176,7 @@ const onCount = (event: Event) => setK(Number((event.target as HTMLInputElement)
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
-  min-height: 14rem;
+  min-height: 10rem;
   padding: 1.5rem;
   border: 2px dashed var(--border-action-high-blue-france);
   background: var(--background-contrast-info);
@@ -193,91 +205,17 @@ const onCount = (event: Event) => setK(Number((event.target as HTMLInputElement)
   font-size: 0.875rem;
 }
 
-.search__result {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  gap: 1rem;
-  min-height: 0;
-}
-
-.search__graph {
-  flex: 1;
-  min-height: 22rem;
-  border: 1px solid var(--border-default-grey);
-  background: var(--background-default-grey);
-}
-
-.search__side {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-
-.search__list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  margin: 0;
-  padding: 0;
-  overflow-y: auto;
-  list-style: none;
-}
-
-.neighbour {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  width: 100%;
-  padding: 0.25rem 0.5rem;
-  border: 1px solid var(--border-default-grey);
-  background: var(--background-default-grey);
-  color: var(--text-default-grey);
-  text-align: left;
-  cursor: pointer;
-}
-
-.neighbour:hover {
-  background: var(--background-default-grey-hover);
-}
-
-.neighbour--selected {
-  border-color: var(--border-action-high-blue-france);
-  background: var(--background-contrast-info);
-  box-shadow: inset 0 0 0 1px var(--border-action-high-blue-france);
-}
-
-.neighbour__image {
-  width: 2rem;
-  height: 2.75rem;
-  object-fit: cover;
-  border: 1px solid var(--border-default-grey);
-}
-
-.neighbour__name {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.neighbour__score {
-  color: var(--text-action-high-blue-france);
-  font-weight: 700;
-}
-
-.search__selected {
-  margin-top: 0.75rem;
-}
-
 @media (min-width: 64em) {
-  .search__result {
+  .search__layout {
     flex-direction: row;
   }
 
-  .search__side {
-    flex: 0 0 22rem;
+  .search__new {
+    flex: 1 1 0;
+  }
+
+  .search__past {
+    flex: 0 0 26rem;
   }
 }
 </style>
