@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.23.1](https://github.com/mitchou10/Croquembouche/compare/v1.23.0...v1.23.1) (2026-11-09)
+
+
+### Bug Fixes
+
+* **search:** ask for the confirmation to delete over the row, so the list does not move ([e4eac78](https://github.com/mitchou10/Croquembouche/commit/e4eac78b0affdfd4fc95c8be7434da31a920d554))
+
 ## [1.23.0](https://github.com/mitchou10/Croquembouche/compare/v1.22.0...v1.23.0) (2026-11-09)
 
 
