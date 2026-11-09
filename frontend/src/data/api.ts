@@ -286,4 +286,5 @@ export const fetchSearch = (id: string) => request<Search>('GET', `/api/searches
 export const deleteSearch = (id: string) => request<void>('DELETE', `/api/searches/${id}`)
 /** The image of a page (from 1) of the document of a search, and of a page of a model of the catalogue. */
 export const searchPageUrl = (id: string, page: number) => `/api/searches/${id}/pages/${page}`
-export const templatePageUrl = (id: string, page: number) => `/api/templates/${id}/pages/${page}`
+export const templatePageUrl = (id: string, page: number, documentId?: string) =>
+  `/api/templates/${id}/pages/${page}${documentId ? `?documentId=${documentId}` : ''}`

@@ -17,6 +17,8 @@ export interface SearchNeighbour {
   id: string
   templateId: string
   templatePage: number
+  /** The example document of the model that was looked at (a model has had several): to show the right image. */
+  documentId: string
   /** 0 to 1: how much it looks like the page of the document it looks the most like. */
   similarity: number
 }

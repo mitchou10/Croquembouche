@@ -54,7 +54,7 @@ const neighbours = computed(() =>
     templateId: n.templateId,
     label: pageLabel(n.templateId, n.templatePage),
     similarity: n.similarity,
-    imageUrl: templatePageUrl(n.templateId, n.templatePage),
+    imageUrl: templatePageUrl(n.templateId, n.templatePage, n.documentId),
     // The pages of the document it looks like, in order.
     onPages: (search.value?.links ?? [])
       .filter((l) => l.target === n.id && l.source.startsWith('page-'))

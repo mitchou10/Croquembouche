@@ -788,7 +788,9 @@ interface StoredSearch extends Search {
 function neighbourhood(file: { name: string; size: number }, pages: number, k: number, scope: string[] | null) {
   const candidates = templates
     .filter((t) => t.document && (!scope || scope.includes(t.id)))
-    .flatMap((t) => Array.from({ length: t.document!.pages }, (_, i) => ({ id: `${t.id}:${i + 1}`, templateId: t.id, templatePage: i + 1 })))
+    .flatMap((t) =>
+      Array.from({ length: t.document!.pages }, (_, i) => ({ id: `${t.id}:${i + 1}`, templateId: t.id, templatePage: i + 1, documentId: t.document!.id })),
+    )
   const links: Search['links'] = []
   const best = new Map<string, number>()
   for (let page = 1; page <= pages; page++) {
