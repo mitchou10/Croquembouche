@@ -1,4 +1,6 @@
-from fastapi import APIRouter, HTTPException, status
+from typing import Annotated
+
+from fastapi import APIRouter, HTTPException, Query, Response, status
 
 from app.dependencies import Catalogue, Quality
 from app.schemas.catalogue import (
@@ -44,6 +46,17 @@ async def create(body: TemplateCreate, service: Catalogue) -> TemplateOut:
 @router.get("/{template_id}")
 async def get(template_id: str, service: Catalogue) -> TemplateOut:
     return await _run(service.get(template_id))
+
+
+@router.get("/{template_id}/pages/{number}", summary="The image of a page (from 1) of the example document of a model")
+async def get_page(
+    template_id: str,
+    number: int,
+    service: Catalogue,
+    document_id: Annotated[str | None, Query(alias="documentId")] = None,
+) -> Response:
+    data, content_type = await _run(service.page(template_id, number, document_id))
+    return Response(content=data, media_type=content_type, headers={"Cache-Control": "private, max-age=3600"})
 
 
 @router.put("/{template_id}", summary="Change a model: its owner only")

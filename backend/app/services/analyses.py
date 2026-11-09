@@ -13,6 +13,7 @@ from app.models.analysis import Analysis, AnalysisShare, AnalysisTemplate, Detec
 from app.models.catalogue import Template
 from app.repositories.analysis import AnalysisRepository
 from app.repositories.document import DocumentRepository
+from app.repositories.search import SearchRepository
 from app.schemas.analysis import (
     AnalysisConsumptionOut,
     AnalysisCreate,
@@ -27,12 +28,14 @@ from app.schemas.analysis import (
     Review,
     ReviewOut,
     RunOut,
+    SearchesConsumptionOut,
     Share,
 )
 from app.schemas.catalogue import DocumentOut, Zone
 from app.schemas.matching import MatchingResult, OcrPage
 from app.services import documents, matching_results, ocr_text
 from app.services.catalogue import ForbiddenError, InvalidError, NotFoundError, index_message, version_message
+from app.services.consumption import consumed as _consumed
 
 __all__ = ["AnalysisService", "ForbiddenError", "InvalidError", "NotFoundError", "group_name"]
 
@@ -48,15 +51,6 @@ def group_name(path: str) -> str:
 
 def _fingerprint(kind: str, value: str) -> str:
     return blind_index(f"{kind}:{value}")
-
-
-def _consumed(energy_kwh: float, co2_kg: float, duration_s: float) -> ConsumptionOut:
-    """What a use (or all of them) consumed, in the units people read: Wh, g of CO2, mL of water, seconds. The water is
-    estimated from the electricity."""
-    water_liters = energy_kwh * MatchingSettings().WATER_LITERS_PER_KWH
-    return ConsumptionOut(
-        duration_s=duration_s, energy_wh=energy_kwh * 1000, co2_g=co2_kg * 1000, water_ml=water_liters * 1000
-    )
 
 
 def _consumption_of(runs: list[Run]) -> ConsumptionOut:
@@ -103,11 +97,13 @@ class AnalysisService:
         document_repository: DocumentRepository,
         dispatcher: MatchingDispatcher,
         user: RequestContext,
+        searches: SearchRepository,
     ) -> None:
         self._repository = repository
         self._documents = document_repository
         self._dispatcher = dispatcher
         self._user = user
+        self._searches = searches
 
     # --- who can see what
 
@@ -165,6 +161,13 @@ class AnalysisService:
     async def my_consumption(self) -> MyConsumptionOut:
         """What the person's own uses consumed, all of them and by analysis: for the person alone (it is theirs)."""
         rows = await self._repository.consumption_of_user(self._user.user_id)
+        (
+            searched,
+            searches_measured,
+            searches_kwh,
+            searches_co2,
+            searches_seconds,
+        ) = await self._searches.consumption_of_user(self._user.user_id)
         analyses = [
             AnalysisConsumptionOut(
                 id=str(analysis_id),
@@ -182,6 +185,11 @@ class AnalysisService:
                 sum(float(r[4]) for r in rows), sum(float(r[5]) for r in rows), sum(float(r[6]) for r in rows)
             ),
             analyses=analyses,
+            searches=SearchesConsumptionOut(
+                count=searched,
+                measured=searches_measured,
+                consumption=_consumed(searches_kwh, searches_co2, searches_seconds),
+            ),
         )
 
     async def get(self, analysis_id: str) -> AnalysisOut:

@@ -11,6 +11,8 @@ OCR_TASK = "ocr.read_document"
 OCR_QUEUE = "ocr"
 FIND_TASK = "gliner.find_entities"
 FIND_QUEUE = "gliner"
+# The search for the documents that look like one that was sent is the matching worker's too: it has the index.
+SEARCH_TASK = "template_matching.find_neighbours"
 
 
 class MatchingDispatcher(Protocol):
@@ -33,6 +35,15 @@ class MatchingDispatcher(Protocol):
         attempt: what they would hand back for a cancelled run is ignored anyway."""
         ...
 
+    def dispatch_search(self, message: dict) -> None:
+        """Asks the matching worker for the pages of the catalogue that look like the pages of a document. Raises when
+        it cannot be asked: the search is then ended as failed instead of waiting for nothing."""
+        ...
+
+    def revoke_search(self, search_id: str) -> None:
+        """Asks the worker to stop a search, if it has not ended. Only an attempt."""
+        ...
+
 
 def ocr_task_id(run_id: str) -> str:
     return f"ocr-{run_id}"
@@ -40,6 +51,10 @@ def ocr_task_id(run_id: str) -> str:
 
 def find_task_id(run_id: str) -> str:
     return f"gliner-{run_id}"
+
+
+def search_task_id(search_id: str) -> str:
+    return f"search-{search_id}"
 
 
 class CeleryDispatcher:
@@ -58,6 +73,12 @@ class CeleryDispatcher:
 
     def revoke(self, run_id: str) -> None:
         self._app.control.revoke([run_id, ocr_task_id(run_id), find_task_id(run_id)], terminate=True)
+
+    def dispatch_search(self, message: dict) -> None:
+        self._app.send_task(SEARCH_TASK, args=[message], queue=QUEUE, task_id=search_task_id(message["search_id"]))
+
+    def revoke_search(self, search_id: str) -> None:
+        self._app.control.revoke(search_task_id(search_id), terminate=True)
 
 
 _dispatcher: MatchingDispatcher | None = None

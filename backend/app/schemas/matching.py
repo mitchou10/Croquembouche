@@ -83,3 +83,26 @@ class FindResult(BaseModel):
     status: Literal["done", "failed"]
     consumption: Consumption | None = None
     found: list[FoundInText] = []
+
+
+class FoundNeighbourResult(BaseModel):
+    template_id: str
+    template_page: int = Field(ge=1)
+    document_id: str
+    similarity: float = Field(ge=0, le=1)
+
+
+class FoundLink(BaseModel):
+    source: str
+    target: str
+    similarity: float = Field(ge=0, le=1)
+
+
+class SearchResult(BaseModel):
+    """What the worker hands back for a search for similar documents: the pages of models that look like each page of
+    the document, how they are linked, and what it consumed. A source is `page-N`; a neighbour is `<model>:<page>`."""
+
+    status: Literal["done", "failed"]
+    consumption: Consumption | None = None
+    neighbours: list[FoundNeighbourResult] = []
+    links: list[FoundLink] = []

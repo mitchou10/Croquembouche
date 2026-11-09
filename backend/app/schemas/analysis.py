@@ -110,13 +110,24 @@ class AnalysisConsumptionOut(CamelModel):
     consumption: ConsumptionOut
 
 
+class SearchesConsumptionOut(CamelModel):
+    """What the searches for similar documents of a person consumed: how many, how many were measured (the others add
+    nothing), and what."""
+
+    count: int
+    measured: int
+    consumption: ConsumptionOut
+
+
 class MyConsumptionOut(CamelModel):
-    """What all the uses of a person consumed, and the detail by analysis, the most consuming first."""
+    """What all the uses of a person consumed, and the detail by analysis, the most consuming first; and, apart, what
+    their searches for similar documents consumed."""
 
     uses: int
     measured: int
     consumption: ConsumptionOut
     analyses: list[AnalysisConsumptionOut]
+    searches: SearchesConsumptionOut
 
 
 class RunOut(CamelModel):

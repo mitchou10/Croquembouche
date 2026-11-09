@@ -133,6 +133,8 @@ class RecordingDispatcher:
         self.find_messages: list[dict] = []
         self.fail_find = False
         self.revoked: list[str] = []
+        self.search_messages: list[dict] = []
+        self.revoked_searches: list[str] = []
         self.fail = False
 
     def dispatch(self, message: dict) -> None:
@@ -154,6 +156,16 @@ class RecordingDispatcher:
         if self.fail:
             raise ConnectionError("broker down")
         self.revoked.append(run_id)
+
+    def dispatch_search(self, message: dict) -> None:
+        if self.fail:
+            raise ConnectionError("broker down")
+        self.search_messages.append(message)
+
+    def revoke_search(self, search_id: str) -> None:
+        if self.fail:
+            raise ConnectionError("broker down")
+        self.revoked_searches.append(search_id)
 
 
 @pytest.fixture(autouse=True)

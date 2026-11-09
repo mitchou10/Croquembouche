@@ -3,6 +3,7 @@ from typing import Annotated
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import MatchingSettings
 from app.core.indexing import TemplateIndexer, get_indexer
 from app.core.matching import MatchingDispatcher, get_dispatcher
 from app.core.security.factory import RequestContext, get_current_user
@@ -12,9 +13,11 @@ from app.repositories.catalogue import CatalogueRepository
 from app.repositories.document import DocumentRepository
 from app.repositories.metrics import MetricsRepository
 from app.repositories.profile import ProfileRepository
+from app.repositories.search import SearchRepository
 from app.services.analyses import AnalysisService
 from app.services.catalogue import CatalogueService
 from app.services.quality import QualityService
+from app.services.search import SearchService
 
 
 def display_name(user: RequestContext) -> str | None:
@@ -53,7 +56,23 @@ Quality = Annotated[QualityService, Depends(get_quality)]
 def get_analyses(
     user: CurrentUser, db: Db, dispatcher: Annotated[MatchingDispatcher, Depends(get_dispatcher)]
 ) -> AnalysisService:
-    return AnalysisService(AnalysisRepository(db), DocumentRepository(db), dispatcher, user)
+    return AnalysisService(AnalysisRepository(db), DocumentRepository(db), dispatcher, user, SearchRepository(db))
 
 
 Analyses = Annotated[AnalysisService, Depends(get_analyses)]
+
+
+def get_searches(
+    user: CurrentUser, db: Db, dispatcher: Annotated[MatchingDispatcher, Depends(get_dispatcher)]
+) -> SearchService:
+    return SearchService(
+        SearchRepository(db),
+        DocumentRepository(db),
+        CatalogueRepository(db),
+        dispatcher,
+        user,
+        MatchingSettings().MATCHING_TIMEOUT_SECONDS,
+    )
+
+
+Searches = Annotated[SearchService, Depends(get_searches)]
