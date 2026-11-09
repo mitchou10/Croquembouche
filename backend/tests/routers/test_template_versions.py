@@ -189,3 +189,29 @@ async def test_a_use_says_in_which_version_of_each_model_it_was(db_client, alice
     body = {"name": "A", "templateIds": [template["id"]], "isPublic": False, "shares": []}
     analysis = (await db_client.post("/api/analyses", json=body)).json()
     assert analysis["runs"][0]["templateVersions"] == {template["id"]: "1.1.0"}
+
+
+async def test_an_administrator_has_the_catalogue_indexed_again(db_client, alice, as_user, indexer):
+    first = await create(db_client)
+    old = await upload(db_client, "old.png")
+    await save(db_client, first, old)
+    # A first document makes X 2, another one makes it 3: the 1 had no document, the 2 is left behind.
+    kept = await save(db_client, first, await upload(db_client, "new.png"))
+    await create(db_client, name="Sans document")
+    indexer.calls.clear()
+
+    as_user("root", admin=True)
+    response = await db_client.post("/api/templates/reindex")
+
+    assert response.status_code == 200 and response.json() == {"templates": 1, "versions": 1}
+    messages = [message for kind, message in indexer.calls if kind == "index"]
+    assert sorted(m["major"] for m in messages) == [2, 3]
+    assert {m["template_id"] for m in messages} == {kept["id"]}
+
+
+async def test_only_an_administrator_has_the_catalogue_indexed_again(db_client, alice, indexer):
+    await create(db_client)
+    indexer.calls.clear()
+
+    assert (await db_client.post("/api/templates/reindex")).status_code == 403
+    assert indexer.calls == []

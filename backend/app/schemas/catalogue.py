@@ -123,6 +123,13 @@ class TemplatePageOut(PageFields):
     label: str
 
 
+class ReindexOut(CamelModel):
+    """What the worker was asked to index again: the models as they are, and the versions kept of the X they left."""
+
+    templates: int
+    versions: int
+
+
 class TemplateVersionOut(CamelModel):
     """A version of a model, X.Y.Z, as it was saved."""
 

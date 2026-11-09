@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import FixedPage from '../components/FixedPage.vue'
 import ConsumptionSummary from '../components/ConsumptionSummary.vue'
+import ReindexPanel from '../components/ReindexPanel.vue'
 import StatTile from '../components/StatTile.vue'
 import { hasConsumption, totalConsumption } from '../composables/consumption'
 import { statsOf, useAnalyses } from '../composables/useAnalyses'
@@ -98,6 +99,8 @@ const route = (a: Analysis) => ({ name: 'analysis-detail', params: { id: a.id } 
         </ul>
       </section>
     </div>
+
+    <ReindexPanel />
   </FixedPage>
 </template>
 

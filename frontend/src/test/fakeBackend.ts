@@ -35,6 +35,9 @@ interface Stored extends Omit<Template, 'document'> {
 }
 
 let templates: Stored[] = []
+// How many times an administrator had the catalogue indexed again.
+let reindexed = 0
+export const reindexCount = () => reindexed
 
 /** The versions each model has had, newest first: only the ones a test looked at or went back to. */
 const history = new Map<string, unknown[]>()
@@ -109,6 +112,7 @@ function seedAnalyses(): Analysis[] {
 }
 
 export function resetBackend() {
+  reindexed = 0
   templates = seedTemplates()
   analyses = seedAnalyses()
   uploads.clear()
@@ -222,6 +226,12 @@ export async function fakeFetch(path: string, init: RequestInit = {}): Promise<A
   if (parts[0] === 'searches') return searchesRoute(user, method, parts, init)
 
   if (parts[0] !== 'templates') return refuse(404, 'Not found')
+
+  if (parts[1] === 'reindex' && method === 'POST') {
+    if (!isAdmin.value) return refuse(403, 'Seul un administrateur relance l’indexation.')
+    reindexed += 1
+    return reply(200, { templates: templates.filter((t) => t.document).length, versions: 0 })
+  }
 
   if (parts.length === 1) {
     if (method === 'GET') return reply(200, templates)

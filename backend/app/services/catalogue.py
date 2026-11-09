@@ -22,6 +22,7 @@ from app.schemas.catalogue import (
     MAX_TAGS,
     DocumentOut,
     EntityOut,
+    ReindexOut,
     SubModelOut,
     SuggestionOut,
     TemplateFields,
@@ -244,6 +245,21 @@ class CatalogueService:
         message = index_message(template)
         if message is not None:
             self._indexer.index(message)
+
+    async def reindex(self) -> ReindexOut:
+        """Asks the worker to index the whole catalogue again, administrators only: every model as it is now and, for
+        the X it left behind, its last version (an analysis looks in all the images a model has had). It is what to do
+        when the embedding model changes: the index of the new one starts empty. No document, no page."""
+        if not self._user.is_admin:
+            raise ForbiddenError("Seul un administrateur relance l’indexation.")
+        templates = await self._repository.list_templates()
+        messages = [m for t in templates if (m := index_message(t))]
+        current = {(t.id, t.major) for t in templates}
+        kept = await self._repository.last_versions()
+        older = [m for v in kept if (v.template_id, v.major) not in current if (m := version_message(v))]
+        for message in [*messages, *older]:
+            self._indexer.index(message)
+        return ReindexOut(templates=len(messages), versions=len(older))
 
     # --- reading
 
