@@ -1,11 +1,10 @@
 import io
-import math
 
 import pytest
 from PIL import Image
 from qdrant_client import QdrantClient
 
-from app.classify import PageClassifier, calibrate
+from app.classify import PageClassifier
 from app.index import TemplateIndex
 
 COLLECTION = "test"
@@ -56,7 +55,7 @@ def client():
 
 @pytest.fixture
 def classifier(client):
-    return PageClassifier(client, ColourEmbedder(), COLLECTION, other_score=0.8, temperature=0.05, neighbours=100)
+    return PageClassifier(client, ColourEmbedder(), COLLECTION, threshold=0.8, neighbours=100)
 
 
 def only(result):
@@ -64,31 +63,41 @@ def only(result):
     return result[0]["classifications"]
 
 
-def test_confidences_add_up_to_one_with_other_among_them():
-    confidences, other = calibrate([0.99, 0.9, 0.6], other_score=0.8, temperature=0.05)
+def test_the_score_of_a_page_is_its_similarity_as_it_is(classifier):
+    classes = only(classifier.classify(["t1", "t2"], [png("yellow")]))
 
-    assert math.isclose(sum(confidences) + other, 1.0)
-    assert confidences[0] > confidences[1] > other > confidences[2]
-
-
-def test_a_page_that_looks_like_nothing_is_other():
-    confidences, other = calibrate([0.5, 0.4], other_score=0.85, temperature=0.02)
-
-    assert other > 0.99 and sum(confidences) < 0.01
+    scores = {(c["template_id"], c["template_page"]): c["confidence"] for c in classes}
+    assert scores[("t2", 1)] == pytest.approx(1.0)
+    assert scores[("t1", 1)] == pytest.approx(0.5**0.5, abs=1e-3)  # yellow and red: the cosine, not a share of 1
+    assert scores[("t1", 2)] == pytest.approx(0.5**0.5, abs=1e-3)
+    assert sum(scores.values()) + 0.8 > 1.5  # nothing is shared out between the answers
 
 
-def test_a_page_that_looks_like_one_page_is_that_page():
-    confidences, other = calibrate([0.99, 0.6], other_score=0.85, temperature=0.02)
+def test_a_page_whose_best_look_alike_is_under_the_threshold_is_other(client):
+    classifier = PageClassifier(client, ColourEmbedder(), COLLECTION, threshold=0.8, neighbours=100)
+    # Yellow looks 71 % like the red and the green page: a model page, but not enough of one.
+    classes = only(classifier.classify(["t1"], [png("yellow")]))
 
-    assert confidences[0] > 0.9 and other < 0.1
+    assert classes[0]["template_id"] is None and classes[0]["confidence"] == 0.8
+    assert max(c["confidence"] for c in classes[1:]) < 0.8
+
+
+def test_a_page_is_the_page_it_looks_the_most_like_once_it_reaches_the_threshold(client):
+    low = PageClassifier(client, ColourEmbedder(), COLLECTION, threshold=0.7, neighbours=100)
+    high = PageClassifier(client, ColourEmbedder(), COLLECTION, threshold=0.71, neighbours=100)
+
+    reached = only(low.classify(["t1"], [png("yellow")]))[0]
+    missed = only(high.classify(["t1"], [png("yellow")]))[0]
+
+    assert reached["template_id"] == "t1" and reached["confidence"] == pytest.approx(0.7071, abs=1e-3)
+    assert missed["template_id"] is None
 
 
 def test_a_page_is_the_page_of_the_model_it_looks_like(classifier):
     classes = only(classifier.classify(["t1", "t2"], [png("green")]))
 
     assert (classes[0]["template_id"], classes[0]["template_page"]) == ("t1", 2)
-    assert classes[0]["confidence"] > 0.9
-    assert math.isclose(sum(c["confidence"] for c in classes), 1.0)
+    assert classes[0]["confidence"] == pytest.approx(1.0)
     assert classes == sorted(classes, key=lambda c: -c["confidence"])
 
 
@@ -109,7 +118,8 @@ def test_a_page_of_no_model_is_other(classifier):
     classes = only(classifier.classify(["t1", "t2"], [png("blue")]))
 
     assert classes[0]["template_id"] is None and classes[0]["template_page"] is None and classes[0]["rotation"] is None
-    assert classes[0]["confidence"] > 0.5
+    assert classes[0]["confidence"] == 0.8  # the threshold, as nothing looks like it
+    assert all(c["confidence"] == 0 for c in classes[1:])
 
 
 def test_a_page_turned_on_its_side_says_how(classifier):
@@ -165,6 +175,5 @@ def test_a_model_is_looked_for_in_every_x_it_has_and_the_x_that_matched_is_said(
 
     assert (red["classifications"][0]["template_id"], red["classifications"][0]["major"]) == ("t3", 1)
     assert (blue["classifications"][0]["template_id"], blue["classifications"][0]["major"]) == ("t3", 2)
-    # One class for the model page, not one for each X: the confidences still add up to 1.
+    # One class for the model page, not one for each X.
     assert len([c for c in red["classifications"] if c["template_id"] == "t3"]) == 1
-    assert sum(c["confidence"] for c in red["classifications"]) == pytest.approx(1)
