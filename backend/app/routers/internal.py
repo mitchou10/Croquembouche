@@ -11,8 +11,9 @@ from app.core.matching import MatchingDispatcher, get_dispatcher
 from app.dependencies import Db
 from app.repositories.analysis import AnalysisRepository
 from app.repositories.document import DocumentRepository
-from app.schemas.matching import FindResult, MatchingResult, OcrResult
-from app.services import matching_results
+from app.repositories.search import SearchRepository
+from app.schemas.matching import FindResult, MatchingResult, OcrResult, SearchResult
+from app.services import matching_results, search
 
 
 def worker_only(x_internal_key: Annotated[str, Header()] = "") -> None:
@@ -51,3 +52,10 @@ async def found(run_id: str, body: FindResult, db: Db) -> None:
     use is done."""
     if not await matching_results.apply_found(AnalysisRepository(db), run_id, body):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No such use being searched")
+
+
+@router.post("/searches/{search_id}/result", status_code=status.HTTP_204_NO_CONTENT)
+async def search_result(search_id: str, body: SearchResult, db: Db) -> None:
+    """How a search for similar documents went, from the worker. One that already ended is left as it is."""
+    if not await search.apply(SearchRepository(db), search_id, body):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No such search running")

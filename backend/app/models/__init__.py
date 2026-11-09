@@ -23,6 +23,7 @@ from app.models.catalogue import (
     TemplateStar,
 )
 from app.models.document import Document
+from app.models.search import Search
 from app.models.user import UserProfile
 
 __all__ = [
@@ -39,6 +40,7 @@ __all__ = [
     "PageClassification",
     "Run",
     "RunPage",
+    "Search",
     "Suggestion",
     "SuggestionComment",
     "SuggestionStar",

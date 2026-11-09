@@ -264,6 +264,24 @@ class CatalogueService:
         links = await self._links(found)
         return [self._view_with(t, links) for t in found]
 
+    async def page(self, template_id: str, number: int, document_id: str | None = None) -> tuple[bytes, str]:
+        """The image of a page (from 1) of the example document of a model, which the catalogue shows to everyone: a
+        search finds the pages of models that are not the person's. `document_id` is the one of a version X that was
+        looked at (a model has had several); it must be one of the model's own, the current one when it is not given."""
+        template = await self._template(template_id)
+        wanted = None if document_id is None else await self._repository.get_document(document_id)
+        if document_id is not None:
+            allowed = {template.document_id, *await self._repository.version_document_ids(template.id)}
+            if wanted is None or wanted.id not in allowed:
+                raise NotFoundError(document_id)
+        document = wanted or template.document
+        if document is None:
+            raise NotFoundError(template_id)
+        try:
+            return await documents.page(document, number)
+        except documents.DocumentNotFoundError as error:
+            raise NotFoundError(f"{template_id}/{number}") from error
+
     async def get(self, template_id: str) -> TemplateOut:
         return await self._view(await self._template(template_id))
 
