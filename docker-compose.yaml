@@ -88,7 +88,7 @@ services:
       target: runtime
       # The embedding model is part of the image (see its Dockerfile): another model is another build.
       args:
-        EMBEDDING_MODEL: ${EMBEDDING_MODEL:-Qdrant/clip-ViT-B-32-vision}
+        EMBEDDING_MODEL: ${EMBEDDING_MODEL:-google/siglip2-base-patch16-224}
     environment:
       REDIS_URL: redis://redis:6379/0
       # The vector store the catalogue is indexed in.

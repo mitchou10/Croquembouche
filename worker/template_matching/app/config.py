@@ -8,7 +8,7 @@ QUEUE_NAME = os.environ.get("TEMPLATE_MATCHING_QUEUE_NAME", "template_matching")
 # model has a collection of its own (the old one is left alone).
 QDRANT_URL = os.environ.get("QDRANT_URL", "http://localhost:6333")
 QDRANT_COLLECTION = os.environ.get("QDRANT_COLLECTION", "croquembouche-templates")
-EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "Qdrant/clip-ViT-B-32-vision")
+EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "google/siglip2-base-patch16-224")
 EMBEDDING_CACHE_DIR = os.environ.get("EMBEDDING_CACHE_DIR") or None
 
 # The object store the page images are read from (RustFS locally, S3 elsewhere).
@@ -20,7 +20,7 @@ AWS_BUCKET = os.environ.get("AWS_BUCKET", "croquembouche-documents")
 
 
 def collection_name() -> str:
-    """The collection of the current embedding model: « croquembouche-templates--qdrant-clip-vit-b-32-vision »."""
+    """The collection of the current embedding model: « croquembouche-templates--google-siglip2-base-patch16-224 »."""
     return f"{QDRANT_COLLECTION}--{re.sub(r'[^a-z0-9]+', '-', EMBEDDING_MODEL.lower()).strip('-')}"
 
 
