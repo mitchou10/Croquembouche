@@ -1700,10 +1700,10 @@ describe('testing the analysis', () => {
     it('is in the sidebar for the administrator only', async () => {
       useSession().setUser('admin', { isAdmin: true })
       const admin = await mountAt('/catalogue')
-      expect(admin.wrapper.findAll('.app-sidebar__link').map((l) => l.text())).toEqual(['Catalogue', 'Analyses', 'Évaluation', 'Vue d’ensemble'])
+      expect(admin.wrapper.findAll('.app-sidebar__link').map((l) => l.text())).toEqual(['Catalogue', 'Analyses', 'Recherche', 'Évaluation', 'Vue d’ensemble'])
       useSession().setUser('dana')
       const other = await mountAt('/catalogue')
-      expect(other.wrapper.findAll('.app-sidebar__link').map((l) => l.text())).toEqual(['Catalogue', 'Analyses', 'Évaluation'])
+      expect(other.wrapper.findAll('.app-sidebar__link').map((l) => l.text())).toEqual(['Catalogue', 'Analyses', 'Recherche', 'Évaluation'])
     })
 
     it('is out of reach of anyone else, who is sent to the analyses', async () => {

@@ -11,6 +11,7 @@ const { frontend, backend, differ } = useVersions()
 const everyone = [
   { name: 'catalogue', path: '/catalogue', label: 'Catalogue', icon: 'fr-icon-folder-2-line' },
   { name: 'analyses', path: '/analyses', label: 'Analyses', icon: 'fr-icon-search-line' },
+  { name: 'search', path: '/recherche', label: 'Recherche', icon: 'fr-icon-bubble-chart-line' },
   { name: 'evaluation', path: '/evaluation', label: 'Évaluation', icon: 'fr-icon-checkbox-circle-line' },
 ]
 // What only the administrator has.
