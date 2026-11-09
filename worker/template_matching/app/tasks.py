@@ -9,11 +9,13 @@ from app.classify import PageClassifier
 from app.consumption import measured
 from app.index import TemplateIndex
 from app.match import match_document as match
+from app.neighbours import NeighbourSearch
 
 logger = logging.getLogger(__name__)
 
 _index: TemplateIndex | None = None
 _classifier: PageClassifier | None = None
+_searcher: NeighbourSearch | None = None
 
 
 def get_index() -> TemplateIndex:
@@ -36,6 +38,15 @@ def get_classifier() -> PageClassifier:
             QdrantClient(url=config.QDRANT_URL), embeddings.get_embedder(), config.collection_name()
         )
     return _classifier
+
+
+def get_searcher() -> NeighbourSearch:
+    global _searcher
+    if _searcher is None:
+        _searcher = NeighbourSearch(
+            QdrantClient(url=config.QDRANT_URL), embeddings.get_embedder(), config.collection_name()
+        )
+    return _searcher
 
 
 # The store or the bucket may not be there yet when the first message comes: try again, a few times, backing off.
@@ -83,3 +94,26 @@ def match_document(message: dict) -> None:
         result = match(get_classifier(), storage.get_bytes, message)
     # What it consumed goes with the answer, when it could be measured.
     backend.report(message["run_id"], {**result, **({"consumption": used.value} if used.value else {})})
+
+
+class _ReportsSearchFailure(Task):
+    """A search that cannot be made, whatever was tried, ends as failed on the backend: it is not left running."""
+
+    def on_failure(self, exc, task_id, args, kwargs, einfo):
+        try:
+            backend.report_search(args[0]["search_id"], {"status": "failed"})
+        except Exception:
+            logger.exception("Could not tell the backend that the search %s failed", args[0].get("search_id"))
+
+
+@celery_app.task(name="template_matching.find_neighbours", base=_ReportsSearchFailure, **_RETRY)
+def find_neighbours(message: dict) -> None:
+    """Looks for the pages of the catalogue that look like the pages of a document (`message` is `{search_id,
+    page_keys, k, template_ids}`: the images by key in the store, how many neighbours each page asks for, and the models
+    to look in, or none for every one), then hands the result and what it consumed back to the backend, which keeps the
+    searches (see `NeighbourSearch.search`)."""
+    with measured(message["search_id"]) as used:
+        result = get_searcher().search(
+            [storage.get_bytes(key) for key in message["page_keys"]], message["k"], message.get("template_ids")
+        )
+    backend.report_search(message["search_id"], {**result, **({"consumption": used.value} if used.value else {})})
