@@ -24,11 +24,9 @@ def collection_name() -> str:
     return f"{QDRANT_COLLECTION}--{re.sub(r'[^a-z0-9]+', '-', EMBEDDING_MODEL.lower()).strip('-')}"
 
 
-# How similarities become confidences (see `classify`). Without a set of documents to measure against these are first
-# guesses, hence settings: a page whose best look-alike scores `OTHER_SCORE` is as likely « other » as that page, and
-# the lower `TEMPERATURE` is, the more a small gap between two pages counts.
-OTHER_SCORE = float(os.environ.get("CLASSIFY_OTHER_SCORE", "0.85"))
-TEMPERATURE = float(os.environ.get("CLASSIFY_TEMPERATURE", "0.02"))
+# A page of an analysed document is the page of a model it looks the most like (its cosine similarity, 0 to 1), if
+# that is at least this much; below it, nothing in the catalogue looks enough like it and it is « other ».
+MATCH_THRESHOLD = float(os.environ.get("CLASSIFY_THRESHOLD", "0.80"))
 # How many points a page asks for: all the rotations of every page of the models of an analysis.
 NEIGHBOURS = int(os.environ.get("CLASSIFY_NEIGHBOURS", "256"))
 # Two pages of models that look like each other at least this much are linked in the graph of a search.
