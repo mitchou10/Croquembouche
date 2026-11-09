@@ -49,12 +49,31 @@ const scopeText = (s: SearchSummary) =>
 }
 
 .history__item {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 0.75rem;
   padding: 0.25rem 0.5rem;
   border: 1px solid var(--border-default-grey);
   background: var(--background-default-grey);
+}
+
+/* « Sure? » takes the place of the row instead of squeezing it: the list does not move when it is asked. */
+.history__item :deep(.confirm) {
+  position: absolute;
+  inset: 0;
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+  padding: 0 0.5rem;
+  background: var(--background-default-grey);
+}
+
+.history__item :deep(.confirm__question) {
+  min-width: 0;
+  margin-right: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .history__link {
