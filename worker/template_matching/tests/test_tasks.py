@@ -33,7 +33,13 @@ def test_the_remove_task_removes_a_model(fake_index):
 
 
 def test_the_tasks_try_again_when_something_is_not_ready():
-    for task in (tasks.index_template, tasks.remove_template, tasks.classify_pages, tasks.find_neighbours):
+    for task in (
+        tasks.index_template,
+        tasks.remove_template,
+        tasks.drop_old_indexes,
+        tasks.classify_pages,
+        tasks.find_neighbours,
+    ):
         assert task.autoretry_for == (Exception,) and task.retry_backoff and task.retry_kwargs["max_retries"] == 4
 
 

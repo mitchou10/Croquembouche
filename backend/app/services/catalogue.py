@@ -261,6 +261,13 @@ class CatalogueService:
             self._indexer.index(message)
         return ReindexOut(templates=len(messages), versions=len(older))
 
+    async def drop_old_indexes(self) -> None:
+        """Asks the worker to delete the indexes of the embedding models it does not use any more, administrators only.
+        The worker keeps them while the index of the current one is empty."""
+        if not self._user.is_admin:
+            raise ForbiddenError("Seul un administrateur supprime les anciens index.")
+        self._indexer.drop_old()
+
     # --- reading
 
     async def entity_types(self):

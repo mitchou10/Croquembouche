@@ -49,6 +49,15 @@ async def reindex(service: Catalogue) -> ReindexOut:
     return await _run(service.reindex())
 
 
+@router.post(
+    "/reindex/old",
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Delete the indexes of the embedding models no longer used (administrators)",
+)
+async def drop_old_indexes(service: Catalogue) -> None:
+    await _run(service.drop_old_indexes())
+
+
 @router.get("/{template_id}")
 async def get(template_id: str, service: Catalogue) -> TemplateOut:
     return await _run(service.get(template_id))

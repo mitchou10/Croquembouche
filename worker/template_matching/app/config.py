@@ -5,7 +5,7 @@ REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
 QUEUE_NAME = os.environ.get("TEMPLATE_MATCHING_QUEUE_NAME", "template_matching")
 
 # The vector store, and what makes the vectors: switching the embedding model changes the size of the vectors, so each
-# model has a collection of its own (the old one is left alone).
+# model has a collection of its own. An administrator deletes those of models no longer used (`drop_old_collections`).
 QDRANT_URL = os.environ.get("QDRANT_URL", "http://localhost:6333")
 QDRANT_COLLECTION = os.environ.get("QDRANT_COLLECTION", "croquembouche-templates")
 EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "google/siglip2-base-patch16-224")

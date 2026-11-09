@@ -69,6 +69,20 @@ def remove_template(template_id: str) -> None:
     get_index().remove(template_id)
 
 
+@celery_app.task(name="template_matching.drop_old_indexes", **_RETRY)
+def drop_old_indexes() -> dict:
+    """Deletes the indexes of the embedding models that are not the current one (see `TemplateIndex`)."""
+    done = get_index().drop_old_collections(config.QDRANT_COLLECTION)
+    if "refused" in done:
+        logger.warning(
+            "The old indexes are kept: the index of %s is empty, index the catalogue again first",
+            config.collection_name(),
+        )
+    else:
+        logger.info("Old indexes deleted: %s", ", ".join(done["deleted"]) or "none")
+    return done
+
+
 @celery_app.task(name="template_matching.classify_pages", **_RETRY)
 def classify_pages(template_ids: list[str], page_keys: list[str]) -> list[dict]:
     """What each page of a document (its images, by key in the store) is among the given models (see

@@ -113,6 +113,9 @@ class RecordingIndexer:
     def remove(self, template_id: str) -> None:
         self.calls.append(("remove", template_id))
 
+    def drop_old(self) -> None:
+        self.calls.append(("drop_old", None))
+
 
 @pytest.fixture(autouse=True)
 def indexer():

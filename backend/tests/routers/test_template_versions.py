@@ -215,3 +215,15 @@ async def test_only_an_administrator_has_the_catalogue_indexed_again(db_client, 
 
     assert (await db_client.post("/api/templates/reindex")).status_code == 403
     assert indexer.calls == []
+
+
+async def test_an_administrator_has_the_old_indexes_deleted(db_client, alice, as_user, indexer):
+    as_user("root", admin=True)
+
+    assert (await db_client.post("/api/templates/reindex/old")).status_code == 202
+    assert indexer.calls == [("drop_old", None)]
+
+
+async def test_only_an_administrator_has_the_old_indexes_deleted(db_client, alice, indexer):
+    assert (await db_client.post("/api/templates/reindex/old")).status_code == 403
+    assert indexer.calls == []
