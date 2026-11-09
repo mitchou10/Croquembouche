@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.23.0](https://github.com/mitchou10/Croquembouche/compare/v1.22.0...v1.23.0) (2026-11-09)
+
+
+### Features
+
+* **catalogue:** let an administrator delete the indexes of the models no longer used ([b33721d](https://github.com/mitchou10/Croquembouche/commit/b33721d208a8205f526dc6ebd2effebee3090f97))
+* **catalogue:** let an administrator have the catalogue indexed again ([fcd0a03](https://github.com/mitchou10/Croquembouche/commit/fcd0a03cfae3d9958eb4b49171d3e1315264819e))
+* **worker:** use SigLIP2 as the default embedding model ([0a234d1](https://github.com/mitchou10/Croquembouche/commit/0a234d1a43f6dc20fec39bd74b3f2aae6d3f159f))
+
 ## [1.22.0](https://github.com/mitchou10/Croquembouche/compare/v1.21.0...v1.22.0) (2026-11-09)
 
 
