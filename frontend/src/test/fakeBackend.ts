@@ -38,6 +38,8 @@ let templates: Stored[] = []
 // How many times an administrator had the catalogue indexed again.
 let reindexed = 0
 export const reindexCount = () => reindexed
+let droppedOld = 0
+export const droppedOldCount = () => droppedOld
 
 /** The versions each model has had, newest first: only the ones a test looked at or went back to. */
 const history = new Map<string, unknown[]>()
@@ -113,6 +115,7 @@ function seedAnalyses(): Analysis[] {
 
 export function resetBackend() {
   reindexed = 0
+  droppedOld = 0
   templates = seedTemplates()
   analyses = seedAnalyses()
   uploads.clear()
@@ -227,6 +230,11 @@ export async function fakeFetch(path: string, init: RequestInit = {}): Promise<A
 
   if (parts[0] !== 'templates') return refuse(404, 'Not found')
 
+  if (parts[1] === 'reindex' && parts[2] === 'old' && method === 'POST') {
+    if (!isAdmin.value) return refuse(403, 'Seul un administrateur supprime les anciens index.')
+    droppedOld += 1
+    return reply(202, null)
+  }
   if (parts[1] === 'reindex' && method === 'POST') {
     if (!isAdmin.value) return refuse(403, 'Seul un administrateur relance l’indexation.')
     reindexed += 1

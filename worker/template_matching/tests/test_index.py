@@ -310,3 +310,31 @@ def test_removing_a_model_removes_every_x_of_it(index, client):
     index.remove("t1")
 
     assert points(client) == []
+
+
+def _make(client, name, points=0):
+    client.create_collection(name, vectors_config=models.VectorParams(size=DIMENSION, distance=models.Distance.COSINE))
+    if points:
+        client.upsert(name, [models.PointStruct(id=n + 1, vector=[1.0] * DIMENSION) for n in range(points)])
+
+
+def test_the_collections_of_older_models_are_deleted_once_the_current_one_is_filled(client, index):
+    _make(client, "croquembouche", 1)  # from before the name told the model
+    _make(client, "croquembouche--clip", 2)
+    _make(client, "croquembouche--test", 1)  # COLLECTION is the current one here, named « test »
+    _make(client, "somebody-else", 1)
+    _make(client, COLLECTION, 3)
+
+    done = index.drop_old_collections("croquembouche")
+
+    assert sorted(done["deleted"]) == ["croquembouche", "croquembouche--clip", "croquembouche--test"]
+    assert sorted(c.name for c in client.get_collections().collections) == ["somebody-else", COLLECTION]
+
+
+def test_nothing_is_deleted_while_the_current_collection_is_empty_or_missing(client, index):
+    _make(client, "croquembouche--clip", 2)
+
+    assert index.drop_old_collections("croquembouche") == {"deleted": [], "refused": "empty"}  # not even made
+    _make(client, COLLECTION)
+    assert index.drop_old_collections("croquembouche") == {"deleted": [], "refused": "empty"}  # made, not filled
+    assert client.collection_exists("croquembouche--clip")

@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 # The names the worker gives its tasks.
 INDEX_TASK = "template_matching.index_template"
 REMOVE_TASK = "template_matching.remove_template"
+DROP_OLD_TASK = "template_matching.drop_old_indexes"
 
 
 class TemplateIndexer(Protocol):
@@ -21,14 +22,16 @@ class TemplateIndexer(Protocol):
 
     def remove(self, template_id: str) -> None: ...
 
+    def drop_old(self) -> None: ...
+
 
 class CeleryIndexer:
     def __init__(self, broker_url: str) -> None:
         self._app = make_client(broker_url)
 
-    def _send(self, task: str, argument) -> None:
+    def _send(self, task: str, *arguments) -> None:
         try:
-            self._app.send_task(task, args=[argument], queue=QUEUE)
+            self._app.send_task(task, args=list(arguments), queue=QUEUE)
         except Exception:
             logger.warning("Could not ask the worker to run %s", task, exc_info=True)
 
@@ -37,6 +40,10 @@ class CeleryIndexer:
 
     def remove(self, template_id: str) -> None:
         self._send(REMOVE_TASK, template_id)
+
+    def drop_old(self) -> None:
+        """Deletes the indexes of the embedding models the worker does not use any more."""
+        self._send(DROP_OLD_TASK)
 
 
 _indexer: TemplateIndexer | None = None

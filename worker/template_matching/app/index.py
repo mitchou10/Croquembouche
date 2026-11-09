@@ -185,3 +185,19 @@ class TemplateIndex:
                 )
             ),
         )
+
+    def drop_old_collections(self, prefix: str) -> dict[str, list[str] | str]:
+        """Deletes the collections of the catalogue that are not the one of the current embedding model (« prefix » and
+        « prefix--model »): what an older model left behind. Nothing is deleted while the current one is empty, so a
+        catalogue that has not been indexed again keeps the only index it has."""
+        current = self._collection
+        if not self._client.collection_exists(current) or not self._client.count(current).count:
+            return {"deleted": [], "refused": "empty"}
+        old = [
+            c.name
+            for c in self._client.get_collections().collections
+            if c.name != current and (c.name == prefix or c.name.startswith(f"{prefix}--"))
+        ]
+        for name in old:
+            self._client.delete_collection(name)
+        return {"deleted": old}

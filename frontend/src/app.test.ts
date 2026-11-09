@@ -11,7 +11,7 @@ import { newEntity, resetCatalogue, useCatalogue } from './composables/useCatalo
 import { loadGroups, resetGroups } from './composables/useGroups'
 import { useSession } from './composables/useSession'
 import { requireAuth, routes } from './router'
-import { backendAnalysis, fakeFetch, reindexCount, uploaded } from './test/fakeBackend'
+import { backendAnalysis, fakeFetch, droppedOldCount, reindexCount, uploaded } from './test/fakeBackend'
 
 // Routes load their view on demand, which takes real time rather than just a few microtasks.
 const landsOn = (router: ReturnType<typeof createRouter>, name: string) =>
@@ -1753,6 +1753,19 @@ describe('testing the analysis', () => {
       await wrapper.get('[data-testid="reindex"]').trigger('click')
       await vi.waitFor(() => expect(wrapper.find('[data-testid="reindex-fault"]').exists()).toBe(true))
       expect(wrapper.find('[data-testid="reindex-done"]').exists()).toBe(false)
+    })
+
+    it('deletes the old indexes only after a confirmation', async () => {
+      useSession().setUser('admin', { isAdmin: true })
+      const { wrapper } = await mountAt('/vue-d-ensemble')
+      await wrapper.get('[data-testid="drop-old"]').trigger('click')
+      expect(wrapper.get('[data-testid="drop-old-warning"]').text()).toContain('pour de bon')
+      await wrapper.get('[data-testid="drop-old-cancel"]').trigger('click')
+      expect(droppedOldCount()).toBe(0)
+      await wrapper.get('[data-testid="drop-old"]').trigger('click')
+      await wrapper.get('[data-testid="drop-old-confirm"]').trigger('click')
+      await vi.waitFor(() => expect(wrapper.find('[data-testid="drop-old-done"]').exists()).toBe(true))
+      expect(droppedOldCount()).toBe(1)
     })
 
     it('spreads the uses over their three states', async () => {
