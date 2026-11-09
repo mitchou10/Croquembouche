@@ -13,7 +13,7 @@ RUN uv sync --frozen --no-dev
 # built and scanned). Another model is another build: `--build-arg EMBEDDING_MODEL=...`, and its vectors another
 # collection (see app/config.py).
 FROM builder AS model
-ARG EMBEDDING_MODEL=Qdrant/clip-ViT-B-32-vision
+ARG EMBEDDING_MODEL=google/siglip2-base-patch16-224
 RUN /app/.venv/bin/python -c "\
 import os; from fastembed import ImageEmbedding; \
 ImageEmbedding(os.environ['EMBEDDING_MODEL'], cache_dir='/models')" \
@@ -28,7 +28,7 @@ WORKDIR /app
 COPY --from=builder --chown=worker:worker /app/.venv /app/.venv
 COPY --from=builder --chown=worker:worker /app/app /app/app
 COPY --from=model --chown=worker:worker /models /models
-ARG EMBEDDING_MODEL=Qdrant/clip-ViT-B-32-vision
+ARG EMBEDDING_MODEL=google/siglip2-base-patch16-224
 USER worker
 ENV PATH="/app/.venv/bin:$PATH" \
     EMBEDDING_MODEL=$EMBEDDING_MODEL \
