@@ -31,6 +31,8 @@ OTHER_SCORE = float(os.environ.get("CLASSIFY_OTHER_SCORE", "0.85"))
 TEMPERATURE = float(os.environ.get("CLASSIFY_TEMPERATURE", "0.02"))
 # How many points a page asks for: all the rotations of every page of the models of an analysis.
 NEIGHBOURS = int(os.environ.get("CLASSIFY_NEIGHBOURS", "256"))
+# Two pages of models that look like each other at least this much are linked in the graph of a search.
+SEARCH_LINK_MIN = float(os.environ.get("SEARCH_LINK_MIN", "0.9"))
 
 # Where a result is handed back to, and the key that proves it is the worker's (the backend refuses any without it).
 BACKEND_URL = os.environ.get("BACKEND_URL", "http://localhost:8000")
