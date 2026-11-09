@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.22.0](https://github.com/mitchou10/Croquembouche/compare/v1.21.0...v1.22.0) (2026-11-09)
+
+
+### Features
+
+* **backend:** keep searches for similar documents, computed by the worker ([ff547ec](https://github.com/mitchou10/Croquembouche/commit/ff547ecda8be146fc69158336138738b3b21ceea))
+* **search:** a page to send a document and see its nearest neighbours as a force graph ([3644b74](https://github.com/mitchou10/Croquembouche/commit/3644b74539dd6f07d002ac2ce1acec39f7e36540))
+* **search:** follow a search while a worker computes it, keep past searches ([9c35cf1](https://github.com/mitchou10/Croquembouche/commit/9c35cf1bea6bd17e940ac90283aedd5cd3cdfe55))
+* **search:** show the image of the version of a model that was looked at, and document the search ([c06605c](https://github.com/mitchou10/Croquembouche/commit/c06605c026a3219cf13e4b6d4f8625c868193a39))
+* **worker:** find the pages of the catalogue that look like the pages of a document ([8712414](https://github.com/mitchou10/Croquembouche/commit/8712414315419903527afab1faa3c56f72ae0589))
+
 ## [1.21.0](https://github.com/mitchou10/Croquembouche/compare/v1.20.1...v1.21.0) (2026-11-07)
 
 
