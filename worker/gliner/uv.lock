@@ -488,7 +488,7 @@ wheels = [
 
 [[package]]
 name = "croquembouche-worker-gliner"
-version = "1.23.3"
+version = "1.24.0"
 source = { editable = "." }
 dependencies = [
     { name = "celery" },
