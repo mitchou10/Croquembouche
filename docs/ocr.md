@@ -58,6 +58,29 @@ Réglages du worker : `GLINER_MODEL` (`urchade/gliner_multi-v2.1`, multilingue, 
 `GLINER_THRESHOLD` (`0.4`), `GLINER_CHUNK_WORDS` (`250` : GLiNER lit environ 380 mots à la fois, une page est lue par
 morceaux). Backend : `GLINER_ENABLED` (`true`) : `false` ne cherche plus rien par la définition.
 
+## Les modèles
+
+PaddleOCR **PP-OCRv6 « tiny »** (détection `PP-OCRv6_tiny_det`, reconnaissance `PP-OCRv6_tiny_rec`, quelques millions de paramètres), exécutés
+par **ONNX Runtime sur le CPU** : le worker n'a plus besoin du framework `paddlepaddle` (image plus légère, démarrage plus rapide). La
+reconnaissance « tiny » lit **49 langues** (le japonais excepté) : il n'y a plus de langue à choisir. La page et chaque ligne sont remises d'aplomb
+par les modèles d'orientation de Paddle, comme avant. Pour un texte plus difficile, des modèles plus gros (`PP-OCRv6_small_*`) se choisissent par
+`OCR_DET_MODEL` et `OCR_REC_MODEL`.
+
+Avant, le worker utilisait les modèles par défaut de PaddleOCR 3.7 : **PP-OCRv6 « medium »** (`PP-OCRv6_medium_det` et `PP-OCRv6_medium_rec`) sur le framework
+Paddle. Comparaison sur la même machine, la même image (quatre lignes en français, page droite), dans les deux images construites, sans réseau :
+
+| | PP-OCRv6 medium, Paddle (avant) | PP-OCRv6 tiny, ONNX Runtime (maintenant) |
+| --- | --- | --- |
+| Lecture d'une page (après la première) | environ 5 à 6 s | environ 0,35 s |
+| Première lecture (chargement) | environ 11 s | environ 3 s |
+| Taille de l'image | 2,55 Go | 1,47 Go |
+| Confiance des lignes | 0,990 à 0,9997 | 0,96 à 0,99 |
+| Texte | « n° 2026 », « total : 1 250 » | « n°2026 », « total:1 250 » (espaces) |
+
+Le « tiny » est donc **une quinzaine de fois plus rapide** et plus léger, pour un texte lu un peu moins sûrement (les espaces autour de la ponctuation).
+C'est un ordre de grandeur sur une image simple, pas un banc d'essai : à refaire sur des documents réels (PDF scannés, tableaux, tampons) avant
+d'en faire une garantie, et à garder en tête si les entités sont cherchées dans ce texte (GLiNER) ou lues par zone.
+
 ## Ce que fait le worker
 
 - Il remet la page d'aplomb (0, 90, 180 ou 270°) et chaque ligne à l'endroit avant de lire : un scan couché ou à l'envers
@@ -65,9 +88,9 @@ morceaux). Backend : `GLINER_ENABLED` (`true`) : `false` ne cherche plus rien pa
 - Il rend chaque ligne avec son texte, sa confiance et ses quatre coins **sur la page telle qu'elle a été envoyée**, de 0 à
   1 comme les zones des modèles : les deux se comparent directement.
 - Il mesure sa consommation avec CodeCarbon, qui **s'ajoute** à celle de l'analyse : la consommation d'une utilisation est
-  celle des deux (ci-dessus, 37 s d'OCR pour une page A4).
-- Les modèles sont dans l'image : rien n'est téléchargé au démarrage. Une autre langue est une autre image
-  (`--build-arg OCR_LANG=...`).
+  celle des deux.
+- Les modèles sont dans l'image : rien n'est téléchargé au démarrage. D'autres modèles sont une autre image
+  (`--build-arg OCR_DET_MODEL=... --build-arg OCR_REC_MODEL=...`).
 
 ## Où est gardé le texte
 
@@ -82,9 +105,11 @@ Worker (`worker/ocr`) :
 
 | Variable | Défaut | Effet |
 | --- | --- | --- |
-| `OCR_LANG` | `fr` | La langue du modèle de reconnaissance (à la construction de l'image). |
+| `OCR_DET_MODEL` | `PP-OCRv6_tiny_det` | Le modèle de détection des lignes (à la construction de l'image). |
+| `OCR_REC_MODEL` | `PP-OCRv6_tiny_rec` | Le modèle de reconnaissance du texte (à la construction de l'image). |
+| `OCR_ENGINE` | `onnxruntime` | Ce qui les exécute : `onnxruntime` (les modèles ONNX), ou `paddle` (demande le paquet `paddlepaddle`). |
 | `OCR_MIN_SCORE` | `0.5` | Sous cette confiance, une ligne est écartée. |
-| `OCR_CPU_THREADS` | `10` | Les threads de calcul de Paddle. |
+| `OCR_CPU_THREADS` | `0` | Les threads de calcul (0 : le choix d'ONNX Runtime, qui convient à un petit modèle). |
 | `MEASURE_CONSUMPTION`, `COUNTRY_ISO_CODE`, `CONSUMPTION_TRACKING_MODE` | | Comme pour l'analyse, voir [consumption.md](consumption.md). |
 
 Backend : `OCR_ENABLED` (`true`) : `false` ne lit plus aucun texte.

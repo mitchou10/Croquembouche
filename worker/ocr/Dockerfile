@@ -9,10 +9,11 @@ COPY app ./app
 RUN uv sync --frozen --no-dev
 
 # The OCR models are part of the image, downloaded here once: a pod never downloads anything when it starts.
-# Another language is another build: `--build-arg OCR_LANG=...`.
+# Other models are another build: `--build-arg OCR_DET_MODEL=... --build-arg OCR_REC_MODEL=...`.
 FROM builder AS model
-ARG OCR_LANG=fr
-ENV PADDLE_PDX_CACHE_HOME=/models PADDLE_PDX_MODEL_SOURCE=huggingface OCR_LANG=$OCR_LANG
+ARG OCR_DET_MODEL=PP-OCRv6_tiny_det
+ARG OCR_REC_MODEL=PP-OCRv6_tiny_rec
+ENV PADDLE_PDX_CACHE_HOME=/models PADDLE_PDX_MODEL_SOURCE=huggingface OCR_DET_MODEL=$OCR_DET_MODEL OCR_REC_MODEL=$OCR_REC_MODEL
 # What Paddle and OpenCV load at import: the build fails without them (libgomp.so.1 for Paddle).
 RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 libgl1 libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
@@ -29,10 +30,12 @@ WORKDIR /app
 COPY --from=builder --chown=worker:worker /app/.venv /app/.venv
 COPY --from=builder --chown=worker:worker /app/app /app/app
 COPY --from=model --chown=worker:worker /models /models
-ARG OCR_LANG=fr
+ARG OCR_DET_MODEL=PP-OCRv6_tiny_det
+ARG OCR_REC_MODEL=PP-OCRv6_tiny_rec
 USER worker
 ENV PATH="/app/.venv/bin:$PATH" \
-    OCR_LANG=$OCR_LANG \
+    OCR_DET_MODEL=$OCR_DET_MODEL \
+    OCR_REC_MODEL=$OCR_REC_MODEL \
     PADDLE_PDX_CACHE_HOME=/models \
     PADDLE_PDX_MODEL_SOURCE=huggingface \
     DISABLE_MODEL_SOURCE_CHECK=True
