@@ -18,6 +18,7 @@ import type {
   Zone,
 } from './mock'
 import type { Search, SearchSummary } from './search'
+import type { Task } from './tasks'
 
 /** What the backend refuses, with the reason it gives (in French, to show as is). */
 export class ApiError extends Error {
@@ -122,6 +123,8 @@ export const fetchMyQuality = () => request<QualityOverview>('GET', '/api/metric
 export const fetchMyConsumption = () => request<MyConsumption>('GET', '/api/metrics/me/consumption')
 /** What everyone decided: administrators only. */
 export const fetchAllQuality = () => request<QualityOverview>('GET', '/api/metrics')
+/** The tasks the workers declare, one for each name and version, with the instances that have them and whether they are alive. */
+export const fetchTasks = () => request<Task[]>('GET', '/api/tasks')
 /** Has the catalogue indexed again by the worker: administrators only. Says how much was sent. */
 export const postReindex = () => request<{ templates: number; versions: number }>('POST', `${base}/reindex`)
 /** Has the worker delete the indexes of the embedding models no longer used: administrators only. */
