@@ -45,3 +45,20 @@ MEASURE_CONSUMPTION = os.environ.get("MEASURE_CONSUMPTION", "1") != "0"
 COUNTRY_ISO_CODE = os.environ.get("COUNTRY_ISO_CODE", "FRA")
 # « process » is the power of the worker's process; « machine » the whole host's, which is too much when it is shared.
 CONSUMPTION_TRACKING_MODE = os.environ.get("CONSUMPTION_TRACKING_MODE", "process")
+
+# This worker tells the backend which tasks it has and that it is alive (see `registry`), every so many seconds. It
+# is signed with the same key as a result. REGISTER_TASKS=0 turns it off.
+HEARTBEAT_SECONDS = float(os.environ.get("WORKER_HEARTBEAT_SECONDS", "30"))
+REGISTER_TASKS = os.environ.get("REGISTER_TASKS", "1") != "0"
+# Who made the tasks, as the backend lists them.
+WORKER_AUTHOR = os.environ.get("WORKER_AUTHOR", "Croquembouche")
+
+
+def version() -> str:
+    """The version of this worker, which is the one of its tasks: the one of the package, which a release changes."""
+    from importlib import metadata
+
+    try:
+        return metadata.version("croquembouche-worker-template-matching")
+    except metadata.PackageNotFoundError:  # run from the sources
+        return "0+unknown"

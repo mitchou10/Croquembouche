@@ -1,6 +1,7 @@
 import { type TokenSource } from './auth.js';
 import { Analyses } from './analyses.js';
 import { Searches } from './searches.js';
+import { Tasks } from './tasks.js';
 import { Templates } from './templates.js';
 export interface CroquembouchOptions {
     /** How to sign in: any of `bearerToken`, `clientCredentials` or `tokenExchange` (they renew themselves). */
@@ -30,5 +31,6 @@ export declare class Croquembouche {
     readonly templates: Templates;
     readonly analyses: Analyses;
     readonly searches: Searches;
+    readonly tasks: Tasks;
     constructor(url: string, options?: CroquembouchOptions);
 }

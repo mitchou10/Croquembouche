@@ -4,6 +4,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class MatchingSettings(BaseSettings):
     # The key the worker proves it is the worker with when it hands a result back. Empty: the endpoint is closed.
     INTERNAL_API_KEY: str = ""
+    # A worker that has not said it is alive for this long is down; its tasks are no longer on offer. It is forgotten
+    # (with its tasks) after WORKER_PURGE_DAYS without a sign.
+    WORKER_HEARTBEAT_TTL_SECONDS: int = 90
+    WORKER_PURGE_DAYS: int = 7
     # A use that has not come back after this long (a worker down, a message lost) is ended as failed.
     MATCHING_TIMEOUT_SECONDS: int = 600
 

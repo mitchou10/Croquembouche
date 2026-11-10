@@ -2,6 +2,7 @@ import { type TokenSource, bearerToken, clientCredentials } from './auth.js'
 import { Analyses } from './analyses.js'
 import { createHttp } from './http.js'
 import { Searches } from './searches.js'
+import { Tasks } from './tasks.js'
 import { Templates } from './templates.js'
 
 export interface CroquembouchOptions {
@@ -33,6 +34,7 @@ export class Croquembouche {
   readonly templates: Templates
   readonly analyses: Analyses
   readonly searches: Searches
+  readonly tasks: Tasks
 
   constructor(url: string, options: CroquembouchOptions = {}) {
     let auth = options.auth
@@ -54,5 +56,6 @@ export class Croquembouche {
     this.templates = new Templates(http)
     this.analyses = new Analyses(http, this.templates)
     this.searches = new Searches(http)
+    this.tasks = new Tasks(http)
   }
 }

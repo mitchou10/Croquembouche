@@ -27,6 +27,7 @@ from app.models.catalogue import (
 from app.models.document import Document
 from app.models.search import Search
 from app.models.user import UserProfile
+from app.models.worker import WorkerHeartbeat, WorkerTask
 
 __all__ = [
     "Analysis",
@@ -54,4 +55,6 @@ __all__ = [
     "TemplateShare",
     "TemplateStar",
     "UserProfile",
+    "WorkerHeartbeat",
+    "WorkerTask",
 ]

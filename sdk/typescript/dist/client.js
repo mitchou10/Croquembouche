@@ -2,6 +2,7 @@ import { bearerToken, clientCredentials } from './auth.js';
 import { Analyses } from './analyses.js';
 import { createHttp } from './http.js';
 import { Searches } from './searches.js';
+import { Tasks } from './tasks.js';
 import { Templates } from './templates.js';
 /** A client of the API::
  *
@@ -17,6 +18,7 @@ export class Croquembouche {
     templates;
     analyses;
     searches;
+    tasks;
     constructor(url, options = {}) {
         let auth = options.auth;
         if (!auth) {
@@ -38,5 +40,6 @@ export class Croquembouche {
         this.templates = new Templates(http);
         this.analyses = new Analyses(http, this.templates);
         this.searches = new Searches(http);
+        this.tasks = new Tasks(http);
     }
 }

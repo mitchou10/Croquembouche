@@ -123,3 +123,36 @@ async def test_an_analysis_is_run_and_its_result_read_with_the_sdk(sdk, as_user,
             ("Numéro", 1, "Facture 2026"),
         ]
         assert result.elements[0].template.name == "Formulaire" and result.elements[0].confidence == 0.9
+
+
+async def test_the_tasks_the_workers_declare_are_listed_with_the_sdk(sdk, as_user, db_client):
+    as_user("alice", name="Alice")
+    schema = {"type": "object", "properties": {"run_id": {"type": "string"}}}
+    registration = {
+        "service": "ocr",
+        "hostname": "host",
+        "tasks": [
+            {
+                "name": "ocr.read_document",
+                "version": "1.25.0",
+                "description": "Reads the text",
+                "author": "Croquembouche",
+                "inputSchema": schema,
+                "parameters": {"type": "object", "properties": {"language": {"type": "string", "default": "fr"}}},
+                "outputSchema": {"type": "object"},
+            }
+        ],
+    }
+    from tests.worker import KEY
+
+    assert (await db_client.put("/internal/workers/ocr-host-1", json=registration, headers=KEY)).status_code == 204
+
+    async with sdk() as client:
+        [task] = await client.tasks.list(online=True)
+        assert (task.name, task.version, task.online) == ("ocr.read_document", "1.25.0", 1)
+        assert task.input_schema.to_dict() == schema
+        assert task.parameters.to_dict()["properties"]["language"]["default"] == "fr"
+        assert [i.instance_id for i in task.instances] == ["ocr-host-1"]
+        assert [t.version for t in await client.tasks.get("ocr.read_document")] == ["1.25.0"]
+        with pytest.raises(NotFoundError):
+            await client.tasks.get("unknown")

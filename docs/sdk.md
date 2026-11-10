@@ -114,6 +114,17 @@ for voisin in trouve.neighbours:
     print(voisin.template_id, voisin.template_page, voisin.similarity)
 ```
 
+### Les tâches des workers
+
+```python
+for tache in await client.tasks.list(online=True):         # celles qu'un worker vivant sait faire
+    print(tache.name, tache.version, tache.online, tache.input_schema.to_dict())
+versions = await client.tasks.get("template_matching.classify_pages")
+```
+
+Chaque tâche dit ce qu'elle prend (`input_schema`), ce qu'on peut régler (`parameters`) et ce qu'elle donne (`output_schema`), en JSON Schema,
+avec les instances qui l'ont (voir [tasks.md](tasks.md)). En TypeScript : `await client.tasks.list({ online: true })`, `client.tasks.get(nom)`.
+
 ### Les erreurs
 
 Chaque réponse d'erreur de l'API est une exception qui porte le `status_code` et le `detail` donné par l'API :

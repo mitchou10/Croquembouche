@@ -1960,6 +1960,116 @@
         "title": "SuggestionOut",
         "type": "object"
       },
+      "TaskInstanceOut": {
+        "description": "An instance of a worker that has the task.",
+        "properties": {
+          "hostname": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hostname"
+          },
+          "instanceId": {
+            "title": "Instanceid",
+            "type": "string"
+          },
+          "lastSeenAt": {
+            "format": "date-time",
+            "title": "Lastseenat",
+            "type": "string"
+          },
+          "online": {
+            "title": "Online",
+            "type": "boolean"
+          },
+          "service": {
+            "title": "Service",
+            "type": "string"
+          },
+          "startedAt": {
+            "format": "date-time",
+            "title": "Startedat",
+            "type": "string"
+          }
+        },
+        "required": [
+          "instanceId",
+          "service",
+          "startedAt",
+          "lastSeenAt",
+          "online"
+        ],
+        "title": "TaskInstanceOut",
+        "type": "object"
+      },
+      "TaskOut": {
+        "description": "A task and one of its versions, with the instances that have it.",
+        "properties": {
+          "author": {
+            "title": "Author",
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "inputSchema": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "instances": {
+            "items": {
+              "$ref": "#/components/schemas/TaskInstanceOut"
+            },
+            "title": "Instances",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "online": {
+            "title": "Online",
+            "type": "integer"
+          },
+          "outputSchema": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "parameters": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "version",
+          "description",
+          "author",
+          "inputSchema",
+          "parameters",
+          "outputSchema",
+          "createdAt",
+          "instances",
+          "online"
+        ],
+        "title": "TaskOut",
+        "type": "object"
+      },
       "TemplateCreate": {
         "properties": {
           "categories": {
@@ -3906,6 +4016,123 @@
         "summary": "The image of a page (from 1) of the document that was sent",
         "tags": [
           "Searches"
+        ]
+      }
+    },
+    "/api/tasks": {
+      "get": {
+        "operationId": "list_tasks",
+        "parameters": [
+          {
+            "description": "Only the tasks that an instance that is alive has",
+            "in": "query",
+            "name": "online",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Only the tasks that an instance that is alive has",
+              "title": "Online",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TaskOut"
+                  },
+                  "title": "Response List Tasks Api Tasks Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "The tasks the workers declare, one for each name and version",
+        "tags": [
+          "Tasks"
+        ]
+      }
+    },
+    "/api/tasks/{name}": {
+      "get": {
+        "operationId": "get_task",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only the versions that an instance that is alive has",
+            "in": "query",
+            "name": "online",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Only the versions that an instance that is alive has",
+              "title": "Online",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TaskOut"
+                  },
+                  "title": "Response Get Task Api Tasks  Name  Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "The versions of a task, with the instances that have each",
+        "tags": [
+          "Tasks"
         ]
       }
     },

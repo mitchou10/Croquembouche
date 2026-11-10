@@ -22,6 +22,7 @@ from .errors import (
     WaitTimeoutError,
 )
 from .searches import Search, Searches
+from .tasks import Tasks
 from .templates import Templates
 
 try:
@@ -48,6 +49,7 @@ __all__ = [
     "Search",
     "Searches",
     "ServerError",
+    "Tasks",
     "Templates",
     "TokenExchange",
     "WaitTimeoutError",

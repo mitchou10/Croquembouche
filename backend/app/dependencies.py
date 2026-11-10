@@ -14,10 +14,12 @@ from app.repositories.document import DocumentRepository
 from app.repositories.metrics import MetricsRepository
 from app.repositories.profile import ProfileRepository
 from app.repositories.search import SearchRepository
+from app.repositories.worker import WorkerRepository
 from app.services.analyses import AnalysisService
 from app.services.catalogue import CatalogueService
 from app.services.quality import QualityService
 from app.services.search import SearchService
+from app.services.tasks import TaskService
 
 
 def display_name(user: RequestContext) -> str | None:
@@ -76,3 +78,10 @@ def get_searches(
 
 
 Searches = Annotated[SearchService, Depends(get_searches)]
+
+
+def get_tasks(db: Db) -> TaskService:
+    return TaskService(WorkerRepository(db))
+
+
+Tasks = Annotated[TaskService, Depends(get_tasks)]
