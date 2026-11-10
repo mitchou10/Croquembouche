@@ -11,7 +11,7 @@ import { newEntity, resetCatalogue, useCatalogue } from './composables/useCatalo
 import { loadGroups, resetGroups } from './composables/useGroups'
 import { useSession } from './composables/useSession'
 import { requireAuth, routes } from './router'
-import { backendAnalysis, fakeFetch, droppedOldCount, reindexCount, uploaded } from './test/fakeBackend'
+import { backendAnalysis, fakeFetch, droppedOldCount, reindexCount, setWorkerTasks, uploaded, workerTask } from './test/fakeBackend'
 
 // Routes load their view on demand, which takes real time rather than just a few microtasks.
 const landsOn = (router: ReturnType<typeof createRouter>, name: string) =>
@@ -315,6 +315,78 @@ describe('app', () => {
       useSession().setUser('dana')
       const other = await mountAt('/catalogue')
       expect(other.wrapper.find('[data-testid="admin-badge"]').exists()).toBe(false)
+    })
+
+    describe('the page of the services', () => {
+      it('is in the sidebar of the administrator only, and anyone else is sent to the analyses', async () => {
+        useSession().setUser('admin', { isAdmin: true })
+        const admin = await mountAt('/catalogue')
+        expect(admin.wrapper.get('a[href="/services"]').text()).toBe('Services')
+        useSession().setUser('dana')
+        const other = await mountAt('/catalogue')
+        expect(other.wrapper.find('a[href="/services"]').exists()).toBe(false)
+        const sent = await mountAt('/services')
+        expect(sent.router.currentRoute.value.name).toBe('analyses')
+      })
+
+      it('shows each worker with its status, its versions and the heartbeat of its instances', async () => {
+        useSession().setUser('admin', { isAdmin: true })
+        const { wrapper } = await mountAt('/services')
+        await vi.waitFor(() => expect(wrapper.findAll('[data-testid="service"]')).toHaveLength(2))
+
+        const [ocr, matching] = wrapper.findAll('[data-testid="service"]')
+        expect(ocr!.get('[data-testid="service-name"]').text()).toBe('ocr')
+        expect(ocr!.get('[data-testid="service-status"]').text()).toBe('En ligne')
+        expect(ocr!.get('[data-testid="service-versions"]').text()).toBe('v1.25.0')
+        expect(matching!.get('[data-testid="service-name"]').text()).toBe('template_matching')
+        expect(matching!.get('[data-testid="service-status"]').text()).toBe('Partiellement en ligne')
+        // Two versions are known side by side, the newest last: one instance is up, the other two are down.
+        expect(matching!.get('[data-testid="service-versions"]').text()).toBe('v1.24.0v1.25.0')
+        expect(matching!.get('[data-testid="service-count"]').text()).toBe('1 / 3 instances en ligne')
+
+        const rows = matching!.findAll('[data-testid="instance"]')
+        expect(rows.map((r) => r.get('[data-testid="instance-status"]').text())).toEqual(['En ligne', 'Hors ligne', 'Hors ligne'])
+        expect(rows[0]!.get('[data-testid="instance-heartbeat"]').text()).toMatch(/il y a \d+ s|à l’instant/)
+        expect(rows[1]!.get('[data-testid="instance-heartbeat"]').text()).toBe('il y a 10 min')
+        expect(rows.map((r) => r.get('[data-testid="instance-version"]').text())).toEqual(['v1.25.0', 'v1.25.0', 'v1.24.0'])
+      })
+
+      it('counts the services, the instances that are alive and the tasks', async () => {
+        useSession().setUser('admin', { isAdmin: true })
+        const { wrapper } = await mountAt('/services')
+        await vi.waitFor(() => expect(wrapper.findAll('[data-testid="service"]')).toHaveLength(2))
+
+        expect(wrapper.findAll('[data-testid="stat"]').map((s) => `${s.get('[data-testid="stat-value"]').text()} ${s.get('[data-testid="stat-label"]').text()}`)).toEqual([
+          '2 Services',
+          '2 Instances en ligne',
+          '2 Instances hors ligne',
+          '4 Tâches (nom et version)',
+        ])
+      })
+
+      it('shows what a task takes, what can be set and what it gives', async () => {
+        useSession().setUser('admin', { isAdmin: true })
+        const { wrapper } = await mountAt('/services')
+        await vi.waitFor(() => expect(wrapper.findAll('[data-testid="task"]').length).toBeGreaterThan(0))
+
+        const task = wrapper.findAll('[data-testid="task"]').find((t) => t.get('[data-testid="task-name"]').text() === 'ocr.read_document')!
+        expect(JSON.parse(task.get('[data-testid="task-input"]').text())).toMatchObject({ required: ['message'] })
+        expect(JSON.parse(task.get('[data-testid="task-parameters"]').text()).properties.threshold.default).toBe(0.8)
+        expect(JSON.parse(task.get('[data-testid="task-output"]').text()).properties.status).toEqual({ type: 'string' })
+      })
+
+      it('asks again when told to, and says so when no worker has declared itself', async () => {
+        useSession().setUser('admin', { isAdmin: true })
+        setWorkerTasks([])
+        const { wrapper } = await mountAt('/services')
+        await vi.waitFor(() => expect(wrapper.find('[data-testid="no-workers"]').exists()).toBe(true))
+
+        setWorkerTasks([workerTask('ocr.ping', '1.26.0', [['ocr-new', true]])])
+        await wrapper.get('[data-testid="refresh"]').trigger('click')
+        await vi.waitFor(() => expect(wrapper.find('[data-testid="no-workers"]').exists()).toBe(false))
+        expect(wrapper.get('[data-testid="service-versions"]').text()).toBe('v1.26.0')
+        expect(wrapper.get('[data-testid="updated"]').text()).toMatch(/Mis à jour/)
+      })
     })
 
     it('can accept a suggestion on a model it does not own', async () => {
@@ -1720,7 +1792,7 @@ describe('testing the analysis', () => {
     it('is in the sidebar for the administrator only', async () => {
       useSession().setUser('admin', { isAdmin: true })
       const admin = await mountAt('/catalogue')
-      expect(admin.wrapper.findAll('.app-sidebar__link').map((l) => l.text())).toEqual(['Catalogue', 'Analyses', 'Recherche', 'Évaluation', 'Vue d’ensemble'])
+      expect(admin.wrapper.findAll('.app-sidebar__link').map((l) => l.text())).toEqual(['Catalogue', 'Analyses', 'Recherche', 'Évaluation', 'Vue d’ensemble', 'Services'])
       useSession().setUser('dana')
       const other = await mountAt('/catalogue')
       expect(other.wrapper.findAll('.app-sidebar__link').map((l) => l.text())).toEqual(['Catalogue', 'Analyses', 'Recherche', 'Évaluation'])

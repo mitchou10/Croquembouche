@@ -15,7 +15,10 @@ const everyone = [
   { name: 'evaluation', path: '/evaluation', label: 'Évaluation', icon: 'fr-icon-checkbox-circle-line' },
 ]
 // What only the administrator has.
-const administrator = [{ name: 'overview', path: '/vue-d-ensemble', label: 'Vue d’ensemble', icon: 'fr-icon-line-chart-line' }]
+const administrator = [
+  { name: 'overview', path: '/vue-d-ensemble', label: 'Vue d’ensemble', icon: 'fr-icon-line-chart-line' },
+  { name: 'workers', path: '/services', label: 'Services', icon: 'fr-icon-server-line' },
+]
 const items = computed(() => (isAdmin.value ? [...everyone, ...administrator] : everyone))
 
 // The menu of the account, opened from the name: what is about the person (their profile, what they consumed, signing

@@ -36,6 +36,7 @@ export const routes = [
       { path: 'recherche/:id', name: 'search-detail', component: () => import('../views/SearchResultView.vue') },
       { path: 'evaluation', name: 'evaluation', component: () => import('../views/EvaluationView.vue') },
       { path: 'vue-d-ensemble', name: 'overview', meta: { requiresAdmin: true }, component: () => import('../views/OverviewView.vue') },
+      { path: 'services', name: 'workers', meta: { requiresAdmin: true }, component: () => import('../views/WorkersView.vue') },
       { path: 'parametres', name: 'settings', component: () => import('../views/SettingsView.vue') },
       { path: 'parametres/consommation', name: 'my-consumption', component: () => import('../views/MyConsumptionView.vue') },
     ],

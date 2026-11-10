@@ -15,6 +15,7 @@ import type {
 } from '../data/mock'
 import { analyses as analysisSeed, entityTypeSeed, groupSeed, sampleLetter, templates as seed } from '../data/mock'
 import type { Search, SearchSummary } from '../data/search'
+import type { Task } from '../data/tasks'
 import { hash, random, simulatePage, simulateTest } from './simulate'
 import { changedFields, cleanCategories, cleanList, MAX_EXAMPLES, MAX_TAGS } from '../composables/useCatalogue'
 import { totalConsumption } from '../composables/consumption'
@@ -41,6 +42,45 @@ let reindexed = 0
 export const reindexCount = () => reindexed
 let droppedOld = 0
 export const droppedOldCount = () => droppedOld
+
+/** The tasks the workers declare: what a test sets (`setWorkerTasks`), a few from two workers by default. */
+let workerTasks: Task[] = []
+export const setWorkerTasks = (tasks: Task[]) => {
+  workerTasks = tasks
+}
+
+/** A task of a worker, declared by the instances given (`[id, online]`). */
+export function workerTask(name: string, version: string, instances: [string, boolean][], service = name.split('.')[0]!): Task {
+  const when = (online: boolean) => new Date(Date.now() - (online ? 8_000 : 600_000)).toISOString()
+  return {
+    name,
+    version,
+    description: `Ce que fait ${name}.`,
+    author: 'Croquembouche',
+    inputSchema: { type: 'object', properties: { message: { type: 'object' } }, required: ['message'] },
+    parameters: { type: 'object', properties: { threshold: { type: 'number', default: 0.8 } } },
+    outputSchema: { type: 'object', properties: { status: { type: 'string' } } },
+    createdAt: '2026-11-10T08:00:00.000Z',
+    online: instances.filter(([, online]) => online).length,
+    instances: instances.map(([instanceId, online]) => ({
+      instanceId,
+      service,
+      hostname: `${service}-pod`,
+      startedAt: '2026-11-10T08:00:00.000Z',
+      lastSeenAt: when(online),
+      online,
+    })),
+  }
+}
+
+function seedWorkerTasks(): Task[] {
+  return [
+    workerTask('ocr.ping', '1.25.0', [['ocr-pod-1a2b3c4d', true]]),
+    workerTask('ocr.read_document', '1.25.0', [['ocr-pod-1a2b3c4d', true]]),
+    workerTask('template_matching.classify_pages', '1.25.0', [['template_matching-pod-5e6f7a8b', true], ['template_matching-pod-9c0d1e2f', false]]),
+    workerTask('template_matching.classify_pages', '1.24.0', [['template_matching-pod-old00000', false]]),
+  ]
+}
 
 /** The versions each model has had, newest first: only the ones a test looked at or went back to. */
 const history = new Map<string, unknown[]>()
@@ -117,6 +157,7 @@ function seedAnalyses(): Analysis[] {
 export function resetBackend() {
   reindexed = 0
   droppedOld = 0
+  workerTasks = seedWorkerTasks()
   templates = seedTemplates()
   analyses = seedAnalyses()
   uploads.clear()
@@ -223,6 +264,7 @@ export async function fakeFetch(path: string, init: RequestInit = {}): Promise<A
     return reply(204)
   }
 
+  if (parts[0] === 'tasks') return reply(200, workerTasks)
   if (parts[0] === 'groups') return reply(200, groupsOf(user))
   if (parts[0] === 'metrics') {
     if (parts[1] === 'me' && parts[2] === 'consumption') return reply(200, consumptionOf(user))
