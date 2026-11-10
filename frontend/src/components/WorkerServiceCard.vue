@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { ago, type ServiceStatus, type WorkerService } from '../composables/useWorkers'
+import { computed } from 'vue'
+import { ago, compareVersions, type ServiceStatus, type WorkerService } from '../composables/useWorkers'
+import type { Task } from '../data/tasks'
 
 /** One worker: how it is doing, in which version, its instances and the heartbeat of each, and the tasks it has. */
-defineProps<{ service: WorkerService; now: number }>()
+const props = defineProps<{ service: WorkerService; now: number }>()
 
 const status: Record<ServiceStatus, { label: string; type: 'success' | 'warning' | 'error' }> = {
   online: { label: 'En ligne', type: 'success' },
@@ -13,6 +15,13 @@ const status: Record<ServiceStatus, { label: string; type: 'success' | 'warning'
 const pretty = (schema: unknown) => JSON.stringify(schema, null, 2)
 const date = (iso: string) => new Date(iso).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'medium' })
 const online = (service: WorkerService) => service.instances.filter((i) => i.online).length
+
+// A task is listed once, with the versions it is in (the newest first): what it takes and gives is told for each.
+const tasks = computed(() => {
+  const byName = new Map<string, Task[]>()
+  for (const task of props.service.tasks) byName.set(task.name, [...(byName.get(task.name) ?? []), task])
+  return [...byName].map(([name, versions]) => ({ name, versions: versions.sort((a, b) => compareVersions(b.version, a.version)) }))
+})
 </script>
 
 <template>
@@ -34,9 +43,9 @@ const online = (service: WorkerService) => service.instances.filter((i) => i.onl
         <thead>
           <tr>
             <th scope="col">Instance</th>
-            <th scope="col">Hôte</th>
+            <th scope="col" class="service__optional">Hôte</th>
             <th scope="col">Version</th>
-            <th scope="col">Démarrée</th>
+            <th scope="col" class="service__optional">Démarrée</th>
             <th scope="col">Dernier signe de vie</th>
             <th scope="col">État</th>
           </tr>
@@ -44,9 +53,9 @@ const online = (service: WorkerService) => service.instances.filter((i) => i.onl
         <tbody>
           <tr v-for="instance in service.instances" :key="instance.id" data-testid="instance">
             <td class="service__id" data-testid="instance-id">{{ instance.id }}</td>
-            <td>{{ instance.hostname ?? '—' }}</td>
+            <td class="service__optional">{{ instance.hostname ?? '—' }}</td>
             <td data-testid="instance-version">{{ instance.versions.map((v) => `v${v}`).join(', ') }}</td>
-            <td>
+            <td class="service__optional">
               <time :datetime="instance.startedAt" :title="date(instance.startedAt)">{{ ago(instance.startedAt, now) }}</time>
             </td>
             <td>
@@ -62,28 +71,31 @@ const online = (service: WorkerService) => service.instances.filter((i) => i.onl
 
     <h3 class="fr-h6 fr-mb-0">Tâches</h3>
     <ul class="service__tasks">
-      <li v-for="task in service.tasks" :key="`${task.name}@${task.version}`" data-testid="task">
+      <li v-for="task in tasks" :key="task.name" data-testid="task">
         <details class="task">
           <summary class="task__summary">
             <span class="task__name" data-testid="task-name">{{ task.name }}</span>
-            <DsfrTag :label="`v${task.version}`" small />
-            <span class="task__description">{{ task.description }}</span>
+            <DsfrTag v-for="t in task.versions" :key="t.version" :label="`v${t.version}`" small />
+            <span class="task__description">{{ task.versions[0]!.description }}</span>
           </summary>
-          <p class="task__author fr-mb-0">Auteur : {{ task.author || '—' }} · déclarée le {{ date(task.createdAt) }}</p>
-          <div class="task__schemas">
-            <div>
-              <h4 class="task__title">Entrée</h4>
-              <pre data-testid="task-input">{{ pretty(task.inputSchema) }}</pre>
+          <section v-for="t in task.versions" :key="t.version" class="task__version" :aria-label="`${task.name} v${t.version}`" data-testid="task-version">
+            <h4 class="task__title">v{{ t.version }}</h4>
+            <p class="task__author fr-mb-0">Auteur : {{ t.author || '—' }} · déclarée le {{ date(t.createdAt) }} · {{ t.online }} / {{ t.instances.length }} instance{{ t.instances.length > 1 ? 's' : '' }} en ligne</p>
+            <div class="task__schemas">
+              <div>
+                <h5 class="task__title">Entrée</h5>
+                <pre data-testid="task-input">{{ pretty(t.inputSchema) }}</pre>
+              </div>
+              <div>
+                <h5 class="task__title">Réglages</h5>
+                <pre data-testid="task-parameters">{{ pretty(t.parameters) }}</pre>
+              </div>
+              <div>
+                <h5 class="task__title">Sortie</h5>
+                <pre data-testid="task-output">{{ pretty(t.outputSchema) }}</pre>
+              </div>
             </div>
-            <div>
-              <h4 class="task__title">Réglages</h4>
-              <pre data-testid="task-parameters">{{ pretty(task.parameters) }}</pre>
-            </div>
-            <div>
-              <h4 class="task__title">Sortie</h4>
-              <pre data-testid="task-output">{{ pretty(task.outputSchema) }}</pre>
-            </div>
-          </div>
+          </section>
         </details>
       </li>
     </ul>
@@ -125,9 +137,46 @@ const online = (service: WorkerService) => service.instances.filter((i) => i.onl
   overflow-x: auto;
 }
 
+/* DSFR gives a cell a generous padding: on a phone the four columns that are left have to fit. */
+.service__table :deep(th),
+.service__table :deep(td) {
+  padding: 0.5rem;
+}
+
+.service__table :deep(.fr-badge) {
+  white-space: nowrap;
+}
+
+@media (max-width: 47.99em) {
+  .service__table :deep(td),
+  .service__table :deep(th) {
+    padding: 0.5rem 0.25rem;
+    font-size: 0.8125rem;
+  }
+}
+
+/* On a phone the host and the start give way to what says whether it is alive. */
+.service__optional {
+  display: none;
+}
+
+@media (min-width: 48em) {
+  .service__optional {
+    display: table-cell;
+  }
+}
+
 .service__id {
   font-family: monospace;
-  font-size: 0.8125rem;
+  font-size: 0.6875rem;
+  overflow-wrap: anywhere;
+}
+
+@media (min-width: 48em) {
+  .service__id {
+    font-size: 0.8125rem;
+    overflow-wrap: normal;
+  }
 }
 
 .service__tasks {
@@ -161,8 +210,14 @@ const online = (service: WorkerService) => service.instances.filter((i) => i.onl
   font-size: 0.875rem;
 }
 
+.task__version {
+  margin-top: 0.75rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border-default-grey);
+}
+
 .task__author {
-  margin-top: 0.5rem;
+  margin-top: 0.25rem;
   color: var(--text-mention-grey);
   font-size: 0.875rem;
 }
