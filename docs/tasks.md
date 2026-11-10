@@ -65,3 +65,24 @@ Le worker ne s'arrête jamais à cause de cela : un backend injoignable est rée
 - `GET /api/tasks/{name}` : toutes les versions d'une tâche (`404` si aucun worker ne la déclare).
 
 Les SDK ont `client.tasks.list()` et `client.tasks.get(nom)` (voir [sdk.md](sdk.md)).
+
+## La page « Services » (administrateurs)
+
+`/services`, dans le menu des administrateurs (sous « Vue d'ensemble »), montre l'état des workers. Elle interroge `GET /api/tasks` toutes les
+10 secondes (le bouton « Actualiser » le fait tout de suite) ; tout autre compte est renvoyé vers les analyses.
+
+![La page Services : chaque worker avec son état, ses versions, ses instances et leurs tâches](workers-page.png)
+
+- **Les chiffres** : nombre de services, d'instances en ligne et hors ligne, de tâches (une par nom et version).
+- **Un service** (`gliner`, `ocr`, `template_matching`) : son état, **En ligne** (toutes ses instances sont vivantes), **Partiellement en ligne** (certaines)
+  ou **Hors ligne** (aucune) ; ses versions (deux à la fois pendant un déploiement : `v1.24.0` `v1.25.0`) ; et combien d'instances sont en ligne.
+- **Ses instances** : l'identifiant, l'hôte, la version, depuis quand elle tourne, le **dernier signe de vie** (« il y a 9 s », la date exacte au survol) et son état.
+  Une instance est hors ligne passé 90 secondes sans signe.
+- **Ses tâches** : une ligne par tâche, avec ses versions. Ouverte, chaque version dit qui l'a faite, quand elle a été déclarée, combien de ses instances
+  sont en ligne, et ses trois schémas.
+
+![Une tâche ouverte : ses deux versions, avec ce qu'elle prend, ce qu'on peut régler et ce qu'elle donne](workers-task-schemas.png)
+
+Sur un téléphone, l'hôte et la date de démarrage s'effacent pour laisser la place à ce qui dit si l'instance est vivante.
+
+<img src="workers-page-mobile.png" alt="La page Services sur un téléphone" width="320">
