@@ -1,3 +1,4 @@
 node_modules
-dist
 .vitest
+# The built package is committed: a package installed from Git has nothing to build it with.
+!dist

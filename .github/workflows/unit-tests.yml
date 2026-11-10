@@ -202,10 +202,12 @@ jobs:
         working-directory: sdk/typescript
         run: pnpm run typecheck
 
-      # The types are generated from the OpenAPI of the backend: what is committed must be what the API gives today.
-      - name: The generated types are up to date
+      # The types are generated from the OpenAPI of the backend: what is committed must be what the API gives today. So
+      # must the built package (dist/): it is what is installed from Git, which has nothing to build it with.
+      - name: The generated types and the built package are up to date
         run: |
           sdk/typescript/scripts/generate.sh
+          pnpm --dir sdk/typescript run build
           git status --porcelain -- sdk
           test -z "$(git status --porcelain -- sdk)" || { echo "Run sdk/typescript/scripts/generate.sh and commit the result."; exit 1; }
 
@@ -213,8 +215,8 @@ jobs:
         working-directory: sdk/typescript
         run: pnpm run test
 
-      # What a user gets: the package installed from Git as `pnpm add` does (built by its `prepare` script, at the revision
-      # under test), and its types and code used from a project of its own.
+      # What a user gets: the package installed from Git as `pnpm add` does (at the revision under test), and its types and
+      # code used from a project of its own.
       - name: The installed package
         run: |
           mkdir "$RUNNER_TEMP/consumer" && cd "$RUNNER_TEMP/consumer"
@@ -225,7 +227,10 @@ jobs:
           import { Croquembouche, NotFoundError, type TemplateOut } from 'croquembouche-sdk'
           const client = new Croquembouche('http://localhost', { token: 'x' })
           const read: Promise<TemplateOut> = client.templates.get('t1')
-          console.log(typeof read.then, new NotFoundError(404, 'x').name)
+          // The types of the package are real ones, not `any` for want of a file.
+          type IsAny<T> = 0 extends 1 & T ? true : false
+          const typed: IsAny<TemplateOut> extends false ? true : never = true
+          console.log(typeof read.then, typed, new NotFoundError(404, 'x').name)
           TS
           pnpm exec tsc --noEmit --strict --module nodenext --moduleResolution nodenext --target es2022 --types node check.ts
           node --experimental-strip-types --no-warnings check.ts
