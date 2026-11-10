@@ -1214,6 +1214,30 @@
         "title": "Point",
         "type": "object"
       },
+      "PurgeOut": {
+        "description": "What was deleted of what a person sent to be analysed.",
+        "properties": {
+          "documents": {
+            "title": "Documents",
+            "type": "integer"
+          },
+          "runs": {
+            "title": "Runs",
+            "type": "integer"
+          },
+          "searches": {
+            "title": "Searches",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "runs",
+          "searches",
+          "documents"
+        ],
+        "title": "PurgeOut",
+        "type": "object"
+      },
       "Quality": {
         "description": "How right the analysis has been, as far as people have said so: it grows with every prediction looked at.\n\n`correct` and `wrong` are the predictions someone decided on (validated or annotated with this very model, against\ninvalidated or annotated with another); `pending` are the ones nobody has looked at yet; `missed` are what people\nfound that the analysis did not (added by hand, or annotated as this model on a prediction of another).",
         "properties": {
@@ -5177,6 +5201,79 @@
         "summary": "Go back to a version: its owner only",
         "tags": [
           "Catalogue"
+        ]
+      }
+    },
+    "/api/users/me/data": {
+      "delete": {
+        "operationId": "purge_mine",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PurgeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete what the person sent to be analysed: their uses, their searches, the documents",
+        "tags": [
+          "Users"
+        ]
+      }
+    },
+    "/api/users/{user_id}/data": {
+      "delete": {
+        "operationId": "purge_of",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PurgeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete what a person sent to be analysed, for example when their account is deleted (administrators)",
+        "tags": [
+          "Users"
         ]
       }
     },

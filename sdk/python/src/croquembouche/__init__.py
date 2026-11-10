@@ -24,6 +24,7 @@ from .errors import (
 from .searches import Search, Searches
 from .tasks import Tasks
 from .templates import Templates
+from .users import Users
 
 try:
     __version__ = metadata.version("croquembouche-sdk")
@@ -52,6 +53,7 @@ __all__ = [
     "Tasks",
     "Templates",
     "TokenExchange",
+    "Users",
     "WaitTimeoutError",
     "__version__",
     "models",

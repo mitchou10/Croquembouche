@@ -759,6 +759,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/users/me/data": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete what the person sent to be analysed: their uses, their searches, the documents */
+        delete: operations["users_purge_mine"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/users/{user_id}/data": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete what a person sent to be analysed, for example when their account is deleted (administrators) */
+        delete: operations["users_purge_of"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/version": {
         parameters: {
             query?: never;
@@ -1281,6 +1315,18 @@ export interface components {
             x: number;
             /** Y */
             y: number;
+        };
+        /**
+         * PurgeOut
+         * @description What was deleted of what a person sent to be analysed.
+         */
+        PurgeOut: {
+            /** Documents */
+            documents: number;
+            /** Runs */
+            runs: number;
+            /** Searches */
+            searches: number;
         };
         /**
          * Quality
@@ -3390,6 +3436,57 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TemplateOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    users_purge_mine: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PurgeOut"];
+                };
+            };
+        };
+    };
+    users_purge_of: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PurgeOut"];
                 };
             };
             /** @description Validation Error */

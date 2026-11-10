@@ -125,6 +125,16 @@ versions = await client.tasks.get("template_matching.classify_pages")
 Chaque tâche dit ce qu'elle prend (`input_schema`), ce qu'on peut régler (`parameters`) et ce qu'elle donne (`output_schema`), en JSON Schema,
 avec les instances qui l'ont (voir [tasks.md](tasks.md)). En TypeScript : `await client.tasks.list({ online: true })`, `client.tasks.get(nom)`.
 
+### Oublier ce qu'on a envoyé
+
+```python
+purge = await client.users.purge_my_data()     # PurgeOut(runs=…, searches=…, documents=…)
+await client.users.purge("sub-de-bob")         # administrateurs seulement : ForbiddenError sinon
+```
+
+Cela supprime les essais, les recherches et les documents envoyés à analyser par le jeton, pas les modèles (voir [storage.md](storage.md)). En TypeScript :
+`await client.users.purgeMyData()` et `client.users.purge(id)`.
+
 ### Les erreurs
 
 Chaque réponse d'erreur de l'API est une exception qui porte le `status_code` et le `detail` donné par l'API :

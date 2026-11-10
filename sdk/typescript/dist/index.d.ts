@@ -9,4 +9,5 @@ export type { Document } from './files.js';
 export { Search, Searches } from './searches.js';
 export { Tasks } from './tasks.js';
 export { Templates } from './templates.js';
+export { Users } from './users.js';
 export type * from './types.js';

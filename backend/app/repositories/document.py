@@ -30,3 +30,8 @@ class DocumentRepository:
     async def delete(self, document: Document) -> None:
         await self._session.delete(document)
         await self._session.commit()
+
+    async def under(self, prefix: str) -> list[Document]:
+        """The documents kept under a prefix of the store."""
+        query = select(Document).where(Document.storage_prefix.startswith(prefix, autoescape=True))
+        return list((await self._session.scalars(query)).all())
