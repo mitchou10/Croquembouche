@@ -158,7 +158,8 @@ backend ; les champs s'écrivent comme l'API les envoie, en `camelCase` (`ownerN
 pnpm add "croquembouche-sdk@github:mitchou10/Croquembouche#v1.24.0&path:/sdk/typescript"
 ```
 
-Le paquet est construit à l'installation (script `prepare`). L'installation d'un sous-dossier d'un dépôt (`&path:/sdk/typescript`) est celle de pnpm.
+Le paquet construit (`dist/`) est commité, car un paquet installé depuis Git n'a rien pour se construire ; la CI vérifie qu'il est à jour.
+L'installation d'un sous-dossier d'un dépôt (`&path:/sdk/typescript`) est celle de pnpm.
 
 ```ts
 import { Croquembouche, keycloakTokenUrl } from 'croquembouche-sdk'
@@ -201,7 +202,7 @@ seul appel à Keycloak. `wait()` accepte un `AbortSignal` pour cesser d'attendre
 sdk/typescript/scripts/generate.sh
 ```
 
-La CI refuse une branche où les types commités ne sont pas ceux que donne l'API (et elle fait la même vérification pour Python). Le
+`pnpm run build` reconstruit `dist/`. La CI refuse une branche où les types ou `dist/` commités ne sont pas à jour (et elle fait la même vérification pour Python). Le
 `sdk/openapi.json` est commun aux deux SDK.
 
 ### Les tests

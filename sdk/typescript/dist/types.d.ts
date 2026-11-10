@@ -1,0 +1,28 @@
+import type { components } from './generated/schema.js';
+type Schemas = components['schemas'];
+export type AnalysisCreate = Schemas['AnalysisCreate'];
+export type AnalysisOut = Schemas['AnalysisOut'];
+export type DetectionOut = Schemas['DetectionOut'];
+export type DocumentOut = Schemas['DocumentOut'];
+export type EntityFields = Schemas['EntityFields'];
+export type EntityOut = Schemas['EntityOut'];
+export type EntityTypeOut = Schemas['EntityTypeOut'];
+export type GroupOut = Schemas['GroupOut'];
+export type NeighbourOut = Schemas['NeighbourOut'];
+export type PageOut = Schemas['PageOut'];
+export type Point = Schemas['Point'];
+export type RunOut = Schemas['RunOut'];
+export type SearchOut = Schemas['SearchOut'];
+export type SearchSummaryOut = Schemas['SearchSummaryOut'];
+export type Share = Schemas['Share'];
+export type TemplateCreate = Schemas['TemplateCreate'];
+export type TemplateMetrics = Schemas['TemplateMetrics'];
+export type TemplateOut = Schemas['TemplateOut'];
+export type TemplateSharing = Schemas['TemplateSharing'];
+export type TemplateUpdate = Schemas['TemplateUpdate'];
+export type TemplateVersionDetail = Schemas['TemplateVersionDetail'];
+export type TemplateVersionOut = Schemas['TemplateVersionOut'];
+export type Zone = Schemas['Zone'];
+/** Who can use a model: its owner (`private`), the people and groups it is shared with (`shared`), or everyone. */
+export type Visibility = TemplateSharing['visibility'];
+export {};
