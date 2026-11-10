@@ -1,6 +1,6 @@
 {
   "name": "croquembouche-sdk",
-  "version": "1.25.0",
+  "version": "1.26.0",
   "description": "TypeScript client for the Croquembouche API: the catalogue of models, the analyses and the search for similar documents.",
   "license": "Apache-2.0",
   "type": "module",

@@ -1,6 +1,6 @@
 [project]
 name = "croquembouche-sdk"
-version = "1.25.0"
+version = "1.26.0"
 description = "Python client for the Croquembouche API: the catalogue of models, the analyses and the search for similar documents."
 readme = "README.md"
 requires-python = ">=3.11"

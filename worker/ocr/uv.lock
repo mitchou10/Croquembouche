@@ -817,7 +817,7 @@ wheels = [
 
 [[package]]
 name = "croquembouche-worker-ocr"
-version = "1.25.0"
+version = "1.26.0"
 source = { editable = "." }
 dependencies = [
     { name = "boto3" },

@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.26.0](https://github.com/mitchou10/Croquembouche/compare/v1.25.0...v1.26.0) (2026-11-10)
+
+
+### Features
+
+* **frontend:** page Services : tâches regroupées par nom, tableau lisible sur téléphone, captures ([aa77f3b](https://github.com/mitchou10/Croquembouche/commit/aa77f3b4a306de0e967a1265bb759322f838499e))
+* **frontend:** une page admin des services : version, état et heartbeat des workers ([e6e76e1](https://github.com/mitchou10/Croquembouche/commit/e6e76e1e61ea2ea5b5a28981707b88e43d78b1ea))
+* **workers:** les workers déclarent leurs tâches au backend ([5f2003f](https://github.com/mitchou10/Croquembouche/commit/5f2003ffdce5010b3c504ea55941efe9e57138ec))
+
 ## [1.25.0](https://github.com/mitchou10/Croquembouche/compare/v1.24.0...v1.25.0) (2026-11-10)
 
 
