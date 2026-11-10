@@ -370,9 +370,22 @@ describe('app', () => {
         await vi.waitFor(() => expect(wrapper.findAll('[data-testid="task"]').length).toBeGreaterThan(0))
 
         const task = wrapper.findAll('[data-testid="task"]').find((t) => t.get('[data-testid="task-name"]').text() === 'ocr.read_document')!
+        expect(task.findAll('[data-testid="task-version"]')).toHaveLength(1)
         expect(JSON.parse(task.get('[data-testid="task-input"]').text())).toMatchObject({ required: ['message'] })
         expect(JSON.parse(task.get('[data-testid="task-parameters"]').text()).properties.threshold.default).toBe(0.8)
         expect(JSON.parse(task.get('[data-testid="task-output"]').text()).properties.status).toEqual({ type: 'string' })
+      })
+
+      it('lists a task once, with its versions, the newest first', async () => {
+        useSession().setUser('admin', { isAdmin: true })
+        const { wrapper } = await mountAt('/services')
+        await vi.waitFor(() => expect(wrapper.findAll('[data-testid="service"]')).toHaveLength(2))
+
+        const matching = wrapper.findAll('[data-testid="service"]')[1]!
+        const classify = matching.findAll('[data-testid="task"]').filter((t) => t.get('[data-testid="task-name"]').text() === 'template_matching.classify_pages')
+        expect(classify).toHaveLength(1)
+        expect(classify[0]!.findAll('[data-testid="task-version"]').map((v) => v.get('h4').text())).toEqual(['v1.25.0', 'v1.24.0'])
+        expect(classify[0]!.text()).toContain('1 / 2 instances en ligne')
       })
 
       it('asks again when told to, and says so when no worker has declared itself', async () => {
