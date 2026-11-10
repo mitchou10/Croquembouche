@@ -15,7 +15,7 @@ from app.repositories.document import DocumentRepository
 from app.repositories.search import SearchRepository
 from app.schemas.matching import SearchResult
 from app.schemas.search import MAX_NEIGHBOURS, LinkOut, NeighbourOut, SearchOut, SearchSummaryOut
-from app.services import documents
+from app.services import documents, sharing
 from app.services.catalogue import InvalidError, NotFoundError
 from app.services.consumption import consumed
 
@@ -145,13 +145,22 @@ class SearchService:
 
     async def start(self, file_name: str, data: bytes, k: int, template_ids: list[str] | None) -> SearchOut:
         """Looks for the pages of the catalogue that look like the pages of a document, in the models given or in every
-        one (the catalogue is everyone's). It answers at once, running: the worker computes."""
+        one the person can use. It answers at once, running: the worker computes."""
         if not 1 <= k <= MAX_NEIGHBOURS:
             raise InvalidError(f"Le nombre de voisins est compris entre 1 et {MAX_NEIGHBOURS}.")
         wanted = list(dict.fromkeys(template_ids)) if template_ids else None
         for template_id in wanted or []:
-            if await self._catalogue.get_template(template_id) is None:
+            template = await self._catalogue.get_template(template_id)
+            if template is None or not sharing.can_see(self._user, template):
                 raise InvalidError("Un des modèles choisis n’existe pas.")
+        if wanted is None:
+            # Every model the person can use: when there are some they cannot, the worker is told which to look in.
+            templates = await self._catalogue.list_templates()
+            usable = [str(t.id) for t in templates if sharing.can_see(self._user, t)]
+            if templates and not usable:
+                # An empty list would mean every model to the worker.
+                raise InvalidError("Aucun modèle du catalogue n’est accessible.")
+            wanted = usable if len(usable) < len(templates) else None
         try:
             prepared = await documents.prepare(data)
         except documents.InvalidDocumentError as error:

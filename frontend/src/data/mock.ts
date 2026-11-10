@@ -134,6 +134,10 @@ export interface Template extends TemplateFields {
   /** Identifiers of the users who starred it. */
   stars: string[]
   suggestions: Suggestion[]
+  /** Who can use it; a sub-model has the visibility of its model. */
+  visibility: Visibility
+  /** The people and groups it is shared with, told to its owner only (empty for anyone else). */
+  shares: Share[]
 }
 
 /** A version of a model, as it was saved: the list of them is its history. */
@@ -169,7 +173,10 @@ export const groupSeed: GroupSeed[] = [
   { id: 'g4', name: 'Direction', members: 5, memberIds: ['alice.martin'] },
 ]
 
-/** Who an analysis is shared with: a person, by e-mail address, or a whole group, by name. */
+/** Who can use a model: its owner alone, the people and groups it is shared with, or the whole catalogue. */
+export type Visibility = 'private' | 'shared' | 'public'
+
+/** Who an analysis or a model is shared with: a person, by e-mail address, or a whole group, by name. */
 export interface Share {
   kind: 'email' | 'group'
   value: string
@@ -328,7 +335,7 @@ const letterEntities = (): TemplateEntity[] => [
 type RawComment = Omit<Comment, 'authorName'>
 type RawFields = Omit<TemplateFields, 'pages'>
 type RawSuggestion = Omit<Suggestion, 'authorName' | 'comments' | 'fields'> & { comments: RawComment[]; fields: RawFields }
-type RawTemplate = Omit<Template, 'ownerName' | 'suggestions' | 'pages' | 'version' | 'parentId' | 'parentName' | 'children'> & { suggestions: RawSuggestion[] }
+type RawTemplate = Omit<Template, 'ownerName' | 'suggestions' | 'pages' | 'version' | 'parentId' | 'parentName' | 'children' | 'visibility' | 'shares'> & { suggestions: RawSuggestion[] }
 
 const rawTemplates: RawTemplate[] = [
   {
@@ -469,6 +476,8 @@ export const templates: Template[] = rawTemplates.map((t) => ({
   parentId: null,
   parentName: null,
   children: [],
+  visibility: 'public',
+  shares: [],
   ownerName: t.ownerId,
   // A demo model's document is one image: one page, which is the model itself.
   pages: t.document ? [{ page: 1, name: '', description: '', label: t.name }] : [],

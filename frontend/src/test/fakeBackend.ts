@@ -143,6 +143,8 @@ interface Body {
   documentId?: string | null
   parentId?: string
   pages?: PageFields[]
+  visibility?: Template['visibility']
+  shares?: Template['shares']
 }
 
 function clean(body: Body): TemplateFields {
@@ -259,6 +261,9 @@ export async function fakeFetch(path: string, init: RequestInit = {}): Promise<A
       ownerName: user,
       stars: [],
       suggestions: [],
+      // A model is for everyone unless said otherwise; a sub-model is for whoever its model is for.
+      visibility: parent?.visibility ?? (body as Body).visibility ?? 'public',
+      shares: parent || (body as Body).visibility !== 'shared' ? [] : ((body as Body).shares ?? []),
       ...fields,
       pages: [],
       entities: [],
@@ -330,6 +335,11 @@ export async function fakeFetch(path: string, init: RequestInit = {}): Promise<A
       else delete template.document
     }
     buildPages(template, fields.pages)
+    const { visibility, shares } = body as Body
+    if (visibility && !template.parentId) {
+      template.visibility = visibility
+      template.shares = visibility === 'shared' ? (shares ?? []) : []
+    }
     return reply(200, template)
   }
   if (sub === 'promote' && method === 'POST') {

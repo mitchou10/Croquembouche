@@ -12,6 +12,7 @@ from app.models.catalogue import (
     Template,
     TemplateEntity,
     TemplatePage,
+    TemplateShare,
     TemplateStar,
     TemplateVersion,
 )
@@ -28,10 +29,12 @@ from app.schemas.catalogue import (
     TemplateFields,
     TemplateOut,
     TemplatePageOut,
+    TemplateSharing,
     TemplateVersionDetail,
     TemplateVersionOut,
 )
-from app.services import documents
+from app.schemas.sharing import Share, Visibility
+from app.services import documents, sharing
 
 # What can be suggested as a category before anyone has made one up.
 DEFAULT_CATEGORIES = ["Identité", "Tampon", "Signature", "Code", "Formulaire", "Autre"]
@@ -279,10 +282,14 @@ class CatalogueService:
     async def search(self, query: str = "", mine: bool = False) -> list[TemplateOut]:
         needle = query.strip().lower()
         templates = await self._repository.list_templates(self._user.user_id if mine else None)
+        # A model the person cannot use is not named: for them it is not in the catalogue.
         found = [
             t
             for t in templates
-            if not needle or any(needle in f.lower() for f in (t.name, t.description, *(c.name for c in t.categories)))
+            if sharing.can_see(self._user, t)
+            and (
+                not needle or any(needle in f.lower() for f in (t.name, t.description, *(c.name for c in t.categories)))
+            )
         ]
         links = await self._links(found)
         return [self._view_with(t, links) for t in found]
@@ -311,14 +318,21 @@ class CatalogueService:
     # --- writing a template
 
     async def create(
-        self, fields: TemplateFields, document_id: str | None, parent_id: str | None = None
+        self,
+        fields: TemplateFields,
+        document_id: str | None,
+        parent_id: str | None = None,
+        visibility: Visibility | None = None,
+        shares: list[Share] | None = None,
     ) -> TemplateOut:
-        """Makes a model, or a sub-model of `parent_id` (one level): the owner of the parent adds those, or an admin."""
+        """Makes a model, or a sub-model of `parent_id` (one level): the owner of the parent adds those, or an admin.
+        A model is for everyone unless it is said who it is for; a sub-model is for whoever its model is for."""
         template = Template(
             id=uuid.uuid4(), owner_id=self._user.user_id, name="", description="", major=1, minor=0, patch=0
         )
         if parent_id is not None:
             template.parent_id = await self._parent(parent_id)
+        self._set_sharing(template, visibility, shares or [])
         await self._apply(template, fields, document_id, replace_document=True)
         self._repository.add(template)
         await self._repository.flush()  # the model comes first: its first version points to it
@@ -326,14 +340,51 @@ class CatalogueService:
         await self._repository.commit()
         return await self._saved(template, reindex=True)
 
-    async def update(self, template_id: str, fields: TemplateFields, document: tuple[bool, str | None]) -> TemplateOut:
-        """Only the owner changes a template directly. `document`: whether to change it, and to what."""
+    async def update(
+        self,
+        template_id: str,
+        fields: TemplateFields,
+        document: tuple[bool, str | None],
+        visibility: Visibility | None = None,
+        shares: list[Share] | None = None,
+    ) -> TemplateOut:
+        """Only the owner changes a template directly. `document`: whether to change it, and to what. `visibility` and
+        `shares`: who it is for, unchanged when absent."""
         template = await self._template(template_id)
         if not self._is_owner(template):
             raise ForbiddenError("Seul le propriétaire modifie le modèle.")
         await self._change(template, fields, document[1], replace_document=document[0])
+        if visibility is not None or shares is not None:
+            self._set_sharing(template, visibility or template.visibility, shares if shares is not None else None)
         await self._repository.commit()
         return await self._saved(template, reindex=True)
+
+    async def share(self, template_id: str, body: TemplateSharing) -> TemplateOut:
+        """Says who can use a model, its owner only. It is not a change of the model: no new version."""
+        template = await self._template(template_id)
+        if not self._is_owner(template):
+            raise ForbiddenError("Seul le propriétaire partage le modèle.")
+        if template.parent_id is not None:
+            raise InvalidError("Un sous-modèle est partagé comme son modèle.")
+        self._set_sharing(template, body.visibility, body.shares)
+        await self._repository.commit()
+        return await self._saved(template)
+
+    def _set_sharing(self, template: Template, visibility: Visibility | None, shares: list[Share] | None) -> None:
+        """Who a model is for. The people and groups only count for a `shared` model, and are dropped for another. A
+        sub-model has its model's: it is not given any of its own. `shares` None keeps the ones it has."""
+        if template.parent_id is not None:
+            if visibility is not None or shares:
+                raise InvalidError("Un sous-modèle est partagé comme son modèle.")
+            return
+        template.visibility = visibility or "public"
+        if template.visibility != "shared":
+            template.shares = []
+        elif shares is not None:
+            try:
+                template.shares = sharing.build(self._user, shares, TemplateShare)
+            except sharing.ShareError as error:
+                raise InvalidError(str(error)) from error
 
     async def promote(self, template_id: str) -> TemplateOut:
         """Makes a sub-model a root. Nothing else changes (entities, version, history, stars, uses): it only stands on
@@ -343,6 +394,7 @@ class CatalogueService:
             raise ForbiddenError("Seul le propriétaire promeut le modèle.")
         if template.parent_id is None:
             raise InvalidError("Ce modèle n’est pas un sous-modèle.")
+        self._inherit(template, template.parent or template)  # it keeps being for whoever it was for
         template.parent_id = None
         await self._repository.commit()
         return await self._saved(template)
@@ -362,11 +414,18 @@ class CatalogueService:
         chosen = next((c for c in children if str(c.id) == promote), None)
         if chosen is None:
             raise InvalidError("Choisissez un des sous-modèles de ce modèle.")
+        self._inherit(chosen, template)
         chosen.parent_id = None
         for child in children:
             if child is not chosen:
                 child.parent_id = chosen.id
         await self._repository.flush()  # before the model goes: nothing points to it any more
+
+    @staticmethod
+    def _inherit(child: Template, root: Template) -> None:
+        """A sub-model that stands on its own is for whoever its model was for."""
+        child.visibility = root.visibility
+        child.shares = [TemplateShare(kind=x.kind, value=x.value, value_hash=x.value_hash) for x in root.shares]
 
     async def _parent(self, parent_id: str) -> uuid.UUID:
         parent = await self._repository.get_template(parent_id)
@@ -623,8 +682,9 @@ class CatalogueService:
         return template.owner_id == self._user.user_id
 
     async def _template(self, template_id: str) -> Template:
+        """A model the person can use: for anyone else it does not exist."""
         template = await self._repository.get_template(template_id)
-        if template is None:
+        if template is None or not sharing.can_see(self._user, template):
             raise NotFoundError(template_id)
         return template
 
@@ -662,7 +722,12 @@ class CatalogueService:
     def _view_with(self, template: Template, links: dict[uuid.UUID, Row]) -> TemplateOut:
         document = template.document
         parent = links.get(template.parent_id) if template.parent_id else None
+        root = template.parent or template
+        # The people and groups a model is shared with are for its owner (and administrators) to know.
+        manages = self._user.is_admin or self._is_owner(root)
         return TemplateOut(
+            visibility=root.visibility,  # type: ignore[arg-type]
+            shares=[Share(kind=x.kind, value=x.value) for x in root.shares] if manages else [],  # type: ignore[arg-type]
             id=str(template.id),
             owner_id=template.owner_id,
             owner_name=_display_name(template.owner),

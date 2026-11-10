@@ -3,17 +3,20 @@ import { computed, onBeforeUnmount, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import DocumentViewer from '../components/DocumentViewer.vue'
 import EntitiesEditor from '../components/EntitiesEditor.vue'
+import ShareInput from '../components/ShareInput.vue'
 import TemplateLayout from '../components/TemplateLayout.vue'
 import TagsInput from '../components/TagsInput.vue'
+import { useGroups } from '../composables/useGroups'
 import { useWideScreen } from '../composables/useWideScreen'
 import { ACCEPTED_DOCUMENT_TYPES, documentError, newEntity, useCatalogue } from '../composables/useCatalogue'
 import { ApiError, deleteDocument, fetchSuggestions, uploadDocument, type SuggestedEntity } from '../data/api'
-import type { PageFields, TemplateDocument, TemplateEntity, Zone } from '../data/mock'
+import type { PageFields, Share, TemplateDocument, TemplateEntity, Visibility, Zone } from '../data/mock'
 
 // One form, three uses: create a template, edit one you own, or suggest a change to someone else's.
 const route = useRoute()
 const router = useRouter()
 const { find, isOwner, create, update, suggest, knownCategories } = useCatalogue()
+const { groups } = useGroups()
 
 // A new model can be a sub-model of another: « Ajouter un sous-modèle » on the page of a model brings its id here.
 const parent = route.name === 'catalogue-new' && typeof route.query.parent === 'string' ? find(route.query.parent) : undefined
@@ -31,6 +34,12 @@ const name = ref(existing?.name ?? '')
 const description = ref(existing?.description ?? '')
 const categories = ref<string[]>([...(existing?.categories ?? [])])
 const message = ref('')
+// Who can use the model. A sub-model has its model's, and a suggestion does not change it: neither shows the choice.
+const visibility = ref<Visibility>(existing?.visibility ?? 'public')
+const shares = ref<Share[]>([...(existing?.shares ?? [])])
+const shareInput = ref<InstanceType<typeof ShareInput>>()
+const sharesError = ref(false)
+const canShare = computed(() => mode.value !== 'suggest' && !parent && !existing?.parentId)
 // A copy: the entities are edited in place and must not touch the catalogue until the form is submitted.
 const entities = ref<TemplateEntity[]>(JSON.parse(JSON.stringify(existing?.entities ?? [])))
 const errors = ref<{ name?: string; description?: string; form?: string }>({})
@@ -198,17 +207,21 @@ async function submit() {
     ...(errors.value.description ? ['la description'] : []),
     ...(incomplete.length ? [`${incomplete.length > 1 ? 'les entités' : 'l’entité'} ${incomplete.join(', ')}`] : []),
   ]
-  if (errors.value.name || errors.value.description || !entitiesValid) return
+  // A recipient still being typed is taken, or flagged.
+  sharesError.value = canShare.value && visibility.value === 'shared' && shareInput.value?.commit() === false
+  if (sharesError.value) toComplete.value = [...toComplete.value, 'le destinataire à corriger']
+  if (errors.value.name || errors.value.description || !entitiesValid || sharesError.value) return
+  const sharing = canShare.value ? { visibility: visibility.value, shares: shares.value } : undefined
 
   try {
     if (mode.value === 'create') {
-      const created = await create(fields, currentDocument.value ?? undefined, parent?.id)
+      const created = await create(fields, currentDocument.value ?? undefined, parent?.id, sharing)
       committed = true
       await router.push({ name: 'catalogue-detail', params: { id: created.id } })
       return
     }
     if (mode.value === 'edit') {
-      await update(existing!.id, fields, documentChanged.value ? currentDocument.value : undefined)
+      await update(existing!.id, fields, documentChanged.value ? currentDocument.value : undefined, sharing)
       committed = true
     } else {
       await suggest(existing!.id, fields, message.value)
@@ -341,6 +354,21 @@ async function submit() {
           :is-invalid="!!errors.description"
         />
 
+        <div v-if="canShare" class="template-form__sharing">
+          <div class="fr-select-group">
+            <label class="fr-label" for="visibility">Visible par</label>
+            <select id="visibility" v-model="visibility" class="fr-select" data-testid="visibility">
+              <option value="public">Tout le catalogue</option>
+              <option value="shared">Les personnes et groupes choisis</option>
+              <option value="private">Moi seul</option>
+            </select>
+          </div>
+          <ShareInput v-if="visibility === 'shared'" ref="shareInput" v-model="shares" :groups="groups" />
+        </div>
+        <p v-else-if="mode !== 'suggest'" class="fr-hint-text fr-mb-0" data-testid="sharing-inherited">
+          Un sous-modèle est visible par les mêmes personnes que son modèle.
+        </p>
+
         <p v-if="suggestions.length" class="template-form__suggest fr-mb-0" role="status" data-testid="suggestions">
           <span>{{ suggestions.length }} entité{{ suggestions.length > 1 ? 's' : '' }} détectée{{ suggestions.length > 1 ? 's' : '' }} dans ce PDF.</span>
           <button type="button" class="fr-btn fr-btn--sm" data-testid="suggestions-add" @click="addSuggestions">Les ajouter</button>
@@ -388,6 +416,18 @@ async function submit() {
   padding: 0.25rem 0.5rem;
   background: var(--background-contrast-info);
   font-size: 0.875rem;
+}
+
+.template-form__sharing {
+  display: grid;
+  gap: 0.5rem;
+}
+
+@media (min-width: 40em) {
+  .template-form__sharing {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+    align-items: start;
+  }
 }
 
 .template-form__page {

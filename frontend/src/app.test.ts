@@ -126,6 +126,26 @@ describe('app', () => {
     await vi.waitFor(() => expect(wrapper.text()).toContain('Tampon préfecture'))
   })
 
+  it('says who can use a model, and keeps it when the model is changed', async () => {
+    useSession().setUser('dana')
+    const { wrapper, router } = await mountAt('/catalogue/nouveau')
+    await field(wrapper, 'Nom').setValue('Modèle de service')
+    await field(wrapper, 'Description').setValue('Pour mon équipe')
+    expect(wrapper.find('[data-testid="visibility"]').exists()).toBe(true)
+    await wrapper.get('[data-testid="visibility"]').setValue('shared')
+    const input = wrapper.get('input[title^="Saisissez une adresse"]')
+    await input.setValue('julie@example.org')
+    await input.trigger('keydown.enter')
+    await wrapper.get('form').trigger('submit')
+    await landsOn(router, 'catalogue-detail')
+    await vi.waitFor(() => expect(wrapper.get('h1').text()).toBe('Modèle de service'))
+
+    await router.push({ name: 'catalogue-edit', params: { id: String(router.currentRoute.value.params.id) } })
+    await vi.waitFor(() => expect(wrapper.get('h1').text()).toBe('Modifier le modèle'))
+    expect((wrapper.get('[data-testid="visibility"]').element as HTMLSelectElement).value).toBe('shared')
+    expect(wrapper.text()).toContain('julie@example.org')
+  })
+
   it('adds a sub-model to a model: listed under it, found by search, with its own version', async () => {
     useSession().setUser('alice.martin')
     const { wrapper, router } = await mountAt('/catalogue/t1')

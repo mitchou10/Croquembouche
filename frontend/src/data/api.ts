@@ -14,6 +14,7 @@ import type {
   TemplateDocument,
   TemplateQuality,
   TemplateVersion,
+  Visibility,
   Zone,
 } from './mock'
 import type { Search, SearchSummary } from './search'
@@ -77,6 +78,10 @@ export interface TemplateBody {
   documentId?: string | null
   /** When making a model: the one it is a sub-model of. Ignored by a change: where a model stands does not change. */
   parentId?: string
+  /** Who can use the model: absent keeps it as it is (everyone for a new one). Not for a sub-model, which has its model's. */
+  visibility?: Visibility
+  /** The people and groups of a `shared` model. */
+  shares?: Share[]
 }
 
 interface DocumentAnswer {

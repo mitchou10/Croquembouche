@@ -10,6 +10,7 @@ from app.schemas.catalogue import (
     SuggestionCreate,
     TemplateCreate,
     TemplateOut,
+    TemplateSharing,
     TemplateUpdate,
     TemplateVersionDetail,
     TemplateVersionOut,
@@ -34,14 +35,14 @@ async def _run(call):
         raise HTTPException(status.HTTP_409_CONFLICT, str(error)) from error
 
 
-@router.get("", summary="The catalogue: every model, searched and filtered")
+@router.get("", summary="The catalogue: every model the person can use, searched and filtered")
 async def list_templates(service: Catalogue, q: str = "", mine: bool = False) -> list[TemplateOut]:
     return await service.search(q, mine)
 
 
 @router.post("", status_code=status.HTTP_201_CREATED, summary="Make a model; the user becomes its owner")
 async def create(body: TemplateCreate, service: Catalogue) -> TemplateOut:
-    return await _run(service.create(body, body.document_id, body.parent_id))
+    return await _run(service.create(body, body.document_id, body.parent_id, body.visibility, body.shares))
 
 
 @router.post("/reindex", summary="Index the whole catalogue again (administrators)")
@@ -78,7 +79,15 @@ async def get_page(
 async def update(template_id: str, body: TemplateUpdate, service: Catalogue) -> TemplateOut:
     # Absent keeps the document, null removes it: told apart by what was actually sent.
     document = ("documentId" in body.model_fields_set or "document_id" in body.model_fields_set, body.document_id)
-    return await _run(service.update(template_id, body, document))
+    return await _run(service.update(template_id, body, document, body.visibility, body.shares))
+
+
+@router.put(
+    "/{template_id}/shares",
+    summary="Say who can use a model: private, shared with people and groups, or public; its owner only",
+)
+async def share(template_id: str, body: TemplateSharing, service: Catalogue) -> TemplateOut:
+    return await _run(service.share(template_id, body))
 
 
 @router.delete(

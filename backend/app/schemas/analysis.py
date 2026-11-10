@@ -6,20 +6,11 @@ from pydantic import Field, StringConstraints
 from app.schemas.base import CamelModel
 from app.schemas.catalogue import DocumentOut, Zone
 from app.schemas.matching import OcrPage
-
-MAX_SHARES = 20
+from app.schemas.sharing import MAX_SHARES, Share
 
 ReviewStatus = Literal["pending", "validated", "invalidated", "annotated"]
 Name = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
 Description = Annotated[str, StringConstraints(strip_whitespace=True, max_length=300)]
-ShareValue = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=254)]
-
-
-class Share(CamelModel):
-    """Who an analysis is shared with: a person, by e-mail address, or a group, by name."""
-
-    kind: Literal["email", "group"]
-    value: ShareValue
 
 
 class AnalysisCreate(CamelModel):

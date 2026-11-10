@@ -4,6 +4,7 @@ from typing import Annotated, Literal
 from pydantic import Field, StringConstraints
 
 from app.schemas.base import CamelModel
+from app.schemas.sharing import MAX_SHARES, Share, Visibility
 
 MAX_EXAMPLES = 5
 MAX_TAGS = 10
@@ -65,12 +66,25 @@ class TemplateCreate(TemplateFields):
     document_id: str | None = None
     # The model this one is a sub-model of; absent for a root. A sub-model has no sub-model.
     parent_id: str | None = None
+    # Who can use it: absent is everyone. A sub-model has its model's, and says nothing of its own.
+    visibility: Visibility | None = None
+    shares: Annotated[list[Share], Field(max_length=MAX_SHARES)] = []
 
 
 class TemplateUpdate(TemplateFields):
-    """`document_id`: absent keeps the document, null removes it, an id replaces it."""
+    """`document_id`: absent keeps the document, null removes it, an id replaces it. `visibility` and `shares`: absent
+    keeps who the model is shared with."""
 
     document_id: str | None = None
+    visibility: Visibility | None = None
+    shares: Annotated[list[Share], Field(max_length=MAX_SHARES)] | None = None
+
+
+class TemplateSharing(CamelModel):
+    """Who can use a model. The people and groups only count when it is `shared`."""
+
+    visibility: Visibility
+    shares: Annotated[list[Share], Field(max_length=MAX_SHARES)] = []
 
 
 class SuggestionCreate(CamelModel):
@@ -173,6 +187,9 @@ class TemplateOut(CamelModel):
     stars: list[str]
     suggestions: list[SuggestionOut]
     document: DocumentOut | None = None
+    # Who can use it. A sub-model has its model's. The people and groups are only told to the owner.
+    visibility: Visibility = "public"
+    shares: list[Share] = []
 
 
 class SuggestedEntity(CamelModel):

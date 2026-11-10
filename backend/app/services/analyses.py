@@ -1,12 +1,10 @@
 import json
 import logging
-import re
 import uuid
 
 from starlette.concurrency import run_in_threadpool
 
 from app.config import MatchingSettings
-from app.core.crypto import blind_index
 from app.core.matching import MatchingDispatcher
 from app.core.security.factory import RequestContext
 from app.models.analysis import Analysis, AnalysisShare, AnalysisTemplate, Detection, DetectionClassification, Run
@@ -33,24 +31,14 @@ from app.schemas.analysis import (
 )
 from app.schemas.catalogue import DocumentOut, Zone
 from app.schemas.matching import MatchingResult, OcrPage
-from app.services import documents, matching_results, ocr_text
+from app.services import documents, matching_results, ocr_text, sharing
 from app.services.catalogue import ForbiddenError, InvalidError, NotFoundError, index_message, version_message
 from app.services.consumption import consumed as _consumed
+from app.services.sharing import ShareError, group_name
 
 __all__ = ["AnalysisService", "ForbiddenError", "InvalidError", "NotFoundError", "group_name"]
 
 logger = logging.getLogger(__name__)
-
-EMAIL = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
-
-
-def group_name(path: str) -> str:
-    """A group as Keycloak names it in a token is its path (« /direction/paris »): people know it without the slash."""
-    return path.strip("/")
-
-
-def _fingerprint(kind: str, value: str) -> str:
-    return blind_index(f"{kind}:{value}")
 
 
 def _consumption_of(runs: list[Run]) -> ConsumptionOut:
@@ -109,24 +97,18 @@ class AnalysisService:
 
     @property
     def _groups(self) -> list[str]:
-        return [group_name(g) for g in self._user.groups if group_name(g)]
+        return sharing.groups_of(self._user)
 
     def groups(self) -> list[GroupOut]:
         """The groups an analysis can be shared with: the person's own, as their token says."""
         return [GroupOut(id=name, name=name) for name in dict.fromkeys(self._groups)]
-
-    def _share_hashes(self) -> list[str]:
-        hashes = [_fingerprint("group", name.lower()) for name in self._groups]
-        if self._user.email:
-            hashes.append(_fingerprint("email", self._user.email.lower()))
-        return hashes
 
     def _can_open(self, analysis: Analysis) -> bool:
         return (
             self._user.is_admin
             or analysis.owner_id == self._user.user_id
             or analysis.is_public
-            or any(s.value_hash in self._share_hashes() for s in analysis.shares)
+            or any(s.value_hash in sharing.hashes_of(self._user) for s in analysis.shares)
         )
 
     def _is_owner(self, analysis: Analysis) -> bool:
@@ -218,7 +200,9 @@ class AnalysisService:
             wanted = {uuid.UUID(t) for t in body.template_ids}
         except ValueError as error:
             raise InvalidError("Un des modèles n’existe pas.") from error
-        if wanted != await self._repository.existing_templates(list(wanted)):
+        found = await self._repository.templates(list(wanted))
+        # A model the person cannot use is no more theirs to look for than one that does not exist.
+        if wanted != {t.id for t in found if sharing.can_see(self._user, t)}:
             raise InvalidError("Un des modèles n’existe pas.")
         analysis = Analysis(
             owner_id=self._user.user_id,
@@ -245,20 +229,10 @@ class AnalysisService:
         return self._view(await self._repository.reload(analysis))
 
     def _shares(self, shares: list[Share]) -> list[AnalysisShare]:
-        made: dict[str, AnalysisShare] = {}
-        for share in shares:
-            if share.kind == "email":
-                if not EMAIL.match(share.value):
-                    raise InvalidError(f"« {share.value} » n’est pas une adresse e-mail.")
-                value = share.value.lower()
-            else:
-                name = next((g for g in self._groups if g.lower() == share.value.lower()), None)
-                if name is None and not self._user.is_admin:
-                    raise InvalidError(f"Vous n’êtes pas membre du groupe « {share.value} ».")
-                value = name or share.value
-            fingerprint = _fingerprint(share.kind, value.lower())
-            made.setdefault(fingerprint, AnalysisShare(kind=share.kind, value=value, value_hash=fingerprint))
-        return list(made.values())
+        try:
+            return sharing.build(self._user, shares, AnalysisShare)
+        except ShareError as error:
+            raise InvalidError(str(error)) from error
 
     # --- using it
 

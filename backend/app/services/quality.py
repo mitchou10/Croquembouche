@@ -6,7 +6,7 @@ from app.core.security.factory import RequestContext
 from app.repositories.catalogue import CatalogueRepository
 from app.repositories.metrics import MetricsRepository
 from app.schemas.metrics import EntityQuality, ModelQuality, PageQuality, Quality, QualityOverview, TemplateMetrics
-from app.services import metrics
+from app.services import metrics, sharing
 from app.services.catalogue import ForbiddenError, NotFoundError
 
 
@@ -35,7 +35,7 @@ class QualityService:
         """Counts only: what a use found is private to whoever ran it, but how right the analysis was on a model is for
         whoever can see the model."""
         template = await self._catalogue.get_template(template_id)
-        if template is None:
+        if template is None or not sharing.can_see(self._user, template):
             raise NotFoundError(template_id)
         identifier: uuid.UUID = template.id
         pages = await self._repository.pages(identifier)
