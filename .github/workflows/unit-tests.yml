@@ -226,11 +226,12 @@ jobs:
           cat > check.ts <<'TS'
           import { Croquembouche, NotFoundError, type TemplateOut } from 'croquembouche-sdk'
           const client = new Croquembouche('http://localhost', { token: 'x' })
-          const read: Promise<TemplateOut> = client.templates.get('t1')
+          // Only typed, never called: there is no API behind this address.
+          const read = (): Promise<TemplateOut> => client.templates.get('t1')
           // The types of the package are real ones, not `any` for want of a file.
           type IsAny<T> = 0 extends 1 & T ? true : false
           const typed: IsAny<TemplateOut> extends false ? true : never = true
-          console.log(typeof read.then, typed, new NotFoundError(404, 'x').name)
+          console.log(typeof read, typed, new NotFoundError(404, 'x').name)
           TS
           pnpm exec tsc --noEmit --strict --module nodenext --moduleResolution nodenext --target es2022 --types node check.ts
           node --experimental-strip-types --no-warnings check.ts
