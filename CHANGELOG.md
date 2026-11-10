@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.23.3](https://github.com/mitchou10/Croquembouche/compare/v1.23.2...v1.23.3) (2026-11-10)
+
+
+### Bug Fixes
+
+* **worker:** give « other » the threshold as its score for an element too ([a0159b6](https://github.com/mitchou10/Croquembouche/commit/a0159b63ccb2e0c2b182ff7842f8b2767fd68241))
+
 ## [1.23.2](https://github.com/mitchou10/Croquembouche/compare/v1.23.1...v1.23.2) (2026-11-09)
 
 

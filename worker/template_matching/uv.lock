@@ -514,7 +514,7 @@ wheels = [
 
 [[package]]
 name = "croquembouche-worker-template-matching"
-version = "1.23.2"
+version = "1.23.3"
 source = { editable = "." }
 dependencies = [
     { name = "boto3" },
