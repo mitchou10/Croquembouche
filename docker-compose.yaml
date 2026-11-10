@@ -109,14 +109,15 @@ services:
       rustfs:
         condition: service_healthy
 
-  # Reads the text of page images with PaddleOCR, on the CPU.
+  # Reads the text of page images with PP-OCRv6 tiny (ONNX Runtime), on the CPU.
   worker-ocr:
     build:
       context: worker/ocr
       target: runtime
-      # The recognition model is part of the image (see its Dockerfile): another language is another build.
+      # The models are part of the image (see its Dockerfile): other models are another build.
       args:
-        OCR_LANG: ${OCR_LANG:-fr}
+        OCR_DET_MODEL: ${OCR_DET_MODEL:-PP-OCRv6_tiny_det}
+        OCR_REC_MODEL: ${OCR_REC_MODEL:-PP-OCRv6_tiny_rec}
     environment:
       REDIS_URL: redis://redis:6379/0
       AWS_ENDPOINT_URL: http://rustfs:9000

@@ -10,12 +10,17 @@ AWS_SECRET_ACCESS_KEY = os.environ.get("AWS_SECRET_ACCESS_KEY", "rustfsadmin")
 AWS_REGION = os.environ.get("AWS_REGION", "us-east-1")
 AWS_BUCKET = os.environ.get("AWS_BUCKET", "croquembouche-documents")
 
-# The language of the recognition model (« fr » reads latin scripts, « en », « ch », ...). Another language is another
-# model, downloaded at build time (see the Dockerfile).
-OCR_LANG = os.environ.get("OCR_LANG", "fr")
+# The models: PP-OCRv6 « tiny » (a few million parameters), run by ONNX Runtime on the CPU, without the Paddle
+# framework.
+# The tiny recognition model reads 49 languages (not Japanese): there is no language to choose. A bigger one is another
+# name (`PP-OCRv6_small_det`, `PP-OCRv6_small_rec`...). They are downloaded at build time (see the Dockerfile).
+OCR_DET_MODEL = os.environ.get("OCR_DET_MODEL", "PP-OCRv6_tiny_det")
+OCR_REC_MODEL = os.environ.get("OCR_REC_MODEL", "PP-OCRv6_tiny_rec")
+# What runs them: `onnxruntime` (the ONNX models, on the CPU), or `paddle` (which needs the `paddlepaddle` package).
+OCR_ENGINE = os.environ.get("OCR_ENGINE", "onnxruntime")
 # Below this confidence a line is dropped.
 OCR_MIN_SCORE = float(os.environ.get("OCR_MIN_SCORE", "0.5"))
-# The threads Paddle computes with on the CPU (0: its own default).
+# The threads to compute with on the CPU (0: ONNX Runtime's own choice, which suits a small model).
 OCR_CPU_THREADS = int(os.environ.get("OCR_CPU_THREADS", "0"))
 
 # Where a result is handed back to, and the key that proves it is the worker's (the backend refuses any without it).

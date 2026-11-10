@@ -120,3 +120,58 @@ def test_the_result_goes_to_the_backend_with_the_key(monkeypatch):
     monkeypatch.setattr(backend.urllib.request, "urlopen", urlopen)
     backend.report("r1", {"status": "failed"})
     assert captured == {"url": "http://backend:8000/internal/runs/r1/ocr", "key": "k"}
+
+
+class Recorder:
+    """What the engine is built with: PaddleOCR itself is not loaded (it would fetch the models)."""
+
+    calls: list[dict] = []
+
+    def __init__(self, **kwargs):
+        Recorder.calls.append(kwargs)
+
+
+@pytest.fixture
+def built(monkeypatch):
+    import paddleocr
+
+    Recorder.calls = []
+    monkeypatch.setattr(paddleocr, "PaddleOCR", Recorder)
+    monkeypatch.setattr(ocr, "_engine", None)
+    return Recorder.calls
+
+
+def test_the_models_are_pp_ocrv6_tiny_run_by_onnx_runtime_on_the_cpu(built):
+    ocr.get_engine()
+
+    [kwargs] = built
+    assert kwargs["text_detection_model_name"] == "PP-OCRv6_tiny_det"
+    assert kwargs["text_recognition_model_name"] == "PP-OCRv6_tiny_rec"
+    assert kwargs["engine"] == "onnxruntime" and kwargs["device"] == "cpu"
+    # The page and each line are turned upright before they are read; a flat scan is not unwarped.
+    assert kwargs["use_doc_orientation_classify"] and kwargs["use_textline_orientation"]
+    assert not kwargs["use_doc_unwarping"]
+    assert "cpu_threads" not in kwargs and "lang" not in kwargs
+
+
+def test_the_models_and_the_threads_are_settings(built, monkeypatch):
+    monkeypatch.setattr(config, "OCR_DET_MODEL", "PP-OCRv6_small_det")
+    monkeypatch.setattr(config, "OCR_REC_MODEL", "PP-OCRv6_small_rec")
+    monkeypatch.setattr(config, "OCR_CPU_THREADS", 4)
+
+    ocr.get_engine()
+    ocr.get_engine()  # made once
+
+    [kwargs] = built
+    assert (kwargs["text_detection_model_name"], kwargs["text_recognition_model_name"]) == (
+        "PP-OCRv6_small_det",
+        "PP-OCRv6_small_rec",
+    )
+    assert kwargs["cpu_threads"] == 4
+
+
+def test_the_framework_of_paddle_is_not_needed():
+    from importlib import metadata
+
+    with pytest.raises(metadata.PackageNotFoundError):
+        metadata.version("paddlepaddle")

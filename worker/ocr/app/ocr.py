@@ -1,4 +1,4 @@
-"""Reading the text of a page image with PaddleOCR, on the CPU.
+"""Reading the text of a page image with PaddleOCR's PP-OCRv6 tiny models, run by ONNX Runtime on the CPU.
 
 A scanned page may be sideways or upside down, and a line of it too: the page is turned upright before it is read, and
 what is handed back is placed on the page as it was given (its zones are drawn on that one)."""
@@ -18,16 +18,16 @@ def get_engine():
         from paddleocr import PaddleOCR
 
         _engine = PaddleOCR(
-            lang=config.OCR_LANG,
+            text_detection_model_name=config.OCR_DET_MODEL,
+            text_recognition_model_name=config.OCR_REC_MODEL,
+            engine=config.OCR_ENGINE,
             device="cpu",
-            cpu_threads=config.OCR_CPU_THREADS or 10,
-            # oneDNN fails on some models of Paddle 3 (« ConvertPirAttribute2RuntimeAttribute not support »).
-            enable_mkldnn=False,
             # The orientation of the page (0, 90, 180, 270) and of each line (upside down).
             use_doc_orientation_classify=True,
             use_textline_orientation=True,
             # A flat scan has nothing to unwarp: it only costs time.
             use_doc_unwarping=False,
+            **({"cpu_threads": config.OCR_CPU_THREADS} if config.OCR_CPU_THREADS else {}),
         )
     return _engine
 

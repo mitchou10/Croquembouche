@@ -101,7 +101,9 @@ def tasks() -> list[dict]:
                 },
             },
             {
-                "language": {"type": "string", "default": config.OCR_LANG},
+                "detection_model": {"type": "string", "default": config.OCR_DET_MODEL},
+                "recognition_model": {"type": "string", "default": config.OCR_REC_MODEL},
+                "engine": {"type": "string", "default": config.OCR_ENGINE},
                 "min_score": {"type": "number", "default": config.OCR_MIN_SCORE, "minimum": 0, "maximum": 1},
             },
         ),
