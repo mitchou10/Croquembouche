@@ -2086,7 +2086,7 @@ describe('testing the analysis', () => {
       const document = await uploadDocument(pdf())
       const zone = { page: 3, points: [{ x: 0.1, y: 0.1 }, { x: 0.4, y: 0.1 }, { x: 0.4, y: 0.3 }] }
       const made = await create(
-        { name: 'Formulaire X', description: 'Un formulaire', categories: [], pages: [], entities: [{ ...newEntity(), name: 'Signature', definition: 'En bas', zone }] },
+        { name: 'Formulaire X', description: 'Un formulaire', categories: [], pages: [], entities: [{ ...newEntity(), name: 'Signature', definition: 'En bas', zones: [zone] }] },
         document,
       )
       const { wrapper } = await mountAt(`/catalogue/${made.id}`)

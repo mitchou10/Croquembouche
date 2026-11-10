@@ -12,6 +12,16 @@ const mountCard = (classifications: Detection['classifications'], position = 1) 
   mount(DetectionCard, { props: { detection: { id: 'd1', zone, classifications }, position, nameOf }, global: { plugins: [VueDsfr] } })
 
 describe('DetectionCard', () => {
+  it('says which zone of its entity it was found from, when the entity has several', () => {
+    const classifications = [{ templateId: 't1', confidence: 0.9 }, { templateId: null, confidence: 0.1 }]
+    const card = (detection: object, zoneCount?: number) =>
+      mount(DetectionCard, { props: { detection: { id: 'd1', zone, classifications, ...detection }, zoneCount, nameOf }, global: { plugins: [VueDsfr] } })
+
+    expect(card({ zoneIndex: 1 }, 3).get('[data-testid="detection-zone"]').text()).toBe('zone 2 sur 3')
+    expect(card({ zoneIndex: 0 }, 1).find('[data-testid="detection-zone"]').exists()).toBe(false)
+    expect(card({}, 3).find('[data-testid="detection-zone"]').exists()).toBe(false)
+  })
+
   it('says which element it is, what it most likely is, and how sure', () => {
     const wrapper = mountCard([{ templateId: 't1', confidence: 0.92 }, { templateId: null, confidence: 0.08 }], 3)
     expect(wrapper.get('h3').text()).toBe('Élément 3')

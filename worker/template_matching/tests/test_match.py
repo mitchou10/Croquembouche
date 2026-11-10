@@ -241,3 +241,18 @@ def test_a_pinned_model_is_only_classified_in_its_x(classifier):
 
     match_document(classifier, lambda key: key.encode(), message())
     assert len(classifier.classify.call_args.args) == 2  # nothing is pinned: any X
+
+
+def test_an_entity_with_several_zones_gives_an_element_for_each_told_apart_by_its_zone(classifier, monkeypatch):
+    sent = message()
+    sent["templates"][0]["entities"] = [
+        {"id": "e1", "page": 2, "points": SQUARE, "zone": 0},
+        {"id": "e1", "page": 2, "points": SQUARE, "zone": 1},
+        {"id": "e2", "page": 2, "points": SQUARE},
+        {"id": "e1", "page": 1, "points": SQUARE, "zone": 2},  # on another page of the model
+    ]
+    monkeypatch.setattr(match, "locate", lambda *_: [Located(0.8, 40, [MOVED, MOVED, MOVED])])
+
+    found = match_document(classifier, lambda key: b"", sent)["found"]
+
+    assert [(f["entity_id"], f.get("zone_index")) for f in found] == [("e1", 0), ("e1", 1), ("e2", None)]

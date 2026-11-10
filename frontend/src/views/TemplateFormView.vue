@@ -47,6 +47,9 @@ const errors = ref<{ name?: string; description?: string; form?: string }>({})
 const toComplete = ref<string[]>([])
 const entitiesEditor = ref<InstanceType<typeof EntitiesEditor>>()
 const drawingId = ref<string | null>(null)
+// Of the zones of that entity, the one drawn (a number past the last adds one), and the one the document can edit.
+const drawingZone = ref(0)
+const currentZone = ref(0)
 const currentEntityId = ref<string | null>(null)
 const fileInput = ref<HTMLInputElement>()
 
@@ -104,8 +107,8 @@ function setDocument(next: TemplateDocument | null) {
   shownPage.value = 1
   documentChanged.value = true
   // Zones are positions on a given document: they mean nothing on another one.
-  zonesDropped.value = entities.value.some((e) => e.zone)
-  for (const entity of entities.value) delete entity.zone
+  zonesDropped.value = entities.value.some((e) => e.zones.length)
+  for (const entity of entities.value) entity.zones = []
 }
 
 // What a PDF suggests by itself (its form fields, boxes and blanks): offered once, to be taken or left.
@@ -132,25 +135,37 @@ function addSuggestions() {
       name: s.name,
       definition: `Le champ « ${s.name} » du document.`,
       type: s.type,
-      zone: s.zone,
+      zones: [s.zone],
     })),
   ]
   suggestions.value = []
 }
 
-function onUpdateZone(id: string, zone: Zone) {
+function onUpdateZone(id: string, zone: Zone, zoneIndex = 0) {
   const entity = entities.value.find((e) => e.id === id)
-  if (entity) entity.zone = zone
+  if (entity && entity.zones[zoneIndex]) entity.zones[zoneIndex] = zone
 }
 
-function onRemoveZone(id: string) {
+function onRemoveZone(id: string, zoneIndex = 0) {
   const entity = entities.value.find((e) => e.id === id)
-  if (entity) delete entity.zone
+  if (!entity) return
+  entity.zones.splice(zoneIndex, 1)
+  currentZone.value = Math.max(0, Math.min(zoneIndex, entity.zones.length - 1))
 }
 
+function onSelect(id: string, zoneIndex = 0) {
+  currentEntityId.value = id
+  currentZone.value = zoneIndex
+}
+
+/** A zone drawn replaces the one being drawn again, or comes after the others. */
 function onDraw(zone: Zone) {
   const entity = entities.value.find((e) => e.id === drawingId.value)
-  if (entity) entity.zone = zone
+  if (entity) {
+    const slot = Math.min(drawingZone.value, entity.zones.length)
+    entity.zones[slot] = zone
+    currentZone.value = slot
+  }
   drawingId.value = null
 }
 
@@ -326,6 +341,7 @@ async function submit() {
             :document="currentDocument"
             :entities="entities"
             :highlight-id="drawingId ?? currentEntityId ?? undefined"
+            :highlight-zone="drawingId ? Math.min(drawingZone, entities.find((e) => e.id === drawingId)?.zones.length ?? 0) : currentZone"
             :drawing="drawingId !== null"
             editable
             :fit="wide"
@@ -333,7 +349,7 @@ async function submit() {
             @cancel="drawingId = null"
             @update="onUpdateZone"
             @remove="onRemoveZone"
-            @select="currentEntityId = $event"
+            @select="onSelect"
           />
         </div>
         <p v-else-if="mode !== 'suggest'" class="template-form__empty">Aucun document : le modèle se définira par ses entités seulement.</p>
@@ -380,6 +396,8 @@ async function submit() {
           ref="entitiesEditor"
           v-model="entities"
           v-model:drawing-id="drawingId"
+          v-model:drawing-zone="drawingZone"
+          v-model:current-zone="currentZone"
           v-model:current-id="currentEntityId"
           :document="currentDocument"
         />

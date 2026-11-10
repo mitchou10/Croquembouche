@@ -72,7 +72,7 @@ export interface TemplateBody {
     type: string
     examples: string[]
     tags: string[]
-    zone?: { page: number; points: { x: number; y: number }[] }
+    zones?: { page: number; points: { x: number; y: number }[] }[]
   }[]
   /** Absent keeps the document; null removes it. */
   documentId?: string | null
@@ -91,18 +91,21 @@ interface DocumentAnswer {
   pages: number
 }
 
-/** A template as the backend sends it: no zone is `null`, and the document is the one it has uploaded. */
+/** A template as the backend sends it: an entity has `zones`, and also `zone` (the first, for the clients that know one
+ *  only), and the document is the one it has uploaded. */
 type TemplateAnswer = Omit<Template, 'document'> & { document: DocumentAnswer | null }
 
-/** The backend says « no zone » with null and « no document » with null: the page says it by leaving it out. */
+/** The backend says « no document » with null: the page says it by leaving it out. Of the zones of an entity it keeps
+ *  the list, not the `zone` beside it. */
 function toTemplate({ document, ...template }: TemplateAnswer): Template {
-  const withoutNullZones = <T extends { zone?: unknown }>(entities: T[]) =>
+  const onlyZones = <T extends { zone?: unknown; zones?: unknown }>(entities: T[]) =>
     entities.map((entity) => {
-      if (entity.zone === null) delete entity.zone
+      delete entity.zone
+      entity.zones ??= []
       return entity
     })
-  withoutNullZones(template.entities)
-  for (const suggestion of template.suggestions) withoutNullZones(suggestion.fields.entities)
+  onlyZones(template.entities)
+  for (const suggestion of template.suggestions) onlyZones(suggestion.fields.entities)
   return { ...template, ...(document && { document: fromAnswer(document) }) }
 }
 

@@ -189,15 +189,15 @@ describe('useCatalogue', () => {
   })
 
   it('sends the entities with the id they have, and the document by its id', () => {
-    const entity = { ...newEntity(), id: 'e1', name: 'Date', examples: ['a'], zone: { page: 2, points: [] } }
+    const entity = { ...newEntity(), id: 'e1', name: 'Date', examples: ['a'], zones: [{ page: 2, points: [] }] }
     const body = toBody(fields({ entities: [entity] }), 'doc-1')
     expect(body.entities).toEqual([
-      { id: 'e1', name: 'Date', definition: '', type: 'text', examples: ['a'], tags: [], zone: { page: 2, points: [] } },
+      { id: 'e1', name: 'Date', definition: '', type: 'text', examples: ['a'], tags: [], zones: [{ page: 2, points: [] }] },
     ])
     expect(body.documentId).toBe('doc-1')
     expect('documentId' in toBody(fields())).toBe(false) // absent: the document is kept
     expect(toBody(fields(), null).documentId).toBeNull() // null: it is removed
-    expect('zone' in toBody(fields({ entities: [{ ...newEntity(), name: 'x' }] })).entities[0]).toBe(false)
+    expect('zones' in toBody(fields({ entities: [{ ...newEntity(), name: 'x' }] })).entities[0]).toBe(false)
   })
 })
 
@@ -247,13 +247,13 @@ describe('cleanCategories', () => {
 })
 
 describe('changedFields on entities', () => {
-  const entity = { id: 'e', stars: [] as string[], type: 'date' as const, examples: [] as string[], tags: [] as string[], name: 'Date', definition: 'La date', zone: { page: 1, points: [{ x: 0, y: 0 }, { x: 0.5, y: 0 }, { x: 0.5, y: 0.5 }] } }
+  const entity = { id: 'e', stars: [] as string[], type: 'date' as const, examples: [] as string[], tags: [] as string[], name: 'Date', definition: 'La date', zones: [{ page: 1, points: [{ x: 0, y: 0 }, { x: 0.5, y: 0 }, { x: 0.5, y: 0.5 }] }] }
 
   it('reports added, removed or moved entities by name', () => {
     expect(changedFields(fields(), fields({ entities: [entity] }))).toEqual([
       { label: 'Entités', before: 'Aucune', after: 'Date (date, zone)' },
     ])
-    expect(changedFields(fields({ entities: [entity] }), fields({ entities: [{ ...entity, zone: undefined }] }))).toEqual([
+    expect(changedFields(fields({ entities: [entity] }), fields({ entities: [{ ...entity, zones: [] }] }))).toEqual([
       { label: 'Entités', before: 'Date (date, zone)', after: 'Date (date)' },
     ])
   })
@@ -340,7 +340,7 @@ describe('stars on entities', () => {
   })
 
   it('does not count stars as part of what a suggestion changes', () => {
-    const entity = { id: 'e', name: 'Date', definition: 'La date', type: 'date' as const, examples: [], tags: [], stars: ['a'] }
+    const entity = { id: 'e', name: 'Date', definition: 'La date', type: 'date' as const, examples: [], tags: [], zones: [], stars: ['a'] }
     expect(changedFields(fields({ entities: [entity] }), fields({ entities: [{ ...entity, stars: ['a', 'b'] }] }))).toEqual([])
   })
 
@@ -447,7 +447,7 @@ describe('stars on suggestions', () => {
 describe('type and examples of an entity', () => {
   beforeAll(loadEntityTypes) // the labels of the types, as the backend gives them
 
-  const entity = { id: 'e', stars: [] as string[], type: 'date' as const, examples: ['12/03/2026'], tags: [] as string[], name: 'Date', definition: 'La date' }
+  const entity = { id: 'e', stars: [] as string[], type: 'date' as const, examples: ['12/03/2026'], tags: [] as string[], zones: [], name: 'Date', definition: 'La date' }
 
   beforeEach(() => signIn())
 

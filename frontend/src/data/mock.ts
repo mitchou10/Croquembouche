@@ -48,7 +48,8 @@ export interface TemplateEntity {
   examples: string[]
   /** Optional words that say more of what it is (« verso », « à la main »...). */
   tags: string[]
-  zone?: Zone
+  /** Where it appears on the model's document: none, one or several (up to `MAX_ZONES`), in the order given. */
+  zones: Zone[]
   /** Identifiers of the users who starred it: an entity can be worth keeping even when the model is not. */
   stars: string[]
 }
@@ -200,6 +201,8 @@ export interface Detection {
   classifications: Classification[]
   /** Which entity of the model it is, when known: what the quality of each entity is measured on. */
   entityId?: string | null
+  /** Which of the zones of its entity it was carried over from (from 0), for an entity that has several. */
+  zoneIndex?: number | null
   /** Found in the text by the definition of its entity (it has no zone on its model), not by carrying a zone over. */
   foundInText?: boolean
   /** The text read in the zone, once the analysis reads them (OCR): absent until then. */
@@ -328,8 +331,8 @@ export const sampleLetter = `data:image/svg+xml,${encodeURIComponent(
 export const defaultCategories = ['Identité', 'Tampon', 'Signature', 'Code', 'Formulaire', 'Autre']
 
 const letterEntities = (): TemplateEntity[] => [
-  { id: 'e1', stars: ['bob.durand', 'chloe.petit'], type: 'text', examples: ['RÉPUBLIQUE FRANÇAISE'], tags: [], name: 'Emblème', definition: 'Le drapeau tricolore et la mention « République française ».', zone: { page: 1, points: [{ x: 0.06, y: 0.06 }, { x: 0.36, y: 0.06 }, { x: 0.36, y: 0.22 }, { x: 0.06, y: 0.22 }] } },
-  { id: 'e2', stars: [], type: 'text', examples: ['Liberté Égalité Fraternité'], tags: [], name: 'Devise', definition: 'La devise « Liberté, Égalité, Fraternité » sous le bloc-marque.' },
+  { id: 'e1', stars: ['bob.durand', 'chloe.petit'], type: 'text', examples: ['RÉPUBLIQUE FRANÇAISE'], tags: [], name: 'Emblème', definition: 'Le drapeau tricolore et la mention « République française ».', zones: [{ page: 1, points: [{ x: 0.06, y: 0.06 }, { x: 0.36, y: 0.06 }, { x: 0.36, y: 0.22 }, { x: 0.06, y: 0.22 }] }] },
+  { id: 'e2', stars: [], type: 'text', examples: ['Liberté Égalité Fraternité'], tags: [], zones: [], name: 'Devise', definition: 'La devise « Liberté, Égalité, Fraternité » sous le bloc-marque.' },
 ]
 
 type RawComment = Omit<Comment, 'authorName'>
@@ -374,7 +377,7 @@ const rawTemplates: RawTemplate[] = [
     categories: ['Tampon'],
     ownerId: 'bob.durand',
     stars: ['alice.martin'],
-    entities: [{ id: 'e3', stars: ['alice.martin'], type: 'date', examples: ['12/03/2026', '1 novembre 2026'], tags: [], name: 'Date de réception', definition: 'La date inscrite au centre du tampon, au format JJ/MM/AAAA.' }],
+    entities: [{ id: 'e3', stars: ['alice.martin'], type: 'date', examples: ['12/03/2026', '1 novembre 2026'], tags: [], zones: [], name: 'Date de réception', definition: 'La date inscrite au centre du tampon, au format JJ/MM/AAAA.' }],
     suggestions: [],
   },
   {
@@ -394,7 +397,7 @@ const rawTemplates: RawTemplate[] = [
     categories: ['Code'],
     ownerId: 'chloe.petit',
     stars: ['alice.martin', 'bob.durand', 'chloe.petit'],
-    entities: [{ id: 'e4', stars: [], type: 'integer', examples: ['20260142', '20259871'], tags: [], name: 'Numéro de dossier', definition: 'Le numéro encodé dans le code QR de suivi.' }],
+    entities: [{ id: 'e4', stars: [], type: 'integer', examples: ['20260142', '20259871'], tags: [], zones: [], name: 'Numéro de dossier', definition: 'Le numéro encodé dans le code QR de suivi.' }],
     suggestions: [],
   },
   {

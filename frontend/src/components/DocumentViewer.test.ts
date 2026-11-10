@@ -78,7 +78,7 @@ describe('DocumentViewer rectangle editing', () => {
       { x: 0.2, y: 0.5 },
     ],
   }
-  const entities = [{ id: 'e1', name: 'Date', definition: '', type: 'text', examples: [], zone: rectZone }]
+  const entities = [{ id: 'e1', name: 'Date', definition: '', type: 'text', examples: [], zones: [rectZone] }]
   const props = { document, entities: entities as never, highlightId: 'e1', editable: true }
 
   // jsdom has no layout: the stage is given a 100 x 100 box so that a pixel is a percent.
@@ -122,17 +122,17 @@ describe('DocumentViewer rectangle editing', () => {
   it('asks to remove the zone on Delete', async () => {
     const wrapper = mount(DocumentViewer, { props })
     await wrapper.get('[data-testid="rect-edit"]').trigger('keydown', { key: 'Delete' })
-    expect(wrapper.emitted('remove')).toEqual([['e1']])
+    expect(wrapper.emitted('remove')).toEqual([['e1', 0]])
   })
 
   it('shows no rectangle handles on a polygon', () => {
-    const wrapper = mount(DocumentViewer, { props: { ...props, entities: [{ ...entities[0], zone: triangle }] as never } })
+    const wrapper = mount(DocumentViewer, { props: { ...props, entities: [{ ...entities[0], zones: [triangle] }] as never } })
     expect(wrapper.find('[data-testid="rect-edit"]').exists()).toBe(false)
   })
 })
 
 describe('DocumentViewer polygon editing', () => {
-  const entities = [{ id: 'p1', name: 'Zone', definition: '', type: 'text', examples: [], zone: triangle }]
+  const entities = [{ id: 'p1', name: 'Zone', definition: '', type: 'text', examples: [], zones: [triangle] }]
   const props = { document, entities: entities as never, highlightId: 'p1', editable: true }
 
   async function fire(wrapper: ReturnType<typeof mount>, selector: string, type: string, x = 0, y = 0, index = 0) {
@@ -181,7 +181,7 @@ describe('DocumentViewer polygon editing', () => {
 
   it('removes a point on double click, but not below three', async () => {
     const square = { page: 1, points: [...triangle.points, { x: 0.1, y: 0.5 }] }
-    const wrapper = mount(DocumentViewer, { props: { ...props, entities: [{ ...entities[0], zone: square }] as never } })
+    const wrapper = mount(DocumentViewer, { props: { ...props, entities: [{ ...entities[0], zones: [square] }] as never } })
     await fire(wrapper, '[data-testid="poly-vertex"]', 'dblclick', 0, 0, 3)
     expect(lastPoints(wrapper)).toHaveLength(3)
 
@@ -193,7 +193,7 @@ describe('DocumentViewer polygon editing', () => {
   it('asks to remove the zone on Delete', async () => {
     const wrapper = mount(DocumentViewer, { props })
     await wrapper.get('[data-testid="poly-edit"]').trigger('keydown', { key: 'Delete' })
-    expect(wrapper.emitted('remove')).toEqual([['p1']])
+    expect(wrapper.emitted('remove')).toEqual([['p1', 0]])
   })
 })
 
@@ -209,8 +209,8 @@ describe('DocumentViewer click on a zone', () => {
   })
   // One zone in another: the click inside the small one is the small one.
   const entities = [
-    { id: 'big', name: 'Bloc', definition: '', type: 'text', examples: [], tags: [], stars: [], zone: square(0.1, 0.1, 0.9, 0.9) },
-    { id: 'small', name: 'Date', definition: '', type: 'text', examples: [], tags: [], stars: [], zone: square(0.4, 0.4, 0.6, 0.6) },
+    { id: 'big', name: 'Bloc', definition: '', type: 'text', examples: [], tags: [], stars: [], zones: [square(0.1, 0.1, 0.9, 0.9)] },
+    { id: 'small', name: 'Date', definition: '', type: 'text', examples: [], tags: [], stars: [], zones: [square(0.4, 0.4, 0.6, 0.6)] },
   ]
 
   const mountViewer = (props: Record<string, unknown> = {}) => {
@@ -233,7 +233,7 @@ describe('DocumentViewer click on a zone', () => {
     const wrapper = mountViewer()
     await press(wrapper, [50, 50])
     await press(wrapper, [20, 20])
-    expect(wrapper.emitted('select')).toEqual([['small'], ['big']])
+    expect(wrapper.emitted('select')).toEqual([['small', 0], ['big', 0]])
   })
 
   it('says nothing for a click that is on no zone, a drag (a pan) or while drawing', async () => {
@@ -244,5 +244,43 @@ describe('DocumentViewer click on a zone', () => {
     const drawing = mountViewer({ drawing: true })
     await press(drawing, [50, 50])
     expect(drawing.emitted('select')).toBeUndefined()
+  })
+})
+
+describe('DocumentViewer entity with several zones', () => {
+  const at = (x: number, page = 1) => ({
+    page,
+    points: [
+      { x, y: 0.1 },
+      { x: x + 0.2, y: 0.1 },
+      { x: x + 0.2, y: 0.3 },
+      { x, y: 0.3 },
+    ],
+  })
+  const entities = [{ id: 'n', name: 'Numéro', definition: '', type: 'text', examples: [], zones: [at(0.1), at(0.5), at(0.1, 2)] }]
+  const props = { document, entities: entities as never, highlightId: 'n', editable: true }
+
+  it('outlines each zone of the page shown, numbered', () => {
+    const wrapper = mount(DocumentViewer, { props })
+    expect(wrapper.findAll('[data-testid="entity-label"]').map((l) => l.text())).toEqual(['Numéro · 1/3', 'Numéro · 2/3'])
+    expect(wrapper.findAll('[data-testid="entity-zone"]')).toHaveLength(2)
+  })
+
+  it('edits one zone at a time: the one asked for, and says which', async () => {
+    const wrapper = mount(DocumentViewer, { props: { ...props, highlightZone: 1 } })
+    expect(wrapper.findAll('[data-testid="rect-edit"]')).toHaveLength(1)
+    expect(wrapper.get('[data-testid="rect-edit"]').attributes('aria-label')).toContain('Numéro · 2/3')
+    wrapper.get('[data-testid="document-stage"]').element.getBoundingClientRect = () =>
+      ({ left: 0, top: 0, width: 100, height: 100, right: 100, bottom: 100 }) as DOMRect
+    wrapper.get('[data-testid="rect-edit"]').element.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true }))
+    await wrapper.vm.$nextTick()
+    expect(wrapper.emitted('remove')).toEqual([['n', 1]])
+  })
+
+  it('goes to the page of the zone on show', async () => {
+    const wrapper = mount(DocumentViewer, { props: { ...props, document: { ...document, id: 'doc', pages: 2 } as never } })
+    expect(wrapper.get('[data-testid="page-number"]').text()).toBe('Page 1 / 2')
+    await wrapper.setProps({ highlightZone: 2 })
+    expect(wrapper.get('[data-testid="page-number"]').text()).toBe('Page 2 / 2')
   })
 })

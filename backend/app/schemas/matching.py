@@ -29,6 +29,8 @@ class FoundClass(BaseModel):
 class FoundElement(BaseModel):
     page: int = Field(ge=1)
     entity_id: uuid.UUID | None = None
+    # Which zone of the entity this is (from 0), when it has several.
+    zone_index: int | None = Field(default=None, ge=0)
     points: list[Point] = Field(min_length=3)
     classifications: list[FoundClass]
 

@@ -534,6 +534,7 @@ class AnalysisService:
                     review=_review(d.review_status, d.review_template_id),
                     source=d.source,  # type: ignore[arg-type]
                     entity_id=None if d.entity_id is None else str(d.entity_id),
+                    zone_index=d.zone_index,
                     found_in_text=d.found_in_text,
                     text=d.text
                     if d.found_in_text and text

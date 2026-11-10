@@ -338,3 +338,22 @@ def test_nothing_is_deleted_while_the_current_collection_is_empty_or_missing(cli
     _make(client, COLLECTION)
     assert index.drop_old_collections("croquembouche") == {"deleted": [], "refused": "empty"}  # made, not filled
     assert client.collection_exists("croquembouche--clip")
+
+
+def test_an_entity_with_several_zones_has_a_vector_for_each(index, client):
+    index.index(
+        template(
+            pages=3,
+            entities=[
+                {"id": "e1", "name": "Numéro", "page": 1, "points": SQUARE, "zone": 0},
+                {"id": "e1", "name": "Numéro", "page": 3, "points": SQUARE, "zone": 1},
+            ],
+        )
+    )
+
+    entity = points(client, kind="entity")
+    assert len(entity) == 8  # two zones, each turned four ways
+    assert {(p.payload["entity_id"], p.payload["page"], p.payload["zone"]) for p in entity} == {
+        ("e1", 1, 0),
+        ("e1", 3, 1),
+    }

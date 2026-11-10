@@ -52,11 +52,17 @@ def _entities_of(template: Template, version: TemplateVersion | None) -> tuple[b
     it is now, or as it was in the version an analysis is pinned to."""
     if version is None:
         return template.document is None, [
-            (e.id, e.name, e.definition, e.type, e.examples, e.zone_page is not None and bool(e.zone_points))
-            for e in template.entities
+            (e.id, e.name, e.definition, e.type, e.examples, any(z.points for z in e.zones)) for e in template.entities
         ]
     return version.document is None, [
-        (e["id"], e["name"], e["definition"], e["type"], e["examples"], bool((e.get("zone") or {}).get("points")))
+        (
+            e["id"],
+            e["name"],
+            e["definition"],
+            e["type"],
+            e["examples"],
+            any(z["points"] for z in e.get("zones") or [e.get("zone")] if z),
+        )
         for e in version.snapshot["entities"]
     ]
 

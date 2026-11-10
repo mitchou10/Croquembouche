@@ -11,6 +11,7 @@ import type {
   TemplateFields,
   TemplateQuality,
   QualityOverview,
+  Zone,
 } from '../data/mock'
 import { analyses as analysisSeed, entityTypeSeed, groupSeed, sampleLetter, templates as seed } from '../data/mock'
 import type { Search, SearchSummary } from '../data/search'
@@ -139,7 +140,8 @@ interface Body {
   name: string
   description: string
   categories: string[]
-  entities: (TemplateEntity & { zone?: TemplateEntity['zone'] | null })[]
+  // A client from before sends the one `zone`; one that knows several sends `zones`.
+  entities: (Omit<TemplateEntity, 'zones'> & { zone?: Zone | null; zones?: Zone[] })[]
   documentId?: string | null
   parentId?: string
   pages?: PageFields[]
@@ -159,7 +161,7 @@ function clean(body: Body): TemplateFields {
       type: e.type,
       examples: cleanList(e.examples).slice(0, MAX_EXAMPLES),
       tags: cleanList(e.tags ?? [], true).slice(0, MAX_TAGS),
-      ...(e.zone && { zone: e.zone }),
+      zones: e.zones ?? (e.zone ? [e.zone] : []),
       stars: [],
     })),
     pages: (body.pages ?? []).filter((p) => p.name.trim() || p.description.trim()),

@@ -1,13 +1,14 @@
 from datetime import date
 from typing import Annotated, Literal
 
-from pydantic import Field, StringConstraints
+from pydantic import Field, StringConstraints, model_validator
 
 from app.schemas.base import CamelModel
 from app.schemas.sharing import MAX_SHARES, Share, Visibility
 
 MAX_EXAMPLES = 5
 MAX_TAGS = 10
+MAX_ZONES = 10
 MAX_COMMENT_LENGTH = 500
 
 Coordinate = Annotated[float, Field(ge=0, le=1)]
@@ -40,7 +41,21 @@ class EntityFields(CamelModel):
     tags: Annotated[
         list[Annotated[str, StringConstraints(strip_whitespace=True, max_length=30)]], Field(max_length=MAX_TAGS * 3)
     ] = []
+    # Where it is on the example document: none, one or several (up to `MAX_ZONES`). `zone` is the first of them, kept
+    # for the clients that know one only: it is read when `zones` is not given, and always told along with it.
     zone: Zone | None = None
+    zones: Annotated[list[Zone], Field(max_length=MAX_ZONES)] = []
+
+    @model_validator(mode="after")
+    def _one_way_or_the_other(self):
+        """`zone` is the first of `zones`. A lone `zone` (a client from before, a version kept before several) is a list of
+        one; one that differs from the first of `zones` is a client that read an entity and changed its `zone`: it takes
+        the first place."""
+        first = self.zones[0] if self.zones else None
+        if "zone" in self.model_fields_set and self.zone != first:
+            self.zones = [*([self.zone] if self.zone is not None else []), *self.zones[1:]]
+        self.zone = self.zones[0] if self.zones else None
+        return self
 
 
 class PageFields(CamelModel):
