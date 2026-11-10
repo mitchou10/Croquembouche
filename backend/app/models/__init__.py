@@ -20,6 +20,7 @@ from app.models.catalogue import (
     TemplateCategory,
     TemplateEntity,
     TemplatePage,
+    TemplateShare,
     TemplateStar,
 )
 from app.models.document import Document
@@ -48,6 +49,7 @@ __all__ = [
     "TemplateCategory",
     "TemplateEntity",
     "TemplatePage",
+    "TemplateShare",
     "TemplateStar",
     "UserProfile",
 ]

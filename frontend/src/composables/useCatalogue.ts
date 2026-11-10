@@ -2,11 +2,13 @@ import { computed, ref } from 'vue'
 import * as api from '../data/api'
 import {
   defaultCategories,
+  type Share,
   type Template,
   type TemplateDocument,
   type TemplateEntity,
   type PageFields,
   type TemplateFields,
+  type Visibility,
 } from '../data/mock'
 import { entityTypeLabel } from './useEntityTypes'
 import { useSession } from './useSession'
@@ -160,7 +162,7 @@ export function changedFields(template: TemplateFields, fields: TemplateFields):
 export const givenPages = (pages: PageFields[]) => pages.filter((p) => p.name.trim() || p.description.trim())
 
 /** What the backend takes of a model's fields. The entities keep the id they have: that is how it knows them. */
-export function toBody(fields: TemplateFields, documentId?: string | null): api.TemplateBody {
+export function toBody(fields: TemplateFields, documentId?: string | null, sharing?: Sharing): api.TemplateBody {
   return {
     name: fields.name,
     description: fields.description,
@@ -177,7 +179,14 @@ export function toBody(fields: TemplateFields, documentId?: string | null): api.
       ...(e.zone && { zone: e.zone }),
     })),
     ...(documentId !== undefined && { documentId }),
+    ...(sharing && { visibility: sharing.visibility, shares: sharing.visibility === 'shared' ? sharing.shares : [] }),
   }
+}
+
+/** Who a model is for, as the form says it. */
+export interface Sharing {
+  visibility: Visibility
+  shares: Share[]
 }
 
 export function useCatalogue() {
@@ -226,8 +235,8 @@ export function useCatalogue() {
   // suggest) throw an `ApiError` saying why; the small actions say whether they went through, and `actionError` why not.
 
   /** The signed-in user becomes the owner. Newest first. */
-  const create = async (fields: TemplateFields, document?: TemplateDocument, parentId?: string) => {
-    const created = keep(await api.postTemplate({ ...toBody(fields, document?.id ?? undefined), ...(parentId && { parentId }) }))
+  const create = async (fields: TemplateFields, document?: TemplateDocument, parentId?: string, sharing?: Sharing) => {
+    const created = keep(await api.postTemplate({ ...toBody(fields, document?.id ?? undefined, sharing), ...(parentId && { parentId }) }))
     // The parent lists it from now on.
     if (created.parentId) updateChildren(created.parentId, (children) => [...children, { id: created.id, name: created.name, version: created.version }])
     return created
@@ -276,8 +285,8 @@ export function useCatalogue() {
     attempt(async () => keep(await api.putSuggestionStar(id, suggestionId)))
 
   /** Only the owner edits a template directly. `document`: undefined keeps it, null removes it. */
-  const update = async (id: string, fields: TemplateFields, document?: TemplateDocument | null) =>
-    keep(await api.putTemplate(id, toBody(fields, document === undefined ? undefined : (document?.id ?? null))))
+  const update = async (id: string, fields: TemplateFields, document?: TemplateDocument | null, sharing?: Sharing) =>
+    keep(await api.putTemplate(id, toBody(fields, document === undefined ? undefined : (document?.id ?? null), sharing)))
 
   /** Anyone but the owner can propose a change; it waits for the owner's decision. */
   const suggest = async (id: string, fields: TemplateFields, message: string) =>

@@ -34,8 +34,9 @@ class AnalysisRepository:
         query = select(Template).where(Template.id.in_(template_ids))
         return {str(t.id): t.version for t in (await self._session.scalars(query)).all()}
 
-    async def existing_templates(self, template_ids: list[uuid.UUID]) -> set[uuid.UUID]:
-        return set((await self._session.scalars(select(Template.id).where(Template.id.in_(template_ids)))).all())
+    async def templates(self, template_ids: list[uuid.UUID]) -> list[Template]:
+        """The models of these ids that exist."""
+        return list((await self._session.scalars(select(Template).where(Template.id.in_(template_ids)))).all())
 
     async def last_versions(self, template_ids: list[uuid.UUID]) -> list[TemplateVersion]:
         """The last version of each X of these models: a model is looked for in every X it has had."""

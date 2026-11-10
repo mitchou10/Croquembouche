@@ -5,7 +5,7 @@ from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstr
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.models.base import Base, TimestampMixin, UUIDMixin, utcnow
+from app.models.base import Base, EncryptedText, TimestampMixin, UUIDMixin, utcnow
 from app.models.document import Document
 from app.models.user import UserProfile
 
@@ -43,8 +43,16 @@ class Template(UUIDMixin, TimestampMixin, Base):
     major: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
     minor: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     patch: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    # Who can use it: `private` (its owner), `shared` (and the people and groups in `shares`) or `public` (everyone).
+    # A sub-model has the visibility of its model, whatever it says itself (see `sharing.can_see`).
+    visibility: Mapped[str] = mapped_column(String(8), default="public", server_default="public")
 
     owner: Mapped[UserProfile] = relationship(lazy="selectin")
+    # The model above a sub-model, to read: its parent_id is what changes it.
+    parent: Mapped["Template | None"] = relationship(
+        remote_side="Template.id", foreign_keys=[parent_id], lazy="joined", join_depth=1, viewonly=True
+    )
+    shares: Mapped[list["TemplateShare"]] = relationship(cascade="all, delete-orphan", lazy="selectin")
     document: Mapped[Document | None] = relationship(lazy="selectin")
     categories: Mapped[list["Category"]] = relationship(
         secondary="template_categories", order_by="Category.name", lazy="selectin"
@@ -63,6 +71,18 @@ class Template(UUIDMixin, TimestampMixin, Base):
     @property
     def version(self) -> str:
         return f"{self.major}.{self.minor}.{self.patch}"
+
+
+class TemplateShare(UUIDMixin, Base):
+    """Who a model is shared with: a person by e-mail address (personal data: encrypted) or a group by name. It is
+    matched through `value_hash`, never by reading `value`."""
+
+    __tablename__ = "template_shares"
+
+    template_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("templates.id", ondelete="CASCADE"), index=True)
+    kind: Mapped[str] = mapped_column(String(8))  # email, group
+    value: Mapped[str] = mapped_column("value_encrypted", EncryptedText)
+    value_hash: Mapped[str] = mapped_column(String(64), index=True)
 
 
 class TemplateVersion(UUIDMixin, Base):
