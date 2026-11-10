@@ -52,6 +52,16 @@
           "type": "toml",
           "path": "worker/gliner/uv.lock",
           "jsonpath": "$.package[?(@.name.value=='croquembouche-worker-gliner')].version"
+        },
+        {
+          "type": "toml",
+          "path": "sdk/python/pyproject.toml",
+          "jsonpath": "project.version"
+        },
+        {
+          "type": "toml",
+          "path": "sdk/python/uv.lock",
+          "jsonpath": "$.package[?(@.name.value=='croquembouche-sdk')].version"
         }
       ],
       "changelog-sections": [

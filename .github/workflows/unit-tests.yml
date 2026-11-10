@@ -108,12 +108,63 @@ jobs:
         working-directory: backend
         run: uv sync --group dev
 
+      # The SDK is installed beside the backend for the tests that use it against the application (tests/test_sdk.py);
+      # it is not a dependency of the backend.
       - name: Run tests
         working-directory: backend
-        run: uv run pytest --cov=app --cov-report=term-missing --cov-report=lcov:coverage.lcov
+        run: uv run --with ../sdk/python pytest --cov=app --cov-report=term-missing --cov-report=lcov:coverage.lcov
 
       - name: CRAP score
         run: uvx --from lizard==1.17.13 python ci/crap.py --src backend/app --root backend --lcov backend/coverage.lcov --name backend $CRAP_FAIL
+
+  unit-tests-sdk:
+    name: SDK (Python)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          python-version: ${{ inputs.PYTHON_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: |
+            sdk/python/uv.lock
+            backend/uv.lock
+
+      - name: Install SDK dependencies
+        working-directory: sdk/python
+        run: uv sync --group dev
+
+      - name: Lint
+        working-directory: sdk/python
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+
+      # The client is generated from the OpenAPI of the backend: what is committed must be what the API gives today.
+      - name: The generated client is up to date
+        run: |
+          sdk/python/scripts/generate.sh
+          git status --porcelain -- sdk/python
+          test -z "$(git status --porcelain -- sdk/python)" || { echo "Run sdk/python/scripts/generate.sh and commit the result."; exit 1; }
+
+      - name: Run tests
+        working-directory: sdk/python
+        run: uv run pytest
+
+      # What a user gets: the package installed from Git as `uv add` does (the revision under test), and the same tests
+      # run against that installed copy, not against the sources.
+      - name: Tests of the installed package
+        run: |
+          uv venv "$RUNNER_TEMP/released"
+          uv pip install --python "$RUNNER_TEMP/released/bin/python" pytest pytest-asyncio \
+            "croquembouche-sdk @ git+file://$GITHUB_WORKSPACE@$(git rev-parse HEAD)#subdirectory=sdk/python"
+          "$RUNNER_TEMP/released/bin/python" -c "import croquembouche; print(croquembouche.__file__, croquembouche.__version__)"
+          cd sdk/python && "$RUNNER_TEMP/released/bin/python" -m pytest tests -p no:cacheprovider
 
   unit-tests-worker-template-matching:
     name: worker/template_matching
