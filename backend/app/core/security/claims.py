@@ -19,4 +19,7 @@ def extract_identity(claims: dict, client_id: str) -> dict | None:
         # Needs a "groups" mapper on the croquembouche-backend client (see docker/keycloak/realm-croquembouche.json);
         # without it the groups are just empty.
         "groups": claims.get("groups", []),
+        # Only the token of a service account (client_credentials) has it: Keycloak puts the client in a « clientId »
+        # claim. A person's token, an exchanged one included, has none.
+        "service_client_id": claims.get("clientId") or "",
     }

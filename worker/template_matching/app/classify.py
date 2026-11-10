@@ -33,20 +33,45 @@ class PageClassifier:
         self._threshold = threshold
         self._neighbours = neighbours
 
-    def classify(self, template_ids: list[str], pages: list[bytes]) -> list[dict]:
+    def classify(self, template_ids: list[str], pages: list[bytes], pinned: dict[str, int] | None = None) -> list[dict]:
         """For each page of the document (from 1), what it could be, the likeliest first:
         `{page, classifications: [{template_id, template_page, confidence, rotation, major}]}`: `confidence` is the
         similarity (0 to 1), `major` the X of the model that the page looks like, `template_page` a page of it.
         « other » has no model, no page, no X and no rotation, and the threshold as its score: it comes first when no
-        page reaches the threshold. With no model to compare to, every page is « other »."""
+        page reaches the threshold. With no model to compare to, every page is « other ». `pinned`: models that are only
+        looked for in one X (`{template_id: X}`), as an analysis pinned to a version asks."""
         images = [Image.open(io.BytesIO(data)).convert("RGB") for data in pages]
         vectors = self._embedder.embed(images) if images and template_ids else [[] for _ in images]
         return [
-            {"page": number, "classifications": self._classes(template_ids, vector)}
+            {"page": number, "classifications": self._classes(template_ids, vector, pinned or {})}
             for number, vector in enumerate(vectors, start=1)
         ]
 
-    def _classes(self, template_ids: list[str], vector: list[float]) -> list[dict]:
+    @staticmethod
+    def _models_filter(template_ids: list[str], pinned: dict[str, int]) -> models.Filter:
+        """The models looked for: any X of those that are not pinned, the X asked for of those that are (a page indexed
+        before the X was kept is the first)."""
+        free = [t for t in template_ids if t not in pinned]
+        should: list[models.Condition] = (
+            [models.FieldCondition(key="template_id", match=models.MatchAny(any=free))] if free else []
+        )
+        for template_id, major in pinned.items():
+            in_that_x: list[models.Condition] = [
+                models.FieldCondition(key="major", match=models.MatchValue(value=major))
+            ]
+            if major == 1:
+                in_that_x.append(models.IsEmptyCondition(is_empty=models.PayloadField(key="major")))
+            should.append(
+                models.Filter(
+                    must=[
+                        models.FieldCondition(key="template_id", match=models.MatchValue(value=template_id)),
+                        models.Filter(should=in_that_x),
+                    ]
+                )
+            )
+        return models.Filter(should=should)
+
+    def _classes(self, template_ids: list[str], vector: list[float], pinned: dict[str, int]) -> list[dict]:
         best: dict[tuple[str, int], tuple[float, int, int]] = {}
         if template_ids:
             found = self._client.query_points(
@@ -55,7 +80,7 @@ class PageClassifier:
                 query_filter=models.Filter(
                     must=[
                         models.FieldCondition(key="kind", match=models.MatchValue(value="page")),
-                        models.FieldCondition(key="template_id", match=models.MatchAny(any=template_ids)),
+                        self._models_filter(template_ids, pinned),
                     ]
                 ),
                 limit=self._neighbours,

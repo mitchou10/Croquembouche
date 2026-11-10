@@ -177,3 +177,18 @@ def test_a_model_is_looked_for_in_every_x_it_has_and_the_x_that_matched_is_said(
     assert (blue["classifications"][0]["template_id"], blue["classifications"][0]["major"]) == ("t3", 2)
     # One class for the model page, not one for each X.
     assert len([c for c in red["classifications"] if c["template_id"] == "t3"]) == 1
+
+
+def test_a_pinned_model_is_only_looked_for_in_the_x_asked(client):
+    index = TemplateIndex(client, ColourEmbedder(), {"t1/new": png("blue")}.__getitem__, COLLECTION)
+    # The model changed its document: its second X is blue, its first X (indexed without `major`) is red.
+    index.index({"template_id": "t1", "major": 2, "document_id": "d2", "pages": [{"page": 1, "key": "t1/new"}]})
+    classifier = PageClassifier(client, ColourEmbedder(), COLLECTION, threshold=0.8, neighbours=100)
+
+    def top(page, pinned):
+        return classifier.classify(["t1"], [page], pinned)[0]["classifications"][0]
+
+    assert (top(png("blue"), None)["major"], top(png("blue"), {"t1": 2})["major"]) == (2, 2)
+    # Pinned to the first X, a blue page is not the blue page of the second: it is « other ».
+    assert top(png("blue"), {"t1": 1})["template_id"] is None
+    assert top(png("red"), {"t1": 1})["template_id"] == "t1" and top(png("red"), {"t1": 2})["template_id"] is None

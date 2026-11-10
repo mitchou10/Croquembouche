@@ -19,6 +19,9 @@ class AnalysisCreate(CamelModel):
     template_ids: Annotated[list[str], Field(min_length=1, max_length=100)]
     is_public: bool = False
     shares: Annotated[list[Share], Field(max_length=MAX_SHARES)] = []
+    # Pins a model of the analysis to a version (X.Y.Z), by its id: the analysis looks for it as it was then, so what it
+    # found can be played again. A model that is not named follows the model.
+    template_versions: dict[str, Annotated[str, StringConstraints(pattern=r"^\d+\.\d+\.\d+$")]] = {}
 
 
 class Review(CamelModel):
@@ -164,6 +167,8 @@ class AnalysisOut(CamelModel):
     views: int
     runs: list[RunOut]
     template_ids: list[str]
+    # The versions the models are pinned to, by id; a model that is not here follows the model.
+    template_versions: dict[str, str] = {}
     is_public: bool
     # Only for the owner (and an administrator): the people it is shared with are not for everyone to see.
     shares: list[Share]

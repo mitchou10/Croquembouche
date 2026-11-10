@@ -34,6 +34,10 @@ class AnalysisTemplate(Base):
     analysis_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("analyses.id", ondelete="CASCADE"), primary_key=True)
     template_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("templates.id"), primary_key=True)
 
+    # The version (X.Y.Z) the analysis is pinned to: it looks for the model as it was then, not as it is. None follows
+    # the model, as it is each time the analysis is used.
+    version: Mapped[str | None] = mapped_column(String(16))
+
     template: Mapped[Template] = relationship(lazy="selectin")
 
 

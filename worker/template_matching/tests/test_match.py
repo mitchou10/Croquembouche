@@ -230,3 +230,14 @@ def test_the_zones_come_from_the_x_of_the_model_that_matched_and_the_version_is_
     assert [f["entity_id"] for f in result["found"]] == ["new"]
     assert result["pages"][0]["classifications"][0]["template_version"] == "2.0.1"
     assert result["pages"][0]["classifications"][1]["template_version"] is None  # « other »
+
+
+def test_a_pinned_model_is_only_classified_in_its_x(classifier):
+    sent = message()
+    sent["templates"][0].update(major=2, version="2.1.0", pinned=True)
+
+    match_document(classifier, lambda key: key.encode(), sent)
+    assert classifier.classify.call_args.args[2] == {"t1": 2}
+
+    match_document(classifier, lambda key: key.encode(), message())
+    assert len(classifier.classify.call_args.args) == 2  # nothing is pinned: any X

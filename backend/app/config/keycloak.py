@@ -11,6 +11,9 @@ class KeycloakSettings(BaseSettings):
     KEYCLOAK_REALM: str = "croquembouche"
     KEYCLOAK_CLIENT_ID: str = "croquembouche-backend"
     KEYCLOAK_CLIENT_SECRET: str | None = None
+    # When set, a bearer token must be meant for this client (its audience, or the client it was issued to): what a
+    # token exchanged for Croquembouche has. Empty accepts any token of the realm, as before.
+    KEYCLOAK_AUDIENCE: str | None = None
 
     # Used to build the fixed OAuth2 redirect_uri registered in the Keycloak client.
     BACKEND_PUBLIC_URL: str = "http://localhost:8000"

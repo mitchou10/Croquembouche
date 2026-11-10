@@ -39,12 +39,17 @@ def match_document(
     message: dict,
 ) -> dict:
     """`message` is `{run_id, templates: [{template_id, major, version, pages: [{page, key}], entities: [{id, page,
-    points}]}], page_keys}`: a model comes once for each X it has (the last version of it). Returns `{status, pages,
+    points}]}], page_keys}`: a model comes once for each X it has (the last version of it), or once, `pinned`, in
+    the version an analysis is pinned to. Returns `{status, pages,
     found}`: what each page could be (and in which version of the model), and the elements found in them. A page whose
     zones cannot be carried over is classified all the same: it loses its elements, not the other pages."""
     variants = {(t["template_id"], t.get("major", 1)): t for t in message["templates"] if t.get("pages")}
     pages = [read(key) for key in message["page_keys"]]
-    classified = classifier.classify(list(dict.fromkeys(template_id for template_id, _ in variants)), pages)
+    # A model the analysis is pinned to a version of is only looked for in the X of that version.
+    pinned = {t["template_id"]: t.get("major", 1) for t in message["templates"] if t.get("pinned") and t.get("pages")}
+    classified = classifier.classify(
+        list(dict.fromkeys(template_id for template_id, _ in variants)), pages, *([pinned] if pinned else [])
+    )
 
     found: list[dict] = []
     for result in classified:

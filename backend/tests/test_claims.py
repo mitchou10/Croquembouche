@@ -21,6 +21,7 @@ def test_identity_reads_the_roles_of_the_client_only():
         "roles": ["admin"],
         "is_admin": True,
         "groups": ["/team"],
+        "service_client_id": "",
     }
 
 
