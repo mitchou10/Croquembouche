@@ -48,9 +48,9 @@ class EntityFields(CamelModel):
 
     @model_validator(mode="after")
     def _one_way_or_the_other(self):
-        """`zone` is the first of `zones`. A lone `zone` (a client from before, a version kept before several) is a list of
-        one; one that differs from the first of `zones` is a client that read an entity and changed its `zone`: it takes
-        the first place."""
+        """`zone` is the first of `zones`. A lone `zone` (a client from before, a version kept before several) is a
+        list of one; one that differs from the first of `zones` is a client that read an entity and changed its
+        `zone`: it takes the first place."""
         first = self.zones[0] if self.zones else None
         if "zone" in self.model_fields_set and self.zone != first:
             self.zones = [*([self.zone] if self.zone is not None else []), *self.zones[1:]]
