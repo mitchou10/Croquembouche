@@ -70,3 +70,83 @@ def test_an_unknown_session_is_refused(verifier):
 
     with pytest.raises(HTTPException):
         verifier(_request(cookies=f"{verifier._keycloak_settings.SESSION_COOKIE_NAME}=gone"))
+
+
+# --- service accounts and exchanged tokens
+
+
+def _token_says(payload: dict) -> None:
+    factory.keycloak_openid.decode_token.return_value = payload
+
+
+def test_a_service_account_is_known_by_its_client_and_its_role(verifier):
+    # The user info says who; the token says which client it is and the roles that the user info leaves out.
+    factory.keycloak_openid.userinfo.return_value = {"sub": "sa1", "preferred_username": "service-account-mf"}
+    _token_says(
+        {"clientId": "mille-feuille", "resource_access": {"croquembouche-backend": {"roles": ["catalogue-reader"]}}}
+    )
+
+    context = verifier(_request({"Authorization": "Bearer tok"}))
+
+    assert context.service_client_id == "mille-feuille" and context.is_catalogue_reader
+    assert not context.is_admin
+
+
+def test_a_person_with_the_role_is_not_a_reader(verifier):
+    factory.keycloak_openid.userinfo.return_value = {
+        "sub": "u1",
+        "resource_access": {"croquembouche-backend": {"roles": ["catalogue-reader"]}},
+    }
+    _token_says({})
+
+    context = verifier(_request({"Authorization": "Bearer tok"}))
+
+    assert context.service_client_id == "" and not context.is_catalogue_reader
+
+
+def test_the_user_info_wins_over_the_token(verifier):
+    factory.keycloak_openid.userinfo.return_value = {
+        "sub": "u1",
+        "groups": ["/team"],
+        "resource_access": {"croquembouche-backend": {"roles": ["user"]}},
+    }
+    _token_says({"groups": ["/other"], "resource_access": {"croquembouche-backend": {"roles": ["admin"]}}})
+
+    context = verifier(_request({"Authorization": "Bearer tok"}))
+
+    assert context.groups == ["/team"] and context.roles == ["user"] and not context.is_admin
+
+
+@pytest.mark.parametrize(
+    ("payload", "accepted"),
+    [
+        ({"aud": ["croquembouche-backend", "account"]}, True),  # exchanged for Croquembouche
+        ({"aud": "croquembouche-backend"}, True),
+        ({"aud": "account", "azp": "croquembouche-backend"}, True),  # issued to Croquembouche itself
+        ({"aud": ["account"], "azp": "other"}, False),
+        ({}, False),
+    ],
+)
+def test_the_audience_is_asked_for_when_it_is_set(verifier, monkeypatch, payload, accepted):
+    monkeypatch.setattr(verifier._keycloak_settings, "KEYCLOAK_AUDIENCE", "croquembouche-backend")
+    factory.keycloak_openid.userinfo.return_value = CLAIMS
+    factory.session_store.get_session.return_value = None
+    _token_says(payload)
+
+    if accepted:
+        assert verifier(_request({"Authorization": "Bearer tok"})).user_id == "u1"
+    else:
+        with pytest.raises(HTTPException) as error:
+            verifier(_request({"Authorization": "Bearer tok"}))
+        assert error.value.status_code == 401
+
+
+def test_the_identity_of_an_exchanged_token_is_the_persons(verifier, monkeypatch):
+    monkeypatch.setattr(verifier._keycloak_settings, "KEYCLOAK_AUDIENCE", "croquembouche-backend")
+    factory.keycloak_openid.userinfo.return_value = {"sub": "julie", "email": "julie@example.org", "groups": ["/team"]}
+    _token_says({"aud": ["croquembouche-backend"], "azp": "mille-feuille"})
+
+    context = verifier(_request({"Authorization": "Bearer exchanged"}))
+
+    assert (context.user_id, context.email, context.groups) == ("julie", "julie@example.org", ["/team"])
+    assert context.service_client_id == "" and context.access_token == "exchanged"

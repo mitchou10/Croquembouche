@@ -327,6 +327,7 @@ class CatalogueService:
     ) -> TemplateOut:
         """Makes a model, or a sub-model of `parent_id` (one level): the owner of the parent adds those, or an admin.
         A model is for everyone unless it is said who it is for; a sub-model is for whoever its model is for."""
+        self._can_write()
         template = Template(
             id=uuid.uuid4(), owner_id=self._user.user_id, name="", description="", major=1, minor=0, patch=0
         )
@@ -350,6 +351,7 @@ class CatalogueService:
     ) -> TemplateOut:
         """Only the owner changes a template directly. `document`: whether to change it, and to what. `visibility` and
         `shares`: who it is for, unchanged when absent."""
+        self._can_write()
         template = await self._template(template_id)
         if not self._is_owner(template):
             raise ForbiddenError("Seul le propriétaire modifie le modèle.")
@@ -361,6 +363,7 @@ class CatalogueService:
 
     async def share(self, template_id: str, body: TemplateSharing) -> TemplateOut:
         """Says who can use a model, its owner only. It is not a change of the model: no new version."""
+        self._can_write()
         template = await self._template(template_id)
         if not self._is_owner(template):
             raise ForbiddenError("Seul le propriétaire partage le modèle.")
@@ -389,6 +392,7 @@ class CatalogueService:
     async def promote(self, template_id: str) -> TemplateOut:
         """Makes a sub-model a root. Nothing else changes (entities, version, history, stars, uses): it only stands on
         its own in the catalogue. Its owner only."""
+        self._can_write()
         template = await self._template(template_id)
         if not self._is_owner(template):
             raise ForbiddenError("Seul le propriétaire promeut le modèle.")
@@ -483,6 +487,7 @@ class CatalogueService:
     async def restore(self, template_id: str, version: str) -> TemplateOut:
         """Goes back to a version: the model takes that version's fields and document, which is a change like any other
         (it makes a new version, history stays as it was). Its owner only."""
+        self._can_write()
         template = await self._template(template_id)
         if not self._is_owner(template):
             raise ForbiddenError("Seul le propriétaire modifie le modèle.")
@@ -519,6 +524,7 @@ class CatalogueService:
     async def delete(self, template_id: str, promote: str | None = None) -> None:
         """Only the owner deletes a model; one an analysis looks for stays, or that analysis would look for nothing. Its
         example document goes with it, unless another model uses the same one."""
+        self._can_write()
         template = await self._template(template_id)
         if not self._is_owner(template):
             raise ForbiddenError("Seul le propriétaire supprime le modèle.")
@@ -606,6 +612,7 @@ class CatalogueService:
     # --- stars
 
     async def toggle_star(self, template_id: str) -> TemplateOut:
+        self._can_write()
         template = await self._template(template_id)
         mine = [s for s in template.stars if s.user_id == self._user.user_id]
         if mine:
@@ -616,6 +623,7 @@ class CatalogueService:
         return await self._view(await self._repository.reload(template))
 
     async def toggle_entity_star(self, template_id: str, entity_id: str) -> TemplateOut:
+        self._can_write()
         template = await self._template(template_id)
         entity = next((e for e in template.entities if str(e.id) == entity_id), None)
         if entity is None:
@@ -631,6 +639,7 @@ class CatalogueService:
     # --- suggestions
 
     async def suggest(self, template_id: str, fields: TemplateFields, message: str) -> TemplateOut:
+        self._can_write()
         template = await self._template(template_id)
         if self._is_owner(template):
             raise ForbiddenError("Le propriétaire modifie le modèle, il ne le suggère pas.")
@@ -644,6 +653,7 @@ class CatalogueService:
 
     async def decide(self, template_id: str, suggestion_id: str, accept: bool) -> TemplateOut:
         """The owner, or an administrator, accepts (the proposed fields are applied) or refuses a pending suggestion."""
+        self._can_write()
         template = await self._template(template_id)
         if not (self._is_owner(template) or self._user.is_admin):
             raise ForbiddenError("Seul le propriétaire ou un administrateur décide des suggestions.")
@@ -659,6 +669,7 @@ class CatalogueService:
         return await self._saved(template, reindex=accept)
 
     async def toggle_suggestion_star(self, template_id: str, suggestion_id: str) -> TemplateOut:
+        self._can_write()
         template = await self._template(template_id)
         suggestion = self._suggestion(template, suggestion_id)
         mine = [s for s in suggestion.stars if s.user_id == self._user.user_id]
@@ -670,6 +681,7 @@ class CatalogueService:
         return await self._view(await self._repository.reload(template))
 
     async def comment(self, template_id: str, suggestion_id: str, text: str) -> TemplateOut:
+        self._can_write()
         template = await self._template(template_id)
         suggestion = self._suggestion(template, suggestion_id)
         suggestion.comments.append(SuggestionComment(author_id=self._user.user_id, text=text))
@@ -677,6 +689,11 @@ class CatalogueService:
         return await self._view(await self._repository.reload(template))
 
     # --- helpers
+
+    def _can_write(self) -> None:
+        """A service account that only reads the catalogue changes nothing in it, whatever it is asked."""
+        if self._user.is_catalogue_reader:
+            raise ForbiddenError("Ce compte de service est en lecture seule.")
 
     def _is_owner(self, template: Template) -> bool:
         return template.owner_id == self._user.user_id

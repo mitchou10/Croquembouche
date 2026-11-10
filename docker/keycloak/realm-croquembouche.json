@@ -27,6 +27,10 @@
         {
           "name": "user",
           "description": "Standard Croquembouche user"
+        },
+        {
+          "name": "catalogue-reader",
+          "description": "Service accounts only: reads every model of the catalogue, whoever it is for, and changes nothing"
         }
       ]
     }

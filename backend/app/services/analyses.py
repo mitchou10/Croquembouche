@@ -8,7 +8,7 @@ from app.config import MatchingSettings
 from app.core.matching import MatchingDispatcher
 from app.core.security.factory import RequestContext
 from app.models.analysis import Analysis, AnalysisShare, AnalysisTemplate, Detection, DetectionClassification, Run
-from app.models.catalogue import Template
+from app.models.catalogue import Template, TemplateVersion
 from app.repositories.analysis import AnalysisRepository
 from app.repositories.document import DocumentRepository
 from app.repositories.search import SearchRepository
@@ -39,6 +39,11 @@ from app.services.sharing import ShareError, group_name
 __all__ = ["AnalysisService", "ForbiddenError", "InvalidError", "NotFoundError", "group_name"]
 
 logger = logging.getLogger(__name__)
+
+
+def _nothing_to_compare(template: Template) -> dict:
+    """A model with no document: it has no page to be compared to."""
+    return {"template_id": str(template.id), "pages": [], "entities": []}
 
 
 def _consumption_of(runs: list[Run]) -> ConsumptionOut:
@@ -204,12 +209,16 @@ class AnalysisService:
         # A model the person cannot use is no more theirs to look for than one that does not exist.
         if wanted != {t.id for t in found if sharing.can_see(self._user, t)}:
             raise InvalidError("Un des modèles n’existe pas.")
+        pins = await self._pins(body.template_versions, found)
         analysis = Analysis(
             owner_id=self._user.user_id,
             name=body.name,
             description=body.description,
             is_public=body.is_public,
-            models=[AnalysisTemplate(template_id=uuid.UUID(t)) for t in dict.fromkeys(body.template_ids)],
+            models=[
+                AnalysisTemplate(template_id=uuid.UUID(t), version=pins.get(uuid.UUID(t)))
+                for t in dict.fromkeys(body.template_ids)
+            ],
             # A public analysis is for everyone: no recipients to keep.
             shares=[] if body.is_public else self._shares(body.shares),
             # It starts with its first use, running, with nothing found yet.
@@ -218,15 +227,33 @@ class AnalysisService:
                     user_id=self._user.user_id,
                     status="running",
                     matches=0,
-                    template_versions=await self._repository.template_versions(
-                        [*wanted, *(t.id for t in await self._repository.children_of(list(wanted)))]
-                    ),
+                    template_versions={
+                        **await self._repository.template_versions(
+                            [*wanted, *(t.id for t in await self._repository.children_of(list(wanted)))]
+                        ),
+                        **{str(t): v for t, v in pins.items()},
+                    },
                 )
             ],
         )
         self._repository.add(analysis)
         await self._repository.commit()
         return self._view(await self._repository.reload(analysis))
+
+    async def _pins(self, asked: dict[str, str], templates: list[Template]) -> dict[uuid.UUID, str]:
+        """The versions (X.Y.Z) the models are pinned to, each one a version its model has had."""
+        by_id = {str(t.id): t for t in templates}
+        pins: dict[uuid.UUID, str] = {}
+        for template_id, version in asked.items():
+            template = by_id.get(template_id)
+            if template is None:
+                raise InvalidError("Une version est demandée pour un modèle qui n’est pas dans l’analyse.")
+            normal = ".".join(str(int(part)) for part in version.split("."))
+            # A model made before its versions were kept has only the one it is at.
+            if normal != template.version and await self._repository.get_version(template.id, normal) is None:
+                raise InvalidError(f"Le modèle « {template.name} » n’a pas de version {normal}.")
+            pins[template.id] = normal
+        return pins
 
     def _shares(self, shares: list[Share]) -> list[AnalysisShare]:
         try:
@@ -247,6 +274,8 @@ class AnalysisService:
             raise InvalidError(str(error)) from error
         saved = await documents.save(self._documents, self._user.user_id, file_name, data, prepared)
         searched = await self._searched(analysis)
+        pins = {m.template_id: m.version for m in analysis.models if m.version}
+        pinned = await self._pinned_versions(pins)
         run = Run(
             analysis_id=analysis.id,
             user_id=self._user.user_id,
@@ -258,9 +287,9 @@ class AnalysisService:
             # The text is read beside the matching, which does not wait for it.
             ocr_status="running" if MatchingSettings().OCR_ENABLED else "none",
             # What has no zone is found in that text, by definition, once it is read.
-            **self._to_find(searched),
-            # The model is searched as it is now: the use says in which version.
-            template_versions={str(t.id): t.version for t in searched},
+            **self._to_find(searched, pinned),
+            # The model is searched as it is now, or as the analysis is pinned to: the use says in which version.
+            template_versions={str(t.id): pins.get(t.id) or t.version for t in searched},
         )
         analysis.runs.insert(0, run)
         await self._repository.commit()
@@ -269,7 +298,7 @@ class AnalysisService:
             "run_id": str(run.id),
             # What each model is made of: where its pages are, and the zones of its entities. A model with no document
             # has no page to be compared to.
-            "templates": await self._template_messages(searched),
+            "templates": await self._template_messages(searched, pins),
             "page_keys": [documents.page_key(saved, number) for number in range(1, saved.pages + 1)],
         }
         try:
@@ -285,12 +314,19 @@ class AnalysisService:
         analysis = await self._repository.reload(analysis)
         return next(self._run(r, True) for r in analysis.runs if r.id == run_id)
 
+    async def _pinned_versions(self, pins: dict[uuid.UUID, str]) -> dict[uuid.UUID, TemplateVersion]:
+        """The versions kept of the models an analysis is pinned to; a model made before they were kept is as it is."""
+        versions = {t: await self._repository.get_version(t, v) for t, v in pins.items()}
+        return {t: v for t, v in versions.items() if v is not None}
+
     @staticmethod
-    def _to_find(searched: list[Template]) -> dict:
+    def _to_find(searched: list[Template], pinned: dict[uuid.UUID, TemplateVersion] | None = None) -> dict:
         """The entities to find in the text, if the text is read and there are some: the OCR comes first, the GLiNER
         worker is asked when it has handed the text back."""
         settings = MatchingSettings()
-        entities = ocr_text.entities_to_find(searched) if settings.OCR_ENABLED and settings.GLINER_ENABLED else []
+        entities = (
+            ocr_text.entities_to_find(searched, pinned) if settings.OCR_ENABLED and settings.GLINER_ENABLED else []
+        )
         return {"find_status": "waiting", "find_entities": entities} if entities else {}
 
     async def _ask_to_read(self, run: Run, page_keys: list[str], searched: list[Template]) -> None:
@@ -307,16 +343,25 @@ class AnalysisService:
                 run.find_status, run.find_entities = "failed", None
             await self._repository.commit()
 
-    async def _template_messages(self, templates: list[Template]) -> list[dict]:
+    async def _template_messages(
+        self, templates: list[Template], pins: dict[uuid.UUID, str] | None = None
+    ) -> list[dict]:
         """What each model is made of, once for each X it has had (its last version): a document is looked for in all
         the images a model has had. A model with no document has no page to be compared to; one with no kept version
-        (made before they were) is what it is now."""
+        (made before they were) is what it is now. A model the analysis is pinned to comes once, as it was in that
+        version, and is said to be `pinned`: the worker looks in the images of that X alone."""
+        pins = pins or {}
         kept = await self._repository.last_versions([t.id for t in templates])
         messages = []
         for template in templates:
+            if template.id in pins:
+                version = await self._repository.get_version(template.id, pins[template.id])
+                message = version_message(version) if version is not None else index_message(template)
+                messages.append({**message, "pinned": True} if message else _nothing_to_compare(template))
+                continue
             found = [message for v in kept if v.template_id == template.id if (message := version_message(v))]
             found = found or [m for m in [index_message(template)] if m]
-            messages.extend(found or [{"template_id": str(template.id), "pages": [], "entities": []}])
+            messages.extend(found or [_nothing_to_compare(template)])
         return messages
 
     async def _searched(self, analysis: Analysis) -> list[Template]:
@@ -553,6 +598,7 @@ class AnalysisService:
             views=analysis.views,
             runs=[self._run(r) for r in analysis.runs],
             template_ids=[str(m.template_id) for m in analysis.models],
+            template_versions={str(m.template_id): m.version for m in analysis.models if m.version},
             is_public=analysis.is_public,
             shares=[Share(kind=s.kind, value=s.value) for s in analysis.shares] if see_shares else [],  # type: ignore[arg-type]
             date=analysis.created_at.date(),

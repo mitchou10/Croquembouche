@@ -24,6 +24,8 @@ async def _own(repository: DocumentRepository, document_id: str, user: CurrentUs
 
 @router.post("", status_code=status.HTTP_201_CREATED, summary="Upload an image or a PDF")
 async def upload(user: CurrentUser, db: Db, file: Annotated[UploadFile, File()]) -> DocumentOut:
+    if user.is_catalogue_reader:  # an example document is for a model, which this account cannot make
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Ce compte de service est en lecture seule.")
     # One byte more than the limit is enough to know the file is too big, without reading all of it.
     data = await file.read(documents.MAX_BYTES + 1)
     try:

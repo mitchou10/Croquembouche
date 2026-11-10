@@ -73,17 +73,25 @@ def as_user():
     """Signs the requests of the test in as someone: `as_user("alice", name="Alice Martin", groups=["/team"])`."""
 
     def sign_in(
-        user_id: str, *, admin: bool = False, name: str = "", email: str = "", groups: list[str] | None = None
+        user_id: str,
+        *,
+        admin: bool = False,
+        name: str = "",
+        email: str = "",
+        groups: list[str] | None = None,
+        roles: list[str] | None = None,
+        service: str = "",
     ) -> None:
         first, _, last = name.partition(" ")
         app.dependency_overrides[get_current_user] = lambda: RequestContext(
             user_id=user_id,
             email=email,
-            roles=["admin"] if admin else [],
+            roles=[*(["admin"] if admin else []), *(roles or [])],
             is_admin=admin,
             first_name=first,
             last_name=last,
             groups=groups or [],
+            service_client_id=service,
         )
 
     yield sign_in

@@ -76,6 +76,37 @@ https://<hôte>/api/auth/callback
 
 (`docker/keycloak/realm-croquembouche.json` montre la forme du client.) Le secret se lit dans l'onglet « Credentials » du client. Les administrateurs sont ceux qui ont le rôle `admin`.
 
+#### Appeler Croquembouche sans personne derrière : un compte de service
+
+Une application (mille-feuille, par exemple) peut appeler l'API avec son propre jeton, sans passer par un utilisateur. Ce compte lit **tous les modèles du catalogue, quelle que soit leur visibilité**, et ne peut **rien modifier** : création, modification, restauration, suppression, partage, étoiles, suggestions et envoi de documents d'exemple répondent `403`. Il peut en revanche faire des analyses, qui sont les siennes comme celles d'une personne.
+
+Dans Keycloak :
+
+1. Créer un client **confidentiel** pour l'application appelante, avec « Service accounts roles » activé (flux `client_credentials`).
+2. Dans le client `KEYCLOAK_CLIENT_ID` (`croquembouche`), onglet « Roles », créer le rôle **`catalogue-reader`** (déjà présent dans `docker/keycloak/realm-croquembouche.json`).
+3. Dans le client de l'application, onglet « Service account roles » : lui attribuer ce rôle du client `croquembouche`.
+4. Le jeton doit porter le rôle et l'audience : le rôle du client `croquembouche` est ajouté au jeton d'accès par le scope `roles` (par défaut), et avec lui l'audience `croquembouche`.
+
+Un compte de service est reconnu à **deux choses ensemble** : le claim `clientId`, que Keycloak ajoute aux seuls jetons de comptes de service, et le rôle `catalogue-reader`. Le rôle sur une personne ne donne rien ; un compte de service sans le rôle n'a pas plus qu'avant. Ce n'est pas un administrateur.
+
+#### Les jetons échangés (RFC 8693)
+
+Pour créer ou modifier un modèle **au nom d'une personne**, l'application échange le jeton de la personne contre un jeton pour Croquembouche. Le backend y voit la personne d'origine (`sub`, e-mail, groupes) : ses droits sont les siens, ni plus ni moins.
+
+Dans Keycloak :
+
+1. Activer les « Standard token exchange » sur le client de l'application (Keycloak 26.2 ou plus ; avant, la fonction préversion `token-exchange` et une permission d'échange sur le client `croquembouche`).
+2. L'échange demande `audience=croquembouche` : le jeton obtenu a l'audience `croquembouche`.
+3. Le jeton répond à l'identité de la personne seulement si les **mappers `groups` et du rôle `croquembouche`** sont présents pour le client de l'application (`docker/keycloak/realm-croquembouche.json` en montre la forme sur le client `croquembouche` ; le plus simple est d'en faire un scope client commun, attribué aux deux clients).
+
+Pour n'accepter que les jetons destinés à Croquembouche, renseigner dans `backend.envCm` :
+
+```yaml
+KEYCLOAK_AUDIENCE: "croquembouche"   # le client du backend (KEYCLOAK_CLIENT_ID)
+```
+
+Un jeton est alors accepté s'il a cette audience ou s'il a été émis pour ce client ; les autres reçoivent `401`. Vide (par défaut), tout jeton valide du realm est accepté, comme avant.
+
 ### `app` : le chiffrement des données personnelles
 
 | Clé | Valeur | À générer avec |

@@ -58,9 +58,15 @@ def build[T](user: RequestContext, shares: list[Share], make: Callable[..., T]) 
 
 
 def can_see(user: RequestContext, template: Template) -> bool:
-    """Whether a model is for this person: its owner, an administrator, anyone when it is public, or whoever it is
-    shared with. A sub-model goes with its model, and the owner of either sees it."""
+    """Whether a model is for this person: its owner, an administrator, a service account that reads the catalogue,
+    anyone when it is public, or whoever it is shared with. A sub-model goes with its model, and the owner of either
+    sees it."""
     root = template.parent or template
-    if user.is_admin or user.user_id in (template.owner_id, root.owner_id) or root.visibility == "public":
+    if (
+        user.is_admin
+        or user.is_catalogue_reader
+        or user.user_id in (template.owner_id, root.owner_id)
+        or root.visibility == "public"
+    ):
         return True
     return root.visibility == "shared" and any(s.value_hash in hashes_of(user) for s in root.shares)

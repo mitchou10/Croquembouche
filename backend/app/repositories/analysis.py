@@ -53,6 +53,20 @@ class AnalysisRepository:
         )
         return list((await self._session.scalars(query)).all())
 
+    async def get_version(self, template_id: uuid.UUID, version: str) -> TemplateVersion | None:
+        """A version (X.Y.Z) of a model, as it was kept: None when the model never had it."""
+        try:
+            major, minor, patch = (int(part) for part in version.split("."))
+        except ValueError:
+            return None
+        query = select(TemplateVersion).where(
+            TemplateVersion.template_id == template_id,
+            TemplateVersion.major == major,
+            TemplateVersion.minor == minor,
+            TemplateVersion.patch == patch,
+        )
+        return await self._session.scalar(query)
+
     async def existing_entities(self, entity_ids: set[uuid.UUID]) -> set[uuid.UUID]:
         if not entity_ids:
             return set()
