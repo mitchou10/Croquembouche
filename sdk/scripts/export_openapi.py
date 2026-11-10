@@ -1,6 +1,6 @@
 """Writes the OpenAPI document of the backend, as the SDK needs it.
 
-Run it with the backend's environment (see `generate.sh`). What is left out is what a program has no use for: signing in
+Run it with the backend's environment (see the `generate.sh` of an SDK). What is left out is what a program has no use for: signing in
 through the browser (`/api/auth`) and the sub-routes of the worker. What is cleaned is what makes the generated code
 awkward: the names of the operations (FastAPI builds them from the path) and the files (OpenAPI 3.1 says
 `contentMediaType`, the generators want `format: binary`).

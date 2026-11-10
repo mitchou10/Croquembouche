@@ -1,10 +1,14 @@
-# Le SDK Python
+# Les SDK Python et TypeScript
+
+Deux clients **asynchrones** de l'API, avec les mêmes fonctions : `sdk/python` (ci-dessous, puis [TypeScript](#typescript)) et `sdk/typescript`.
+
+## Python
 
 `croquembouche-sdk` est un client **asynchrone** de l'API : il prend en charge le jeton (et son renouvellement), l'envoi des
 documents, l'attente d'un résultat et les erreurs, pour que lire le catalogue ou analyser un document tienne en quelques lignes.
 Il est dans [`sdk/python`](../sdk/python).
 
-## Installer
+### Installer
 
 Il n'est pas publié sur un registre : il s'installe depuis le dépôt, à la version voulue. Le SDK a le numéro de version de
 l'application (il est publié avec elle, sous le même tag).
@@ -15,7 +19,7 @@ uv add "croquembouche-sdk @ git+https://github.com/mitchou10/Croquembouche@v1.24
 
 Python 3.11 ou plus.
 
-## Se connecter
+### Se connecter
 
 ```python
 from croquembouche import Croquembouche, token_url
@@ -46,7 +50,7 @@ Avec `TokenExchange` (RFC 8693), tout ce que fait le client est fait **au nom de
 propriétaire de ce qu'elle crée. `jeton_de_la_personne` peut être une fonction, appelée à chaque renouvellement. L'audience demandée est
 `croquembouche-backend` (`audience=` pour une autre).
 
-## Le catalogue
+### Le catalogue
 
 ```python
 modeles = await client.templates.list("facture")       # recherche ; mine=True pour les siens
@@ -80,7 +84,7 @@ await client.templates.share(modele.id, "shared", [models.Share(kind=models.Shar
 
 Un compte de service en lecture seule reçoit `ForbiddenError` pour tout cela.
 
-## Analyser un document
+### Analyser un document
 
 ```python
 analyse = await client.analyses.create(
@@ -101,7 +105,7 @@ for element in resultat.elements:
   l'**annuler** (`await run.cancel()`). `RunFailedError` si l'essai a échoué.
 - Un essai appartient à qui l'a lancé : le résultat n'est lisible que par le même jeton (le compte de service pour ses essais).
 
-## Chercher des documents qui se ressemblent
+### Chercher des documents qui se ressemblent
 
 ```python
 recherche = await client.searches.start("scan.pdf", k=5)   # parmi tous les modèles lisibles, ou template_ids=[…]
@@ -110,7 +114,7 @@ for voisin in trouve.neighbours:
     print(voisin.template_id, voisin.template_page, voisin.similarity)
 ```
 
-## Les erreurs
+### Les erreurs
 
 Chaque réponse d'erreur de l'API est une exception qui porte le `status_code` et le `detail` donné par l'API :
 
@@ -126,9 +130,9 @@ Chaque réponse d'erreur de l'API est une exception qui porte le `status_code` e
 Toutes héritent de `APIError`, puis de `CroquembouchError`. `WaitTimeoutError` (aussi un `TimeoutError`) et `RunFailedError` ne
 viennent pas d'une réponse.
 
-## Mettre à jour le client
+### Mettre à jour le client
 
-Le code qui parle à l'API (`src/croquembouche/_generated`) est **généré** depuis l'OpenAPI du backend ; `openapi.json` en est la
+Le code qui parle à l'API (`src/croquembouche/_generated`) est **généré** depuis l'OpenAPI du backend ; `sdk/openapi.json` (commun aux SDK) en est la
 source. Après un changement de l'API :
 
 ```sh
@@ -138,9 +142,71 @@ sdk/python/scripts/generate.sh
 La CI refuse une branche où le client commité n'est pas celui que donne l'API. Ce qui est écrit à la main (`auth.py`, `client.py`,
 `analyses.py`, `templates.py`, `searches.py`, `errors.py`) ne change pas à la régénération.
 
-## Les tests
+### Les tests
 
 - `cd sdk/python && uv run pytest` : contre une fausse API.
 - `cd backend && uv run --with ../sdk/python pytest tests/test_sdk.py` : de bout en bout contre l'application et sa base (le worker
   est joué par le test). La CI le fait dans le job du backend.
 - La CI installe aussi le SDK depuis Git, comme le ferait `uv add`, et y rejoue les tests : c'est ce que reçoit un utilisateur.
+
+## TypeScript
+
+`croquembouche-sdk` (dans [`sdk/typescript`](../sdk/typescript)) : Node 20 ou plus, ou un navigateur (`fetch`). Les types viennent de l'OpenAPI du
+backend ; les champs s'écrivent comme l'API les envoie, en `camelCase` (`ownerName`, `templateIds`, `entity.type`).
+
+```sh
+pnpm add "croquembouche-sdk@github:mitchou10/Croquembouche#v1.24.0&path:/sdk/typescript"
+```
+
+Le paquet est construit à l'installation (script `prepare`). L'installation d'un sous-dossier d'un dépôt (`&path:/sdk/typescript`) est celle de pnpm.
+
+```ts
+import { Croquembouche, keycloakTokenUrl } from 'croquembouche-sdk'
+
+const client = new Croquembouche('https://croquembouche.exemple.org', {
+  tokenUrl: keycloakTokenUrl('https://keycloak.exemple.org', 'mon-realm'),
+  clientId: 'mille-feuille',
+  clientSecret: '…',
+})
+
+const formulaire = await client.templates.get(modeleId)
+const run = await client.analyses.run(analyseId, 'facture.pdf')     // un chemin (Node), des octets, un Blob ou un File
+const resultat = await run.wait({ timeoutMs: 120_000 })
+for (const element of resultat.elements) {
+  console.log(element.entity?.name, element.text, element.confidence, element.zone.page, element.zoneIndex)
+}
+```
+
+Tout ce qui est écrit pour Python plus haut vaut ici, aux noms près :
+
+| Python | TypeScript |
+| ------ | ---------- |
+| `Croquembouche(url, token_url=…, client_id=…, client_secret=…)` | `new Croquembouche(url, { tokenUrl, clientId, clientSecret })` |
+| `token=…`, `auth=BearerToken(…)`, `ClientCredentials`, `TokenExchange` | `{ token }`, `{ auth: bearerToken(…) }`, `clientCredentials({…})`, `tokenExchange({…})` |
+| `client.templates.list("facture", mine=True)` | `client.templates.list('facture', { mine: true })` |
+| `client.templates.page(id, 1, document_id=…)` | `client.templates.page(id, 1, { documentId })` → `Uint8Array` |
+| `analyses.create(nom, ids, template_versions={…})` | `analyses.create(nom, ids, { templateVersions: {…} })` |
+| `run.wait(timeout=120, interval=1, text=True)` (secondes) | `run.wait({ timeoutMs: 120_000, intervalMs: 1000, text: true, signal })` (millisecondes) |
+| `element.zone_index` | `element.zoneIndex` |
+| `CroquembouchError`, `APIError`, `ForbiddenError`… | les mêmes classes (`error.status`, `error.detail`) |
+| aucune fermeture : `async with` | aucune fermeture à faire |
+
+Le jeton est renouvelé comme pour Python (30 secondes avant la fin, un `401` le redemande une fois), et des requêtes simultanées partagent un
+seul appel à Keycloak. `wait()` accepte un `AbortSignal` pour cesser d'attendre ; l'essai continue sur le serveur (`run.cancel()` l'arrête).
+`fetch` peut être donné dans les options (tests, proxy), ainsi que `timeoutMs` (30 s par défaut).
+
+### Mettre à jour les types
+
+```sh
+sdk/typescript/scripts/generate.sh
+```
+
+La CI refuse une branche où les types commités ne sont pas ceux que donne l'API (et elle fait la même vérification pour Python). Le
+`sdk/openapi.json` est commun aux deux SDK.
+
+### Les tests
+
+- `cd sdk/typescript && pnpm test` : contre une fausse API (`fetch` donné au client).
+- La CI installe aussi le SDK depuis Git, comme le ferait `pnpm add`, et l'utilise depuis un projet à part (types et code compilés).
+- Pas encore de test de bout en bout contre un vrai backend pour TypeScript (celui de Python passe par le backend dans son processus) :
+  les types sont générés de l'API, qui ne peut pas s'en écarter sans que la CI échoue.

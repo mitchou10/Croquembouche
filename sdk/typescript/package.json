@@ -1,0 +1,31 @@
+{
+  "name": "croquembouche-sdk",
+  "version": "1.24.0",
+  "description": "TypeScript client for the Croquembouche API: the catalogue of models, the analyses and the search for similar documents.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "packageManager": "pnpm@10.33.2",
+  "engines": { "node": ">=20" },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" }
+  },
+  "files": ["dist", "src"],
+  "scripts": {
+    "generate": "./scripts/generate.sh",
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "prepare": "pnpm run build"
+  },
+  "dependencies": {
+    "openapi-fetch": "^0.15.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "openapi-typescript": "^7.9.1",
+    "typescript": "~6.0.3",
+    "vitest": "^5.1.0"
+  }
+}
