@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.24.0](https://github.com/mitchou10/Croquembouche/compare/v1.23.3...v1.24.0) (2026-11-10)
+
+
+### Features
+
+* **auth:** compte de service en lecture seule, jetons échangés et analyse sur une version ([213f0e0](https://github.com/mitchou10/Croquembouche/commit/213f0e05b86f42eaeac32d3dc6e130bf21ec34d4)), closes [#93](https://github.com/mitchou10/Croquembouche/issues/93)
+* **catalogue:** partager un modèle avec des personnes ou des groupes ([37367fd](https://github.com/mitchou10/Croquembouche/commit/37367fdb9bbefbf0d2efc630d7189ae49f0c7ae1)), closes [#92](https://github.com/mitchou10/Croquembouche/issues/92)
+* **catalogue:** plusieurs zones par entité d'un modèle ([560f4b9](https://github.com/mitchou10/Croquembouche/commit/560f4b9df2da9813d8629a26243b8cafc3b7c016)), closes [#91](https://github.com/mitchou10/Croquembouche/issues/91)
+
 ## [1.23.3](https://github.com/mitchou10/Croquembouche/compare/v1.23.2...v1.23.3) (2026-11-10)
 
 
