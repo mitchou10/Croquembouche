@@ -41,7 +41,8 @@ def test_the_entities_to_find_are_the_ones_with_no_zone_to_carry_over():
     zone = [{"x": 0.1, "y": 0.1}, {"x": 0.2, "y": 0.1}, {"x": 0.2, "y": 0.2}]
 
     def entity(name, type="text", page=None, points=None):
-        return N(id=name, name=name, definition=f"{name}?", type=type, examples=[], zone_page=page, zone_points=points)
+        zones = [N(page=page, points=points)] if page else []
+        return N(id=name, name=name, definition=f"{name}?", type=type, examples=[], zones=zones)
 
     with_document = N(id="a", document=object(), entities=[entity("zoned", page=1, points=zone), entity("free")])
     without_document = N(

@@ -17,6 +17,13 @@ const { toggleEntityStar } = useCatalogue()
 useEntityTypes() // loads the types, whose labels and definitions are shown below
 
 const entity = computed(() => props.template.entities[index.value])
+/** How the entity is found: by its definition, or by its zone (its zones, when it has several). */
+const zoneKind = computed(() => {
+  const zones = entity.value?.zones ?? []
+  if (!zones.length) return 'Définition'
+  if (zones.length > 1) return `${zones.length} zones`
+  return props.template.pages.length > 1 ? `Zone · page ${zones[0].page}` : 'Zone'
+})
 const starred = computed(() => !!entity.value && userId.value !== null && entity.value.stars.includes(userId.value))
 </script>
 
@@ -28,8 +35,8 @@ const starred = computed(() => !!entity.value && userId.value !== null && entity
       <div class="entity-card__head">
         <h3 class="fr-h6 fr-mb-0">{{ entity.name }}</h3>
         <DsfrBadge
-          :label="entity.zone ? (template.pages.length > 1 ? `Zone · page ${entity.zone.page}` : 'Zone') : 'Définition'"
-          :type="entity.zone ? 'info' : 'new'"
+          :label="zoneKind"
+          :type="entity.zones.length ? 'info' : 'new'"
           small
           data-testid="entity-kind"
         />

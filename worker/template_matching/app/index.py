@@ -122,8 +122,11 @@ class TemplateIndex:
                     "page": entity["page"],
                     "entity_id": entity["id"],
                     "name": entity.get("name") or "",
+                    **({"zone": entity["zone"]} if "zone" in entity else {}),
                 }
-                looked_at.append(("entity", entity["id"], crop, payload))
+                # An entity with several zones has a vector for each: the zone is part of what it is.
+                ref = f"{entity['id']}:{entity['zone']}" if "zone" in entity else entity["id"]
+                looked_at.append(("entity", ref, crop, payload))
 
         # Each of them turned every way, with the details of how.
         wanted: list[tuple[str, Image.Image, dict]] = []

@@ -20,6 +20,10 @@ class Row:
     review_page: int | None = None
     source: str = "analysis"  # analysis, or manual for an element added by hand
     entity: uuid.UUID | None = None
+    # The use it comes from: an entity with several zones has an element in each, which count as one for the entity.
+    run: uuid.UUID | None = None
+    # Which of the zones of its entity it was carried over from, when that has several.
+    zone_index: int | None = None
 
 
 @dataclass(frozen=True)
@@ -105,7 +109,21 @@ def exact_pages(rows: list[Row], template_id: uuid.UUID | None = None) -> float 
 
 
 def entity_rows(rows: list[Row], entity: uuid.UUID) -> list[Row]:
-    return [r for r in rows if r.entity == entity]
+    """What was found of an entity. One with several zones has an element for each, but it is the entity that is found
+    or missed, not each of its zones: those elements count as one in each use, and the worst of them speaks for it (one
+    that was missed, else one that is wrong, else one not looked at yet, else it is right)."""
+    mine = [r for r in rows if r.entity == entity]
+    kept = [r for r in mine if r.zone_index is None or r.run is None]
+    by_use: dict[uuid.UUID, list[Row]] = {}
+    for row in mine:
+        if row.zone_index is not None and row.run is not None:
+            by_use.setdefault(row.run, []).append(row)
+    for group in by_use.values():
+        missed = [r for r in group if _missed(r, None)]
+        wrong = [r for r in group if r.status != "pending" and not is_correct(r) and r not in missed]
+        pending = [r for r in group if r.status == "pending"]
+        kept.append((missed or wrong or pending or group)[0])
+    return kept
 
 
 def models_of(*groups: list[Row]) -> set[uuid.UUID]:

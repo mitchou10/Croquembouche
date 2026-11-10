@@ -1,19 +1,23 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { canPreview, MAX_EXAMPLE_LENGTH, MAX_EXAMPLES, MAX_TAG_LENGTH, MAX_TAGS, newEntity } from '../composables/useCatalogue'
+import { canPreview, MAX_EXAMPLE_LENGTH, MAX_EXAMPLES, MAX_TAG_LENGTH, MAX_TAGS, MAX_ZONES, newEntity } from '../composables/useCatalogue'
 import { entityTypeDefinition, entityTypeLabel, useEntityTypes } from '../composables/useEntityTypes'
 import type { TemplateDocument, TemplateEntity } from '../data/mock'
 import InfoTip from './InfoTip.vue'
 import PagerControls from './PagerControls.vue'
 import TagsInput from './TagsInput.vue'
 
-defineProps<{ document: TemplateDocument | null }>()
+const props = defineProps<{ document: TemplateDocument | null }>()
 const { optionsFor } = useEntityTypes()
 const entities = defineModel<TemplateEntity[]>({ required: true })
 /** The entity whose zone is being drawn: the document next to the form is then ready to take points. */
 const drawingId = defineModel<string | null>('drawingId', { default: null })
+/** Of its zones, the one being drawn (from 0): a number past the last one adds a zone. */
+const drawingZone = defineModel<number>('drawingZone', { default: 0 })
 /** The entity on show, so the document can outline its zone. */
 const currentId = defineModel<string | null>('currentId', { default: null })
+/** Of the zones of the entity on show, the one the document can edit (from 0). */
+const currentZone = defineModel<number>('currentZone', { default: 0 })
 
 interface EntityErrors {
   name?: string
@@ -24,14 +28,14 @@ interface EntityErrors {
 // One entity at a time, so the form keeps the same height however many there are.
 const index = ref(0)
 // How an entity is found: by what it is (its definition), or by where it appears on the document.
-const zoneIds = ref<string[]>(entities.value.filter((e) => e.zone).map((e) => e.id))
+const zoneIds = ref<string[]>(entities.value.filter((e) => e.zones.length).map((e) => e.id))
 const errors = ref<Record<string, EntityErrors>>({})
 /** Positions (1-based) of the entities that are not complete, as of the last `validate()`. */
 const incomplete = ref<number[]>([])
 
 const entity = computed(() => entities.value[index.value])
 // An entity that comes with its zone (one a PDF suggested) is found by it, whoever put it there.
-const inZoneMode = computed(() => !!entity.value && (zoneIds.value.includes(entity.value.id) || !!entity.value.zone))
+const inZoneMode = computed(() => !!entity.value && (zoneIds.value.includes(entity.value.id) || entity.value.zones.length > 0))
 const entityErrors = computed<EntityErrors>(() => (entity.value && errors.value[entity.value.id]) || {})
 
 watch(
@@ -49,7 +53,10 @@ watch(currentId, (id) => {
 })
 
 // Moving to another entity ends a drawing under way for this one.
-watch(index, () => (drawingId.value = null))
+watch(index, () => {
+  drawingId.value = null
+  currentZone.value = 0
+})
 
 function go(to: number) {
   index.value = Math.min(Math.max(to, 0), entities.value.length - 1)
@@ -80,12 +87,35 @@ function setMode(mode: 'definition' | 'zone') {
   if (mode === 'zone') {
     zoneIds.value = [...zoneIds.value, current.id]
     // Choosing a zone is choosing to draw it: the document is ready at once, no second click needed.
+    drawingZone.value = current.zones.length
     drawingId.value = current.id
     return
   }
   zoneIds.value = zoneIds.value.filter((id) => id !== current.id)
-  delete current.zone
+  current.zones = []
+  currentZone.value = 0
   if (drawingId.value === current.id) drawingId.value = null
+}
+
+/** Starts drawing the zone `slot` of the entity on show: one that exists is drawn again, one past the last is added. */
+function draw(slot: number) {
+  if (!entity.value) return
+  drawingZone.value = slot
+  currentZone.value = Math.min(slot, entity.value.zones.length - 1)
+  drawingId.value = entity.value.id
+}
+
+function removeZone(at: number) {
+  const current = entity.value
+  if (!current) return
+  current.zones.splice(at, 1)
+  currentZone.value = Math.max(0, Math.min(at, current.zones.length - 1))
+}
+
+/** How a zone is called on its chip: its number, and its page when the document has several. */
+const zoneLabel = (at: number) => {
+  const page = entity.value?.zones[at]?.page
+  return `Zone ${at + 1}${props.document?.pages && props.document.pages > 1 && page ? ` · p. ${page}` : ''}`
 }
 
 /** Marks what is missing on each entity and returns whether all of them are complete. */
@@ -96,7 +126,7 @@ function validate(): boolean {
       {
         name: e.name.trim() ? undefined : 'Donnez un nom à l’entité.',
         definition: e.definition.trim() ? undefined : 'Ajoutez une définition.',
-        zone: zoneIds.value.includes(e.id) && !e.zone ? 'Dessinez la zone sur le document.' : undefined,
+        zone: zoneIds.value.includes(e.id) && !e.zones.length ? 'Dessinez la zone sur le document.' : undefined,
       },
     ]),
   )
@@ -173,21 +203,48 @@ defineExpose({ validate, incomplete })
 
         <div v-if="inZoneMode" class="entity__zone">
           <template v-if="drawingId === entity.id">
-            <span class="entity__drawing" data-testid="draw-hint">Dessin en cours…</span>
+            <span class="entity__drawing" data-testid="draw-hint">
+              {{ drawingZone < entity.zones.length ? `Dessin de la zone ${drawingZone + 1} en cours…` : 'Dessin en cours…' }}
+            </span>
             <button type="button" class="fr-btn fr-btn--sm fr-btn--tertiary" @click="drawingId = null">Annuler</button>
           </template>
-          <button v-else type="button" class="fr-btn fr-btn--sm fr-btn--secondary" @click="drawingId = entity.id">
-            {{ entity.zone ? 'Redessiner' : 'Dessiner la zone' }}
-          </button>
-          <button
-            v-if="entity.zone && drawingId !== entity.id"
-            type="button"
-            class="fr-btn fr-btn--sm fr-btn--tertiary"
-            data-testid="delete-zone"
-            @click="delete entity.zone"
-          >
-            Supprimer la zone
-          </button>
+          <template v-else>
+            <!-- Several zones: a number in the header and in the footer, a date on the front and on the back. -->
+            <ul v-if="entity.zones.length > 1" class="entity__zones" aria-label="Zones de l’entité" data-testid="zone-list">
+              <li v-for="(_, at) in entity.zones" :key="at">
+                <button
+                  type="button"
+                  class="fr-tag fr-tag--sm"
+                  :aria-pressed="currentZone === at"
+                  data-testid="zone-chip"
+                  @click="currentZone = at"
+                >
+                  {{ zoneLabel(at) }}
+                </button>
+              </li>
+            </ul>
+            <button type="button" class="fr-btn fr-btn--sm fr-btn--secondary" @click="draw(entity.zones.length ? currentZone : 0)">
+              {{ entity.zones.length ? 'Redessiner' : 'Dessiner la zone' }}
+            </button>
+            <button
+              v-if="entity.zones.length"
+              type="button"
+              class="fr-btn fr-btn--sm fr-btn--tertiary"
+              data-testid="delete-zone"
+              @click="removeZone(currentZone)"
+            >
+              Supprimer la zone
+            </button>
+            <button
+              v-if="entity.zones.length && entity.zones.length < MAX_ZONES"
+              type="button"
+              class="fr-btn fr-btn--sm fr-btn--tertiary"
+              data-testid="add-zone"
+              @click="draw(entity.zones.length)"
+            >
+              Ajouter une zone
+            </button>
+          </template>
         </div>
       </div>
       <p v-if="inZoneMode && entityErrors.zone" class="fr-error-text fr-mb-0" role="alert">{{ entityErrors.zone }}</p>
@@ -305,6 +362,15 @@ defineExpose({ validate, incomplete })
   display: flex;
   align-items: center;
   gap: 0.5rem;
+}
+
+.entity__zones {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
 .entity__drawing {

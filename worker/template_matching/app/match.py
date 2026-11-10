@@ -12,14 +12,19 @@ logger = logging.getLogger(__name__)
 
 
 def _zones(template: dict, page: int) -> list[dict]:
-    """The entities of a model that have a zone on this page of it."""
+    """The zones of the entities of a model that are on this page of it (an entity with several has one item each, told
+    apart by its `zone`)."""
     return [e for e in template.get("entities", []) if e.get("page") == page and e.get("points")]
 
 
-def _found(page: int, template_id: str, confidence: float, entity_id: str, points: list[dict]) -> dict:
+def _found(
+    page: int, template_id: str, confidence: float, entity_id: str, points: list[dict], zone: int | None = None
+) -> dict:
     return {
         "page": page,
         "entity_id": entity_id,
+        # Which zone of the entity this is, when it has several.
+        **({"zone_index": zone} if zone is not None else {}),
         "points": points,
         # An element is as sure as the page is of being that model page, and as the keypoints are of agreeing. As for
         # a page, « other » has the threshold as its score: it comes first when the element does not reach it.
@@ -72,7 +77,7 @@ def match_document(
         for instance in instances:
             confidence = round(top["confidence"] * instance.confidence, 6)
             for entity, points in zip(entities, instance.zones, strict=True):
-                found.append(_found(number, top["template_id"], confidence, entity["id"], points))
+                found.append(_found(number, top["template_id"], confidence, entity["id"], points, entity.get("zone")))
 
     return {
         "status": "done",

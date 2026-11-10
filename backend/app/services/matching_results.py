@@ -78,6 +78,7 @@ async def finish(
                 source="analysis",
                 position=position,
                 entity_id=_known(f.entity_id, entities),
+                zone_index=f.zone_index,
                 classifications=[
                     DetectionClassification(template_id=_uuid(c.template_id), confidence=c.confidence)
                     for c in f.classifications

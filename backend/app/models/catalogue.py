@@ -127,12 +127,26 @@ class TemplateEntity(UUIDMixin, Base):
     examples: Mapped[list[str]] = mapped_column(JSONB, default=list)
     # Optional words that say more of what it is (« signature », « verso »...): free, like the examples.
     tags: Mapped[list[str]] = mapped_column(JSONB, default=list, server_default="[]")
-    # Where it appears on the example document: the page (from 1) and a polygon, in fractions (0 to 1) of the page.
-    zone_page: Mapped[int | None] = mapped_column(Integer)
-    zone_points: Mapped[list[dict[str, float]] | None] = mapped_column(JSONB)
     position: Mapped[int] = mapped_column(Integer, default=0)
 
+    # Where it appears on the example document: none, one, or several (a number in the header and the footer, a date
+    # on the front and the back), in the order they were given.
+    zones: Mapped[list["TemplateEntityZone"]] = relationship(
+        order_by="TemplateEntityZone.position", cascade="all, delete-orphan", lazy="selectin"
+    )
     stars: Mapped[list["EntityStar"]] = relationship(cascade="all, delete-orphan", lazy="selectin")
+
+
+class TemplateEntityZone(UUIDMixin, Base):
+    """One place of an entity on the example document: the page (from 1) and a polygon, in fractions (0 to 1) of the
+    page."""
+
+    __tablename__ = "template_entity_zones"
+
+    entity_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("template_entities.id", ondelete="CASCADE"), index=True)
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    page: Mapped[int] = mapped_column(Integer)
+    points: Mapped[list[dict[str, float]]] = mapped_column(JSONB)
 
 
 class TemplatePage(Base):

@@ -66,12 +66,15 @@ export const newEntity = (): TemplateEntity => ({
   type: 'text',
   examples: [],
   tags: [],
+  zones: [],
   stars: [],
 })
 
 export const MAX_EXAMPLES = 5
 export const MAX_EXAMPLE_LENGTH = 60
 export const MAX_TAGS = 10
+/** The most zones an entity can have. */
+export const MAX_ZONES = 10
 export const MAX_TAG_LENGTH = 30
 
 
@@ -103,7 +106,7 @@ const describeList = (items: string[]) => (items.length ? items.join(', ') : 'Au
 const describeEntities = (entities: TemplateEntity[]) =>
   describeList(
     entities.map((e) => {
-      const details = [entityTypeLabel(e.type).toLowerCase(), ...(e.zone ? ['zone'] : [])].join(', ')
+      const details = [entityTypeLabel(e.type).toLowerCase(), ...(e.zones.length ? [e.zones.length > 1 ? `${e.zones.length} zones` : 'zone'] : [])].join(', ')
       return `${e.name} (${details})${e.examples.length ? ` ex. ${e.examples.join(' / ')}` : ''}${e.tags.length ? ` #${e.tags.join(' #')}` : ''}`
     }),
   )
@@ -176,7 +179,7 @@ export function toBody(fields: TemplateFields, documentId?: string | null, shari
       type: e.type,
       examples: e.examples,
       tags: e.tags,
-      ...(e.zone && { zone: e.zone }),
+      ...(e.zones.length && { zones: e.zones }),
     })),
     ...(documentId !== undefined && { documentId }),
     ...(sharing && { visibility: sharing.visibility, shares: sharing.visibility === 'shared' ? sharing.shares : [] }),

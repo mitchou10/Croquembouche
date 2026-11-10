@@ -82,6 +82,8 @@ class MetricsRepository:
                 Detection.review_template_id,
                 Detection.source,
                 Detection.entity_id,
+                Detection.run_id,
+                Detection.zone_index,
             )
             .join(Detection, Detection.id == top.c.detection_id)
             .where(
@@ -93,8 +95,8 @@ class MetricsRepository:
         if user_id is not None:
             query = query.join(Run, Run.id == Detection.run_id).where(Run.user_id == user_id)
         return [
-            Row(t, None, c, status, review, None, source, entity)
-            for t, c, status, review, source, entity in (await self._session.execute(query)).all()
+            Row(t, None, c, status, review, None, source, entity, run, zone)
+            for t, c, status, review, source, entity, run, zone in (await self._session.execute(query)).all()
         ]
 
     async def names(self, template_ids: set[uuid.UUID]) -> dict[uuid.UUID, str]:

@@ -13,6 +13,8 @@ const props = defineProps<{
   title?: string
   /** The entity it is, when known: what the element is called, the model being a badge beside it. */
   entityName?: string
+  /** How many zones its entity has, when it has several: the card then says which one it is (« zone 2 sur 3 »). */
+  zoneCount?: number
   /** The type of the entity, when known: an image or a table has no text to read. */
   entityType?: string
   /** Whether the text of the document is being read, is read, or could not be. */
@@ -60,6 +62,9 @@ const hidden = computed(() => props.detection.classifications.length - shown.val
   <div class="detection" data-testid="detection">
     <div class="detection__head">
       <h3 class="fr-h6 fr-mb-0">{{ title ?? entityName ?? `Élément ${position}` }}</h3>
+      <span v-if="detection.zoneIndex != null && zoneCount && zoneCount > 1" class="detection__zone" data-testid="detection-zone">
+        zone {{ detection.zoneIndex + 1 }} sur {{ zoneCount }}
+      </span>
       <DsfrBadge :label="nameOf(best.templateId, best.templatePage)" :type="best.templateId === null ? 'warning' : 'success'" small data-testid="detection-best" />
       <span class="detection__confidence" data-testid="detection-confidence">{{ percent(best.confidence) }} %</span>
     </div>
@@ -126,6 +131,11 @@ const hidden = computed(() => props.detection.classifications.length - shown.val
   flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem;
+}
+
+.detection__zone {
+  color: var(--text-mention-grey);
+  font-size: 0.875rem;
 }
 
 .detection__confidence {

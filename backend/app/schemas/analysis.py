@@ -78,6 +78,8 @@ class DetectionOut(CamelModel):
     review: ReviewOut
     source: Literal["analysis", "manual"]
     entity_id: str | None = None
+    # Which zone of the entity it was carried over from (from 0), for an entity that has several.
+    zone_index: int | None = None
     # Found in the text, by the definition of its entity, instead of by a zone of a model.
     found_in_text: bool = False
     # The text the OCR read in the zone: only when a single use is asked for, once it is read, and never for an image or

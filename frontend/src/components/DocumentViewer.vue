@@ -11,6 +11,8 @@ const props = defineProps<{
   /** Entities whose zone is outlined, numbered by their position. */
   entities?: TemplateEntity[]
   highlightId?: string
+  /** Of the zones of the entity on show, the one that can be edited (from 0); the first when absent. */
+  highlightZone?: number
   /** When true, clicks on the image place the points of a zone, which is emitted once closed. */
   drawing?: boolean
   /** When true, the rectangle of the entity on show can be moved, resized (emitted as it goes) and deleted. */
@@ -18,7 +20,14 @@ const props = defineProps<{
   /** When true, the image is shown whole inside the space its parent gives it (no scrolling), keeping its ratio. */
   fit?: boolean
 }>()
-const emit = defineEmits<{ draw: [zone: Zone]; cancel: []; update: [id: string, zone: Zone]; remove: [id: string]; select: [id: string] }>()
+// The id is the entity's; `zoneIndex` says which of its zones when it has several.
+const emit = defineEmits<{
+  draw: [zone: Zone]
+  cancel: []
+  update: [id: string, zone: Zone, zoneIndex: number]
+  remove: [id: string, zoneIndex: number]
+  select: [id: string, zoneIndex: number]
+}>()
 
 const MIN_ZOOM = 1
 const MAX_ZOOM = 8
@@ -79,10 +88,11 @@ function goToPage(next: number) {
 
 // Looking at an entity brings its page up.
 function showPageOf(id: string | undefined) {
-  const zone = props.entities?.find((e) => e.id === id)?.zone
+  const zones = props.entities?.find((e) => e.id === id)?.zones ?? []
+  const zone = zones[props.highlightZone ?? 0] ?? zones[0]
   if (zone) goToPage(zone.page)
 }
-watch(() => props.highlightId, showPageOf)
+watch(() => [props.highlightId, props.highlightZone] as const, ([id]) => showPageOf(id))
 onMounted(() => showPageOf(props.highlightId)) // the one that is on show when the viewer opens too
 
 const stageStyle = computed(() => {
@@ -136,18 +146,26 @@ const topLeftOf = (points: Point[]) => ({
   y: Math.min(...points.map((p) => p.y)),
 })
 
+/** Every zone of every entity that is on the page shown: an entity with several has an outline for each. */
 const shapes = computed(() =>
   (props.entities ?? [])
-    .map((entity, index) => ({ entity, index }))
-    .filter(({ entity }) => entity.zone && entity.zone.points.length >= 3 && entity.zone.page === page.value)
-    .map(({ entity, index }) => {
-      const points = entity.zone!.points
+    .flatMap((entity, index) =>
+      entity.zones.flatMap((zone, zoneIndex) => (zone.points.length >= 3 && zone.page === page.value ? [{ entity, index, zone, zoneIndex }] : [])),
+    )
+    .map(({ entity, index, zone, zoneIndex }) => {
+      const points = zone.points
       const corner = topLeftOf(points)
+      const several = entity.zones.length > 1
+      const onShow = entity.id === props.highlightId
       return {
+        key: `${entity.id}:${zoneIndex}`,
         id: entity.id,
-        // The name as it is typed (the zone follows the form); a number until there is one.
-        label: entity.name.trim() || `Entité ${index + 1}`,
-        highlighted: entity.id === props.highlightId,
+        zoneIndex,
+        // The name as it is typed (the zone follows the form); a number until there is one. « 2/3 » for the second of three.
+        label: (entity.name.trim() || `Entité ${index + 1}`) + (several ? ` · ${zoneIndex + 1}/${entity.zones.length}` : ''),
+        // Every zone of the entity on show is outlined; the one that can be edited is the one asked for.
+        highlighted: onShow,
+        active: onShow && zoneIndex === (props.highlightZone ?? 0),
         points,
         rect: rectOf(points),
         polygon: points.map((p) => `${p.x * 100},${p.y * 100}`).join(' '),
@@ -162,11 +180,12 @@ const HANDLES: Handle[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w']
 /** The rectangle that can be edited: the one of the entity on show, when nothing is being drawn. */
 const editing = computed(() => {
   if (!props.editable || props.drawing) return null
-  const shape = shapes.value.find((s) => s.highlighted && s.rect)
+  const shape = shapes.value.find((s) => s.active && s.rect)
   if (!shape) return null
   const r = shape.rect!
   return {
     id: shape.id,
+    zoneIndex: shape.zoneIndex,
     label: shape.label,
     style: {
       left: `${r.x0 * 100}%`,
@@ -180,18 +199,18 @@ const editing = computed(() => {
 /** The polygon that can be edited: the same rule as the rectangle, for a zone that is not one. */
 const editingPoly = computed(() => {
   if (!props.editable || props.drawing) return null
-  const shape = shapes.value.find((s) => s.highlighted && !s.rect)
-  return shape ? { id: shape.id, label: shape.label, points: shape.points } : null
+  const shape = shapes.value.find((s) => s.active && !s.rect)
+  return shape ? { id: shape.id, zoneIndex: shape.zoneIndex, label: shape.label, points: shape.points } : null
 })
 
 const editTarget = computed(() => editing.value ?? editingPoly.value)
 
-let grab: { id: string; handle: Handle; from: Point; start: Rect } | null = null
+let grab: { id: string; zoneIndex: number; handle: Handle; from: Point; start: Rect } | null = null
 // A polygon: the whole shape (index -1) or one of its points.
-let pgrab: { id: string; index: number; from: Point; start: Point[] } | null = null
+let pgrab: { id: string; zoneIndex: number; index: number; from: Point; start: Point[] } | null = null
 
-function emitPoints(id: string, points: Point[]) {
-  emit('update', id, { page: page.value, points })
+function emitPoints(id: string, zoneIndex: number, points: Point[]) {
+  emit('update', id, { page: page.value, points }, zoneIndex)
 }
 
 /** Starts a drag of the polygon (index -1) or of its point at `index`. */
@@ -202,7 +221,7 @@ function onGrabPoly(event: PointerEvent, index: number) {
   event.preventDefault()
   ;(event.currentTarget as Element).closest<HTMLElement>('.doc-viewer__stage')?.querySelector<HTMLElement>('.doc-viewer__edit-poly')?.focus()
   viewport.value!.setPointerCapture?.(event.pointerId)
-  pgrab = { id: target.id, index, from: toPoint(event), start: target.points }
+  pgrab = { id: target.id, zoneIndex: target.zoneIndex, index, from: toPoint(event), start: target.points }
 }
 
 /** Pulling the middle of an edge adds a point there and carries it along. */
@@ -210,44 +229,44 @@ function onGrabMidpoint(event: PointerEvent, edge: number) {
   const target = editingPoly.value
   if (!target || event.button !== 0) return
   const points = insertVertex(target.points, edge)
-  emitPoints(target.id, points)
+  emitPoints(target.id, target.zoneIndex, points)
   onGrabPoly(event, edge + 1)
   if (pgrab) pgrab.start = points
 }
 
 function onRemoveVertex(index: number) {
   const target = editingPoly.value
-  if (target) emitPoints(target.id, removeVertex(target.points, index))
+  if (target) emitPoints(target.id, target.zoneIndex, removeVertex(target.points, index))
 }
 
 function onGrab(event: PointerEvent, handle: Handle) {
-  const shape = shapes.value.find((s) => s.id === editing.value?.id)
+  const shape = shapes.value.find((s) => s.active && s.id === editing.value?.id)
   if (!shape?.rect || event.button !== 0) return
   event.stopPropagation() // not the pan of the stage
   event.preventDefault()
   ;(event.currentTarget as HTMLElement).closest<HTMLElement>('.doc-viewer__edit')?.focus()
   viewport.value!.setPointerCapture?.(event.pointerId)
-  grab = { id: shape.id, handle, from: toPoint(event), start: shape.rect }
+  grab = { id: shape.id, zoneIndex: shape.zoneIndex, handle, from: toPoint(event), start: shape.rect }
 }
 
 function onGrabMove(event: PointerEvent) {
   if (pgrab) {
     const here = toPoint(event)
-    const { id, index, from, start } = pgrab
-    emitPoints(id, index < 0 ? movePolygon(start, here.x - from.x, here.y - from.y) : moveVertex(start, index, here))
+    const { id, zoneIndex, index, from, start } = pgrab
+    emitPoints(id, zoneIndex, index < 0 ? movePolygon(start, here.x - from.x, here.y - from.y) : moveVertex(start, index, here))
     return true
   }
   if (!grab) return false
   const here = toPoint(event)
   const next = resizeRect(grab.start, grab.handle, here.x - grab.from.x, here.y - grab.from.y)
-  emit('update', grab.id, { page: page.value, points: pointsOf(next) })
+  emit('update', grab.id, { page: page.value, points: pointsOf(next) }, grab.zoneIndex)
   return true
 }
 
 function onEditKey(event: KeyboardEvent) {
   if (!editTarget.value || (event.key !== 'Delete' && event.key !== 'Backspace')) return
   event.preventDefault()
-  emit('remove', editTarget.value.id)
+  emit('remove', editTarget.value.id, editTarget.value.zoneIndex)
 }
 
 // ---------------------------------------------------------------- drawing
@@ -329,7 +348,7 @@ const areaOf = (polygon: Point[]) =>
 /** A click on a zone says which one it is: the smallest when zones lie one in another. */
 function selectAt(point: Point) {
   const hit = shapes.value.filter((s) => insidePolygon(point, s.points)).sort((a, b) => areaOf(a.points) - areaOf(b.points))[0]
-  if (hit) emit('select', hit.id)
+  if (hit) emit('select', hit.id, hit.zoneIndex)
 }
 
 function onPointerUp(event: PointerEvent) {
@@ -515,15 +534,15 @@ const hint = computed(() =>
           <svg class="doc-viewer__shapes" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
             <polygon
               v-for="shape in shapes"
-              :key="shape.id"
+              :key="shape.key"
               :points="shape.polygon"
               class="doc-viewer__polygon"
               :class="{
                 'doc-viewer__polygon--highlight': shape.highlighted,
-                'doc-viewer__polygon--grab': editingPoly?.id === shape.id,
+                'doc-viewer__polygon--grab': editingPoly?.id === shape.id && shape.active,
               }"
               data-testid="entity-zone"
-              @pointerdown="editingPoly?.id === shape.id && onGrabPoly($event, -1)"
+              @pointerdown="editingPoly?.id === shape.id && shape.active && onGrabPoly($event, -1)"
             />
             <polyline v-if="draftLine" :points="draftLine" class="doc-viewer__draft" />
           </svg>
@@ -581,7 +600,7 @@ const hint = computed(() =>
 
           <span
             v-for="shape in shapes"
-            :key="shape.id"
+            :key="shape.key"
             class="doc-viewer__label"
             :class="{ 'doc-viewer__label--highlight': shape.highlighted }"
             :style="shape.labelStyle"

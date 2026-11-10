@@ -11,6 +11,7 @@ from app.models.catalogue import (
     SuggestionStar,
     Template,
     TemplateEntity,
+    TemplateEntityZone,
     TemplatePage,
     TemplateShare,
     TemplateStar,
@@ -101,6 +102,16 @@ def page_label(template_name: str, document_pages: int, page: int, name: str = "
     return f"{template_name} · page {page}" if document_pages > 1 else template_name
 
 
+def _zone_dict(zone: TemplateEntityZone) -> dict:
+    return {"page": zone.page, "points": zone.points}
+
+
+def zones_of(entity: dict) -> list[dict]:
+    """The zones of an entity as a snapshot or a suggestion has it: a list, or the one `zone` of a version kept before
+    an entity could have several."""
+    return entity.get("zones") or ([entity["zone"]] if entity.get("zone") else [])
+
+
 def _template_fields_dict(template: Template) -> dict:
     """A saved template as `_fields_dict` gives a proposed one, to tell whether they differ."""
     return {
@@ -115,7 +126,8 @@ def _template_fields_dict(template: Template) -> dict:
                 "type": e.type,
                 "examples": list(e.examples),
                 "tags": list(e.tags or []),
-                "zone": None if e.zone_page is None else {"page": e.zone_page, "points": e.zone_points},
+                "zone": _zone_dict(e.zones[0]) if e.zones else None,
+                "zones": [_zone_dict(z) for z in e.zones],
             }
             for e in template.entities
         ],
@@ -155,9 +167,17 @@ def _message(
             for number in range(1, document.pages + 1)
         ],
         "entities": [
-            {"id": str(e["id"]), "name": e["name"], "page": e["zone"]["page"], "points": e["zone"]["points"]}
+            {
+                "id": str(e["id"]),
+                "name": e["name"],
+                "page": z["page"],
+                "points": z["points"],
+                # Which zone it is, only for an entity that has several: its elements are told apart by it.
+                **({"zone": index} if len(zones_of(e)) > 1 else {}),
+            }
             for e in entities
-            if e["zone"] and e["zone"]["points"]
+            for index, z in enumerate(zones_of(e))
+            if z["points"]
         ],
     }
 
@@ -177,7 +197,7 @@ def index_message(template: Template) -> dict | None:
             {
                 "id": e.id,
                 "name": e.name,
-                "zone": None if e.zone_page is None else {"page": e.zone_page, "points": e.zone_points},
+                "zones": [_zone_dict(z) for z in e.zones],
             }
             for e in template.entities
         ],
@@ -587,9 +607,10 @@ class CatalogueService:
             entity.type = data["type"]
             entity.examples = data["examples"]
             entity.tags = data["tags"]
-            zone = data["zone"]
-            entity.zone_page = zone["page"] if zone else None
-            entity.zone_points = zone["points"] if zone else None
+            entity.zones = [
+                TemplateEntityZone(position=index, page=zone["page"], points=zone["points"])
+                for index, zone in enumerate(data["zones"])
+            ]
             entity.position = position
             result.append(entity)
         template.entities = result
@@ -767,7 +788,7 @@ class CatalogueService:
                     type=e.type,
                     examples=list(e.examples),
                     tags=list(e.tags or []),
-                    zone=None if e.zone_page is None else {"page": e.zone_page, "points": e.zone_points},
+                    zones=[_zone_dict(z) for z in e.zones],
                     stars=[s.user_id for s in e.stars],
                 )
                 for e in template.entities

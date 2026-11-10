@@ -254,7 +254,7 @@ const labelOf = (d: NonNullable<typeof shown.value>, index: number) => {
 }
 // The viewer outlines the zones of « entities »: each element found is one.
 const outlined = computed<TemplateEntity[]>(() =>
-  detections.value.map((d, index) => ({ id: d.id, name: labelOf(d, index), definition: '', type: 'text', examples: [], tags: [], stars: [], zone: d.zone })),
+  detections.value.map((d, index) => ({ id: d.id, name: labelOf(d, index), definition: '', type: 'text', examples: [], tags: [], stars: [], zones: [d.zone] })),
 )
 
 const foundModels = computed(() => new Set(detections.value.map((d) => d.classifications[0].templateId).filter((t) => t !== null)).size)
@@ -520,7 +520,7 @@ const sharing = computed(() => {
 
             <template v-if="shown && !adding">
               <ManualElementCard v-if="shown.source === 'manual'" :key="shown.id" :element="shown" :position="current + 1" :model-name="nameOf" @remove="remove(shown.id)" />
-              <DetectionCard v-else :key="shown.id" :detection="shown" :position="current + 1" :name-of="nameOf" :entity-name="entityName(shown)" :entity-type="entityOf(shown)?.type" :ocr-status="run?.ocrStatus" :document="run?.screenshot">
+              <DetectionCard v-else :key="shown.id" :detection="shown" :position="current + 1" :name-of="nameOf" :entity-name="entityName(shown)" :entity-type="entityOf(shown)?.type" :zone-count="entityOf(shown)?.zones.length" :ocr-status="run?.ocrStatus" :document="run?.screenshot">
                 <ReviewControls :review="shown.review" :models="models" :model-name="nameOf" @review="review(shown.id, $event)" />
               </DetectionCard>
             </template>

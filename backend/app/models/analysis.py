@@ -146,6 +146,8 @@ class Detection(UUIDMixin, Base):
     entity_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("template_entities.id", ondelete="SET NULL"), index=True
     )
+    # Which zone of the entity it was carried over from (from 0), for an entity that has several; none otherwise.
+    zone_index: Mapped[int | None] = mapped_column(Integer)
 
     # Found in the text the OCR read (by the definition of its entity) rather than by carrying a zone of a model over:
     # then `text` is what was found, kept encrypted as it is the document's own words.
