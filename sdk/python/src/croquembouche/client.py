@@ -7,6 +7,7 @@ from .auth import BearerToken, ClientCredentials
 from .searches import Searches
 from .tasks import Tasks
 from .templates import Templates
+from .users import Users
 
 
 class Croquembouche:
@@ -49,6 +50,7 @@ class Croquembouche:
         self.analyses = Analyses(caller)
         self.searches = Searches(caller)
         self.tasks = Tasks(caller)
+        self.users = Users(caller)
 
     async def aclose(self) -> None:
         await self._http.aclose()

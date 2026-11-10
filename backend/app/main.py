@@ -11,6 +11,7 @@ from app.routers.reference import router as reference_router
 from app.routers.searches import router as searches_router
 from app.routers.tasks import router as tasks_router
 from app.routers.templates import router as templates_router
+from app.routers.users import router as users_router
 from app.version import app_version
 
 app = FastAPI(title="Croquembouche")
@@ -31,6 +32,7 @@ app.include_router(analyses_router, prefix="/api/analyses")
 app.include_router(metrics_router, prefix="/api/metrics")
 app.include_router(searches_router, prefix="/api/searches")
 app.include_router(tasks_router, prefix="/api/tasks")
+app.include_router(users_router, prefix="/api/users")
 app.include_router(reference_router, prefix="/api")
 app.include_router(internal_router, prefix="/internal")
 

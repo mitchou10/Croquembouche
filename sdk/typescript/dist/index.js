@@ -5,3 +5,4 @@ export { APIError, AuthenticationError, ConflictError, CroquembouchError, Forbid
 export { Search, Searches } from './searches.js';
 export { Tasks } from './tasks.js';
 export { Templates } from './templates.js';
+export { Users } from './users.js';

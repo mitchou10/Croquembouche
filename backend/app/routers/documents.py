@@ -29,7 +29,9 @@ async def upload(user: CurrentUser, db: Db, file: Annotated[UploadFile, File()])
     # One byte more than the limit is enough to know the file is too big, without reading all of it.
     data = await file.read(documents.MAX_BYTES + 1)
     try:
-        document = await documents.save(DocumentRepository(db), user.user_id, file.filename or "document", data)
+        document = await documents.save(
+            DocumentRepository(db), user.user_id, file.filename or "document", data, kind=documents.MODELS
+        )
     except documents.InvalidDocumentError as error:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)) from error
     return DocumentOut(

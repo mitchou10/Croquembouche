@@ -165,7 +165,9 @@ class SearchService:
             prepared = await documents.prepare(data)
         except documents.InvalidDocumentError as error:
             raise InvalidError(str(error)) from error
-        saved = await documents.save(self._documents, self._user.user_id, file_name, data, prepared)
+        saved = await documents.save(
+            self._documents, self._user.user_id, file_name, data, prepared, kind=documents.ANALYSES
+        )
         search = Search(
             id=uuid.uuid4(),
             user_id=self._user.user_id,

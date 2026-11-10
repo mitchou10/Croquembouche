@@ -3,6 +3,7 @@ import { Analyses } from './analyses.js';
 import { Searches } from './searches.js';
 import { Tasks } from './tasks.js';
 import { Templates } from './templates.js';
+import { Users } from './users.js';
 export interface CroquembouchOptions {
     /** How to sign in: any of `bearerToken`, `clientCredentials` or `tokenExchange` (they renew themselves). */
     auth?: TokenSource;
@@ -32,5 +33,6 @@ export declare class Croquembouche {
     readonly analyses: Analyses;
     readonly searches: Searches;
     readonly tasks: Tasks;
+    readonly users: Users;
     constructor(url: string, options?: CroquembouchOptions);
 }

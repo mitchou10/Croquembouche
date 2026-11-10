@@ -464,7 +464,7 @@ async def test_a_model_with_a_document_is_indexed_with_its_pages_and_its_entity_
     assert message["document_id"] == model["document"]["id"]
     assert [p["page"] for p in message["pages"]] == [1, 2, 3]
     assert [p["key"] for p in message["pages"]] == [
-        f"documents/{model['document']['id']}/pages/{n}.png" for n in (1, 2, 3)
+        f"models/alice/{model['document']['id']}/pages/{n}.png" for n in (1, 2, 3)
     ]
     assert (message["pages"][1]["name"], message["pages"][1]["description"]) == ("Pièces", "Annexes")
     assert message["pages"][0]["name"] == ""
@@ -480,7 +480,7 @@ async def test_the_page_of_an_image_is_the_image_itself(db_client, as_user, inde
 
     [(_, message)] = indexer.calls
     assert message["pages"] == [
-        {"page": 1, "key": f"documents/{document['id']}/original.png", "name": "", "description": ""}
+        {"page": 1, "key": f"models/alice/{document['id']}/original.png", "name": "", "description": ""}
     ]
 
 

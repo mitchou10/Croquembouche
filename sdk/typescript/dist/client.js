@@ -4,6 +4,7 @@ import { createHttp } from './http.js';
 import { Searches } from './searches.js';
 import { Tasks } from './tasks.js';
 import { Templates } from './templates.js';
+import { Users } from './users.js';
 /** A client of the API::
  *
  *      const client = new Croquembouche(url, { tokenUrl, clientId, clientSecret })
@@ -19,6 +20,7 @@ export class Croquembouche {
     analyses;
     searches;
     tasks;
+    users;
     constructor(url, options = {}) {
         let auth = options.auth;
         if (!auth) {
@@ -41,5 +43,6 @@ export class Croquembouche {
         this.analyses = new Analyses(http, this.templates);
         this.searches = new Searches(http);
         this.tasks = new Tasks(http);
+        this.users = new Users(http);
     }
 }

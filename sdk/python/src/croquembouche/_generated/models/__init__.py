@@ -39,6 +39,7 @@ from .page_fields import PageFields
 from .page_out import PageOut
 from .page_quality import PageQuality
 from .point import Point
+from .purge_out import PurgeOut
 from .quality import Quality
 from .quality_overview import QualityOverview
 from .reindex_out import ReindexOut
@@ -126,6 +127,7 @@ __all__ = (
     "PageOut",
     "PageQuality",
     "Point",
+    "PurgeOut",
     "Quality",
     "QualityOverview",
     "ReindexOut",

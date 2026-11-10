@@ -272,7 +272,9 @@ class AnalysisService:
             prepared = await documents.prepare(data)
         except documents.InvalidDocumentError as error:
             raise InvalidError(str(error)) from error
-        saved = await documents.save(self._documents, self._user.user_id, file_name, data, prepared)
+        saved = await documents.save(
+            self._documents, self._user.user_id, file_name, data, prepared, kind=documents.ANALYSES
+        )
         searched = await self._searched(analysis)
         pins = {m.template_id: m.version for m in analysis.models if m.version}
         pinned = await self._pinned_versions(pins)

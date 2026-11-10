@@ -1,5 +1,6 @@
 import uuid
 from dataclasses import dataclass
+from urllib.parse import quote
 
 import pymupdf
 from starlette.concurrency import run_in_threadpool
@@ -8,6 +9,12 @@ from app.core import storage
 from app.models.document import Document
 from app.repositories.document import DocumentRepository
 from app.services import pdf_zones
+
+# What is kept is ranged by kind, then by owner, so that everything a person sent to be analysed is under one prefix (to
+# purge it, to expire it). `ANALYSES`: what is sent to be analysed (a use of an analysis, a search). `MODELS`: the
+# example documents of the models, which other people use too: a purge of what a person sent does not take them.
+ANALYSES = "analyses"
+MODELS = "models"
 
 MAX_BYTES = 20 * 1024 * 1024
 # A page is rendered whole as an image: more pages than this is a book, not an example of a model.
@@ -104,11 +111,24 @@ async def prepare(data: bytes) -> Prepared:
     return await run_in_threadpool(_prepare, data)
 
 
+def owner_prefix(kind: str, owner_id: str) -> str:
+    """Where what a person sent of a kind is in the store: `analyses/<id>/`. The identifier (the one of their account,
+    never their address or name) is encoded for a key, and the prefix ends with the slash: `bob` is not `bobby`."""
+    return f"{kind}/{quote(owner_id, safe='')}/"
+
+
 async def save(
-    repository: DocumentRepository, owner_id: str, name: str, data: bytes, prepared: Prepared | None = None
+    repository: DocumentRepository,
+    owner_id: str,
+    name: str,
+    data: bytes,
+    prepared: Prepared | None = None,
+    *,
+    kind: str,
 ) -> Document:
     """Keeps a document with, for a PDF, a screenshot of each of its pages: the pages are what the model is drawn on.
-    Reading a PDF and talking to the store block: they run off the event loop. `prepared` spares looking at it twice."""
+    Reading a PDF and talking to the store block: they run off the event loop. `prepared` spares looking at it twice.
+    `kind`: `ANALYSES` or `MODELS`, where it is kept (see `owner_prefix`)."""
     prepared = prepared or await prepare(data)
     content_type, screenshots = prepared.content_type, prepared.screenshots
     identifier = uuid.uuid4()
@@ -118,7 +138,7 @@ async def save(
         name=name[:255],
         content_type=content_type,
         pages=len(screenshots) or 1,
-        storage_prefix=f"documents/{identifier}/",
+        storage_prefix=f"{owner_prefix(kind, owner_id)}{identifier}/",
     )
     await run_in_threadpool(_store, document, data, screenshots)
     # Recorded last: a document the database does not know is one that was never completed.

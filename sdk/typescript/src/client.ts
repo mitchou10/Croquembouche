@@ -4,6 +4,7 @@ import { createHttp } from './http.js'
 import { Searches } from './searches.js'
 import { Tasks } from './tasks.js'
 import { Templates } from './templates.js'
+import { Users } from './users.js'
 
 export interface CroquembouchOptions {
   /** How to sign in: any of `bearerToken`, `clientCredentials` or `tokenExchange` (they renew themselves). */
@@ -35,6 +36,7 @@ export class Croquembouche {
   readonly analyses: Analyses
   readonly searches: Searches
   readonly tasks: Tasks
+  readonly users: Users
 
   constructor(url: string, options: CroquembouchOptions = {}) {
     let auth = options.auth
@@ -57,5 +59,6 @@ export class Croquembouche {
     this.analyses = new Analyses(http, this.templates)
     this.searches = new Searches(http)
     this.tasks = new Tasks(http)
+    this.users = new Users(http)
   }
 }
