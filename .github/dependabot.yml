@@ -37,6 +37,7 @@ updates:
   - package-ecosystem: uv
     directories:
       - /backend
+      - /sdk/python
       - /worker/*
     target-branch: dev
     schedule:
@@ -49,7 +50,9 @@ updates:
 
   # pnpm projects are handled by the npm ecosystem (it reads pnpm-lock.yaml).
   - package-ecosystem: npm
-    directory: /frontend
+    directories:
+      - /frontend
+      - /sdk/typescript
     target-branch: dev
     schedule:
       interval: weekly
