@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.25.0](https://github.com/mitchou10/Croquembouche/compare/v1.24.0...v1.25.0) (2026-11-10)
+
+
+### Features
+
+* **sdk:** un SDK Python asynchrone pour appeler l'API ([aee6672](https://github.com/mitchou10/Croquembouche/commit/aee66724e6c6991df66c147e8c0b913d04f73939)), closes [#97](https://github.com/mitchou10/Croquembouche/issues/97)
+* **sdk:** un SDK TypeScript, avec les mêmes fonctions que celui de Python ([5da9207](https://github.com/mitchou10/Croquembouche/commit/5da9207f993e5b81bc5f36d7c8a505c8f8f1ab41)), closes [#97](https://github.com/mitchou10/Croquembouche/issues/97)
+
+
+### Bug Fixes
+
+* **sdk:** commiter le paquet TypeScript construit ([c343ffa](https://github.com/mitchou10/Croquembouche/commit/c343ffa8714c475d20b205846495841a4ef61dab))
+* **sdk:** le contrôle du paquet TypeScript installé n'appelle plus d'API ([ead4f46](https://github.com/mitchou10/Croquembouche/commit/ead4f4688ae280797f2f02cae4936218f651a421))
+
 ## [1.24.0](https://github.com/mitchou10/Croquembouche/compare/v1.23.3...v1.24.0) (2026-11-10)
 
 
