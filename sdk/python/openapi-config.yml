@@ -1,0 +1,7 @@
+# The generated client: models and one function per route (see generate.sh). The package is private (`_generated`):
+# what a program uses is `croquembouche`, which wraps it.
+package_name_override: _generated
+project_name_override: croquembouche-sdk
+use_path_prefixes_for_title_model_names: false
+generate_all_tags: false
+docstrings_on_attributes: true
