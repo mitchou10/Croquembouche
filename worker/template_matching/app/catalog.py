@@ -20,13 +20,32 @@ _CONSUMPTION = {
     },
 }
 _STATUS = {"type": "string", "enum": ["done", "failed"]}
+# What a document is given as: not its bytes, but pointers to the images of its pages in the object store.
+_PAGE_KEYS = {
+    "type": "array",
+    "description": (
+        "Not the document itself: the keys of the images of its pages in the object store (S3, bucket "
+        f"`{config.AWS_BUCKET}`), one for each page, in order. The worker reads each object from the store, so it must "
+        "be able to reach it. The backend made them when the document was sent: `<document>/pages/<n>.png` for a PDF "
+        "(a screenshot of each page), `<document>/original.<extension>` for an image (every page is that image)."
+    ),
+    "items": {"type": "string", "examples": ["documents/3f2a/pages/1.png"]},
+    "minItems": 1,
+}
 _MODEL_PAGES = {
     "type": "array",
     "items": {
         "type": "object",
         "properties": {
             "page": {"type": "integer", "minimum": 1},
-            "key": {"type": "string", "description": "Where the image of the page is in the store."},
+            "key": {
+                "type": "string",
+                "description": (
+                    "The key, in the object store (S3), of the image of this page of the model's example document "
+                    "(same form as `page_keys`). It is read to index the page and, in a match, to carry the zones of "
+                    "the entities over onto the page of the document."
+                ),
+            },
             "name": {"type": "string"},
             "description": {"type": "string"},
         },
@@ -116,10 +135,19 @@ def tasks() -> list[dict]:
         ),
         _task(
             "classify_pages",
-            "What each page of a document is among some models of the catalogue, the likeliest first: a page of "
-            "a model, "
-            "or « other » when none looks enough like it.",
-            {"template_ids": _STRINGS, "page_keys": {**_STRINGS, "description": "The images, by key in the store."}},
+            "What each page of a document is among some models of the catalogue, the likeliest first: a page of a "
+            "model, or « other » when none looks enough like it. It takes the ids of the models (compared through the "
+            "index) and the keys of the page images of the document in the object store.",
+            {
+                "template_ids": {
+                    **_STRINGS,
+                    "description": (
+                        "The models to compare the pages with: their ids only, they are looked up in the index of the "
+                        "catalogue (see `index_template`), not passed."
+                    ),
+                },
+                "page_keys": _PAGE_KEYS,
+            },
             {
                 "type": "array",
                 "items": {
@@ -150,9 +178,10 @@ def tasks() -> list[dict]:
         _task(
             "match_document",
             "Classifies the pages of a document tried on an analysis, then carries the zones of the model page "
-            "over onto "
-            "it (homography): one element for each zone, found. The result is handed back to the backend, which keeps "
-            "the runs.",
+            "over onto it (homography): one element for each zone, found. It takes the keys of the page images of the "
+            "document in the object store and the models of the analysis as the backend describes them: the keys of "
+            "the images of their pages, and the zones of their entities. The result is handed back to the backend, "
+            "which keeps the runs.",
             {
                 "message": {
                     "type": "object",
@@ -166,7 +195,7 @@ def tasks() -> list[dict]:
                                 "properties": {**_MODEL["properties"], "pinned": {"type": "boolean"}},
                             },
                         },
-                        "page_keys": {**_STRINGS, "description": "The images of the document, by key in the store."},
+                        "page_keys": _PAGE_KEYS,
                     },
                     "required": ["run_id", "templates", "page_keys"],
                 }
@@ -208,7 +237,7 @@ def tasks() -> list[dict]:
                     "type": "object",
                     "properties": {
                         "search_id": {"type": "string"},
-                        "page_keys": _STRINGS,
+                        "page_keys": _PAGE_KEYS,
                         "k": {"type": "integer", "minimum": 1, "description": "Neighbours for each page."},
                         "template_ids": {**_STRINGS, "description": "The models to look in; absent: every one."},
                     },

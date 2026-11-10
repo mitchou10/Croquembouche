@@ -15,7 +15,26 @@ régulièrement qu'il est vivant. Le backend les liste : `GET /api/tasks`.
 | `parameters` | Ce qu'on peut régler, en JSON Schema : les réglages du worker qui changent ce qu'elle fait (seuils, modèle, langue), avec leur valeur actuelle en `default`. |
 | `outputSchema` | Ce qu'elle donne, en JSON Schema : sa valeur de retour, ou ce qu'elle rend au backend (les tâches de calcul rendent leur résultat par `/internal/...`). |
 
-Les schémas sont dans `worker/<nom>/app/catalog.py`. Un test de chaque worker vérifie que ce catalogue et les tâches Celery sont les mêmes :
+Les schémas sont dans `worker/<nom>/app/catalog.py`.
+
+**Ce que prennent les tâches de lecture** (les deux se suivent) :
+
+- `ocr.read_document` ne prend **pas le document** : il prend `{run_id, page_keys}`, les **clés des images des pages dans le stockage d'objets** (S3, bucket
+  `AWS_BUCKET`, `croquembouche-documents` par défaut), une par page. Le backend les fabrique à l'envoi du document : `<document>/pages/<n>.png` pour un PDF
+  (une capture de chaque page), `<document>/original.<extension>` pour une image. Le worker lit chaque objet dans le stockage : il doit pouvoir le joindre.
+  Il rend le texte lu : `pages: [{page, angle, lines: [{text, score, points}]}]`.
+- **`template_matching`** a la même forme de document que l'OCR : jamais les octets, toujours des **clés d'images dans le stockage d'objets**.
+  - `classify_pages(template_ids, page_keys)` : les `page_keys` du document (clés des images de ses pages, comme ci-dessus) et les **identifiants** des modèles à comparer ;
+    les modèles ne sont pas passés, ils sont cherchés dans l'**index** (Qdrant) que `index_template` a rempli.
+  - `match_document({run_id, templates, page_keys})` : les `page_keys` du document analysé, et `templates`, les modèles de l'analyse **tels que le backend les décrit** :
+    pour chacun (et chaque X qu'il a eu, ou la version épinglée) `{template_id, major, version, pages: [{page, key}], entities: [{id, page, points, zone?}]}`.
+    Les `key` des pages du modèle sont des clés S3 du même genre (les images de son document d'exemple) : elles sont lues pour **reporter les zones** des entités sur le
+    document (homographie). Les `points` sont un polygone en fractions (0 à 1) de la page ; `zone` est l'indice de la zone d'une entité qui en a plusieurs.
+  - `index_template({template})` : le même objet « modèle » (les clés des images de ses pages, lues ici, et les zones de ses entités).
+  - `find_neighbours({search_id, page_keys, k, template_ids?})` : les `page_keys` du document de la recherche ; `template_ids` absent veut dire tout le catalogue.
+- `gliner.find_entities` prend **la sortie de l'OCR telle quelle** (`pages`, le même schéma) **et les définitions** des entités à trouver :
+  `{run_id, pages, entities: [{id, template_id, name, definition, type, examples}]}`. Ce sont les entités des modèles qui n'ont pas de zone à reporter ;
+  GLiNER les cherche dans le texte d'après ce qu'elles sont. Un test de chaque worker vérifie que ce catalogue et les tâches Celery sont les mêmes :
 on ne peut pas ajouter une tâche sans la décrire.
 
 ## Les tables

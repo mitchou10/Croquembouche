@@ -18,6 +18,34 @@ _CONSUMPTION = {
     },
 }
 
+# The text of the pages of a document, as the OCR reads it: `ocr.read_document` hands it back to the backend, which
+# keeps it and gives it to `gliner.find_entities` as it is.
+_PAGES = {
+    "type": "array",
+    "description": "One item for each page of the document, in order.",
+    "items": {
+        "type": "object",
+        "properties": {
+            "page": {"type": "integer", "minimum": 1},
+            "angle": {"type": "integer", "description": "How far the page was turned (0, 90, 180, 270)."},
+            "lines": {
+                "type": "array",
+                "description": "The lines of text read, with where each is on the page.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "text": {"type": "string"},
+                        "score": {"type": "number", "description": "How sure the reading is (0 to 1)."},
+                        "points": {"type": "array", "items": _POINT, "description": "The polygon of the line."},
+                    },
+                    "required": ["text", "points"],
+                },
+            },
+        },
+        "required": ["page", "lines"],
+    },
+}
+
 
 def _task(name: str, description: str, input_schema: dict, output_schema: dict, parameters: dict | None = None) -> dict:
     return {
@@ -38,21 +66,29 @@ def tasks() -> list[dict]:
         _task(
             "find_entities",
             "Finds, in the text the OCR read, the entities that have no zone (GLiNER): by their definition and "
-            "their type. "
+            "their type. It takes the output of `ocr.read_document` and the definitions of the entities to find. "
             "What it found is handed back to the backend, with where it is in the document.",
             {
                 "message": {
                     "type": "object",
                     "properties": {
-                        "run_id": {"type": "string"},
+                        "run_id": {
+                            "type": "string",
+                            "description": "The use of an analysis the entities are found for.",
+                        },
                         "pages": {
-                            "type": "array",
-                            "description": "The text of each page: `{page, angle, lines: [{text, score, points}]}`.",
-                            "items": {"type": "object"},
+                            **_PAGES,
+                            "description": (
+                                "The output of `ocr.read_document` as it is (its `pages`): the text of each page, "
+                                "line by line, with where each line is. The entities are found in it."
+                            ),
                         },
                         "entities": {
                             "type": "array",
-                            "description": "What to find: the entities of the models, with their definition.",
+                            "description": (
+                                "What to find: the entities of the models that have no zone to carry over, with their "
+                                "definition (and type, and examples): GLiNER finds them by what they are."
+                            ),
                             "items": {
                                 "type": "object",
                                 "properties": {

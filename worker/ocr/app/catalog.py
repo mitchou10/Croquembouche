@@ -18,6 +18,34 @@ _CONSUMPTION = {
     },
 }
 
+# The text of the pages of a document, as the OCR reads it: `ocr.read_document` hands it back to the backend, which
+# keeps it and gives it to `gliner.find_entities` as it is.
+_PAGES = {
+    "type": "array",
+    "description": "One item for each page of the document, in order.",
+    "items": {
+        "type": "object",
+        "properties": {
+            "page": {"type": "integer", "minimum": 1},
+            "angle": {"type": "integer", "description": "How far the page was turned (0, 90, 180, 270)."},
+            "lines": {
+                "type": "array",
+                "description": "The lines of text read, with where each is on the page.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "text": {"type": "string"},
+                        "score": {"type": "number", "description": "How sure the reading is (0 to 1)."},
+                        "points": {"type": "array", "items": _POINT, "description": "The polygon of the line."},
+                    },
+                    "required": ["text", "points"],
+                },
+            },
+        },
+        "required": ["page", "lines"],
+    },
+}
+
 
 def _task(name: str, description: str, input_schema: dict, output_schema: dict, parameters: dict | None = None) -> dict:
     return {
@@ -38,15 +66,27 @@ def tasks() -> list[dict]:
         _task(
             "read_document",
             "Reads the text of the pages of a document tried on an analysis (PaddleOCR): the lines, where each "
-            "is, and how "
-            "sure the reading is. It runs beside the matching and nothing waits for it. The text is handed back to the "
-            "backend.",
+            "is, and how sure the reading is. It takes the keys of the page images in the object store, not the "
+            "document. It runs beside the matching and nothing waits for it. The text is handed back to the backend, "
+            "which gives it as it is to `gliner.find_entities`.",
             {
                 "message": {
                     "type": "object",
                     "properties": {
-                        "run_id": {"type": "string"},
-                        "page_keys": {"type": "array", "items": {"type": "string"}},
+                        "run_id": {"type": "string", "description": "The use of an analysis the text is read for."},
+                        "page_keys": {
+                            "type": "array",
+                            "description": (
+                                "Not the document itself: the keys of the images of its pages in the object store "
+                                f"(S3, bucket `{config.AWS_BUCKET}`), one for each page, in order. The worker reads "
+                                "each object from the store, so it must be able to reach it. The backend made them "
+                                "when the "
+                                "document was sent: `<document>/pages/<n>.png` for a PDF (a screenshot of each page), "
+                                "`<document>/original.<extension>` for an image (every page is that image)."
+                            ),
+                            "items": {"type": "string", "examples": ["documents/3f2a/pages/1.png"]},
+                            "minItems": 1,
+                        },
                     },
                     "required": ["run_id", "page_keys"],
                 }
@@ -56,30 +96,7 @@ def tasks() -> list[dict]:
                 "type": "object",
                 "properties": {
                     "status": {"type": "string", "enum": ["done", "failed"]},
-                    "pages": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "page": {"type": "integer"},
-                                "angle": {
-                                    "type": "integer",
-                                    "description": "How far the page was turned (0, 90, 180, 270).",
-                                },
-                                "lines": {
-                                    "type": "array",
-                                    "items": {
-                                        "type": "object",
-                                        "properties": {
-                                            "text": {"type": "string"},
-                                            "score": {"type": "number"},
-                                            "points": {"type": "array", "items": _POINT},
-                                        },
-                                    },
-                                },
-                            },
-                        },
-                    },
+                    "pages": _PAGES,
                     "consumption": _CONSUMPTION,
                 },
             },
