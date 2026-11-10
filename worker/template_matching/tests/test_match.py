@@ -82,10 +82,19 @@ def test_a_page_is_classified_and_the_zones_of_its_model_page_are_carried_over(c
             "points": MOVED,
             "classifications": [
                 {"template_id": "t1", "confidence": 0.72},
-                {"template_id": None, "confidence": 0.28},
+                {"template_id": None, "confidence": config.ENTITY_THRESHOLD},
             ],
         }
     ]
+
+
+def test_an_element_that_does_not_reach_the_threshold_is_other(classifier, monkeypatch):
+    monkeypatch.setattr(match, "locate", lambda *_: [Located(0.4, 40, [MOVED])])  # 0.9 * 0.4 = 0.36
+
+    found = match_document(classifier, lambda key: b"", message())["found"]
+
+    assert [c["template_id"] for c in found[0]["classifications"]] == [None, "t1"]
+    assert found[0]["classifications"][0]["confidence"] == config.ENTITY_THRESHOLD
 
 
 def test_a_model_that_is_twice_on_a_page_gives_its_elements_twice(classifier, monkeypatch):

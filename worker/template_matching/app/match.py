@@ -4,6 +4,7 @@
 import logging
 from collections.abc import Callable
 
+from app import config
 from app.classify import PageClassifier
 from app.project import locate
 
@@ -20,11 +21,15 @@ def _found(page: int, template_id: str, confidence: float, entity_id: str, point
         "page": page,
         "entity_id": entity_id,
         "points": points,
-        # An element is as sure as the page is of being that model page, and as the keypoints are of agreeing.
-        "classifications": [
-            {"template_id": template_id, "confidence": confidence},
-            {"template_id": None, "confidence": round(1 - confidence, 6)},
-        ],
+        # An element is as sure as the page is of being that model page, and as the keypoints are of agreeing. As for
+        # a page, « other » has the threshold as its score: it comes first when the element does not reach it.
+        "classifications": sorted(
+            [
+                {"template_id": template_id, "confidence": confidence},
+                {"template_id": None, "confidence": config.ENTITY_THRESHOLD},
+            ],
+            key=lambda c: -c["confidence"],
+        ),
     }
 
 

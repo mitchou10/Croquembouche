@@ -27,6 +27,9 @@ def collection_name() -> str:
 # A page of an analysed document is the page of a model it looks the most like (its cosine similarity, 0 to 1), if
 # that is at least this much; below it, nothing in the catalogue looks enough like it and it is « other ».
 MATCH_THRESHOLD = float(os.environ.get("CLASSIFY_THRESHOLD", "0.80"))
+# An element of a model found on a page (its confidence is the page's similarity times how sure the keypoints are) is
+# that element if that is at least this much, and « other » below it, the way a page is with CLASSIFY_THRESHOLD.
+ENTITY_THRESHOLD = float(os.environ.get("ENTITY_THRESHOLD", "0.5"))
 # How many points a page asks for: all the rotations of every page of the models of an analysis.
 NEIGHBOURS = int(os.environ.get("CLASSIFY_NEIGHBOURS", "256"))
 # Two pages of models that look like each other at least this much are linked in the graph of a search.
