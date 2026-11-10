@@ -8,12 +8,14 @@ from fastapi import APIRouter, Depends, Header, HTTPException, status
 
 from app.config import MatchingSettings
 from app.core.matching import MatchingDispatcher, get_dispatcher
-from app.dependencies import Db
+from app.dependencies import Db, Tasks
 from app.repositories.analysis import AnalysisRepository
 from app.repositories.document import DocumentRepository
 from app.repositories.search import SearchRepository
 from app.schemas.matching import FindResult, MatchingResult, OcrResult, SearchResult
+from app.schemas.worker import WorkerRegistration
 from app.services import matching_results, search
+from app.services.tasks import NotRegisteredError
 
 
 def worker_only(x_internal_key: Annotated[str, Header()] = "") -> None:
@@ -59,3 +61,25 @@ async def search_result(search_id: str, body: SearchResult, db: Db) -> None:
     """How a search for similar documents went, from the worker. One that already ended is left as it is."""
     if not await search.apply(SearchRepository(db), search_id, body):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No such search running")
+
+
+@router.put("/workers/{instance_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def register(instance_id: str, body: WorkerRegistration, service: Tasks) -> None:
+    """An instance of a worker starts (or declares its tasks again): the tasks it can be given, and the first sign
+    that it is alive."""
+    await service.register(instance_id, body)
+
+
+@router.post("/workers/{instance_id}/heartbeat", status_code=status.HTTP_204_NO_CONTENT)
+async def heartbeat(instance_id: str, service: Tasks) -> None:
+    """An instance of a worker is alive. 404 when it is not known: it registers again."""
+    try:
+        await service.heartbeat(instance_id)
+    except NotRegisteredError as error:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No such worker") from error
+
+
+@router.delete("/workers/{instance_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def unregister(instance_id: str, service: Tasks) -> None:
+    """An instance of a worker stops: its tasks are no longer on offer."""
+    await service.unregister(instance_id)

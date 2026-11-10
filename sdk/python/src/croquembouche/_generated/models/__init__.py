@@ -64,6 +64,11 @@ from .suggested_entity import SuggestedEntity
 from .suggested_entity_source import SuggestedEntitySource
 from .suggestion_create import SuggestionCreate
 from .suggestion_out import SuggestionOut
+from .task_instance_out import TaskInstanceOut
+from .task_out import TaskOut
+from .task_out_input_schema import TaskOutInputSchema
+from .task_out_output_schema import TaskOutOutputSchema
+from .task_out_parameters import TaskOutParameters
 from .template_create import TemplateCreate
 from .template_create_visibility_type_0 import TemplateCreateVisibilityType0
 from .template_fields import TemplateFields
@@ -146,6 +151,11 @@ __all__ = (
     "SuggestedEntitySource",
     "SuggestionCreate",
     "SuggestionOut",
+    "TaskInstanceOut",
+    "TaskOut",
+    "TaskOutInputSchema",
+    "TaskOutOutputSchema",
+    "TaskOutParameters",
     "TemplateCreate",
     "TemplateCreateVisibilityType0",
     "TemplateFields",

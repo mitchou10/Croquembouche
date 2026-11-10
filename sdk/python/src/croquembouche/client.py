@@ -5,6 +5,7 @@ from ._generated.client import AuthenticatedClient
 from .analyses import Analyses
 from .auth import BearerToken, ClientCredentials
 from .searches import Searches
+from .tasks import Tasks
 from .templates import Templates
 
 
@@ -47,6 +48,7 @@ class Croquembouche:
         self.templates = Templates(caller)
         self.analyses = Analyses(caller)
         self.searches = Searches(caller)
+        self.tasks = Tasks(caller)
 
     async def aclose(self) -> None:
         await self._http.aclose()

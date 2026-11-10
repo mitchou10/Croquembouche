@@ -433,6 +433,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/tasks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The tasks the workers declare, one for each name and version */
+        get: operations["tasks_list_tasks"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tasks/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The versions of a task, with the instances that have each */
+        get: operations["tasks_get_task"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/templates": {
         parameters: {
             query?: never;
@@ -1524,6 +1558,62 @@ export interface components {
             /** Status */
             status: string;
         };
+        /**
+         * TaskInstanceOut
+         * @description An instance of a worker that has the task.
+         */
+        TaskInstanceOut: {
+            /** Hostname */
+            hostname?: string | null;
+            /** Instanceid */
+            instanceId: string;
+            /**
+             * Lastseenat
+             * Format: date-time
+             */
+            lastSeenAt: string;
+            /** Online */
+            online: boolean;
+            /** Service */
+            service: string;
+            /**
+             * Startedat
+             * Format: date-time
+             */
+            startedAt: string;
+        };
+        /**
+         * TaskOut
+         * @description A task and one of its versions, with the instances that have it.
+         */
+        TaskOut: {
+            /** Author */
+            author: string;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+            /** Description */
+            description: string;
+            inputSchema: {
+                [key: string]: unknown;
+            };
+            /** Instances */
+            instances: components["schemas"]["TaskInstanceOut"][];
+            /** Name */
+            name: string;
+            /** Online */
+            online: number;
+            outputSchema: {
+                [key: string]: unknown;
+            };
+            parameters: {
+                [key: string]: unknown;
+            };
+            /** Version */
+            version: string;
+        };
         /** TemplateCreate */
         TemplateCreate: {
             /**
@@ -2604,6 +2694,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    tasks_list_tasks: {
+        parameters: {
+            query?: {
+                /** @description Only the tasks that an instance that is alive has */
+                online?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    tasks_get_task: {
+        parameters: {
+            query?: {
+                /** @description Only the versions that an instance that is alive has */
+                online?: boolean;
+            };
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskOut"][];
                 };
             };
             /** @description Validation Error */

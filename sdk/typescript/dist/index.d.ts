@@ -7,5 +7,6 @@ export type { CroquembouchOptions } from './client.js';
 export { APIError, AuthenticationError, ConflictError, CroquembouchError, ForbiddenError, InvalidRequestError, NotFoundError, RunFailedError, ServerError, WaitTimeoutError, } from './errors.js';
 export type { Document } from './files.js';
 export { Search, Searches } from './searches.js';
+export { Tasks } from './tasks.js';
 export { Templates } from './templates.js';
 export type * from './types.js';
