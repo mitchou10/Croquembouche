@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.27.0](https://github.com/mitchou10/Croquembouche/compare/v1.26.0...v1.27.0) (2026-11-10)
+
+
+### Features
+
+* **ocr:** passer à PP-OCRv6 tiny en ONNX Runtime sur CPU, sans le framework Paddle ([e79a8ef](https://github.com/mitchou10/Croquembouche/commit/e79a8efc65b0eb84143d8048e56b6f5fb28f896c))
+* **storage:** le propriétaire et le type dans la clé des documents, et une purge par personne ([14186d6](https://github.com/mitchou10/Croquembouche/commit/14186d62ee61391ccbc6fb823db1b85b651ea652)), closes [#106](https://github.com/mitchou10/Croquembouche/issues/106)
+
 ## [1.26.0](https://github.com/mitchou10/Croquembouche/compare/v1.25.0...v1.26.0) (2026-11-10)
 
 

@@ -1,6 +1,6 @@
 [project]
 name = "croquembouche-worker-gliner"
-version = "1.26.0"
+version = "1.27.0"
 description = "Croquembouche GLiNER worker: finds the entities that have no zone in the text the OCR read"
 requires-python = ">=3.13"
 dependencies = [
