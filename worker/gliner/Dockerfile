@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-FROM python:3.13-slim AS builder
+FROM python:3.15-slim AS builder
 WORKDIR /app
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 COPY pyproject.toml uv.lock* ./
@@ -18,7 +18,7 @@ RUN /app/.venv/bin/python -c "\
 import os; from gliner import GLiNER; GLiNER.from_pretrained(os.environ['GLINER_MODEL'])" \
     && find /models -name '.locks' -prune -exec rm -rf {} +
 
-FROM python:3.13-slim AS runtime
+FROM python:3.15-slim AS runtime
 # pip is a build tool: the runtime image never installs anything, and the pip bundled with the base
 # image carries known CVEs. Removed rather than upgraded, so there is nothing left to keep patched.
 RUN python -m pip uninstall -y pip
