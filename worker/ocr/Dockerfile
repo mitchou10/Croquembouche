@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-FROM python:3.13-slim AS builder
+FROM python:3.15-slim AS builder
 WORKDIR /app
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 COPY pyproject.toml uv.lock* ./
@@ -20,7 +20,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 libgl1
 RUN /app/.venv/bin/python -c "\
 from app import ocr; ocr.get_engine()"
 
-FROM python:3.13-slim AS runtime
+FROM python:3.15-slim AS runtime
 RUN python -m pip uninstall -y pip
 # Paddle and OpenCV load these at import.
 RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 libgl1 libglib2.0-0 \
